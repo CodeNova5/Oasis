@@ -340,6 +340,22 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
             ProcessInfoDialog dlg(name, pid, path, rx, tx, total, pkts, icon, this);
             dlg.exec();
         });
+
+        menu.addSeparator();
+        QAction *actExempt = menu.addAction("Ignore bandwidth alerts for 2 hours");
+        connect(actExempt, &QAction::triggered, this, [this, name]() {
+            m_bandwidthGuard->exemptProcess(name, 2 * 60 * 60);
+        });
+
+        QMenu *classificationMenu = menu.addMenu("Classify process");
+        QAction *actAskFirst = classificationMenu->addAction("Ask before any future action");
+        connect(actAskFirst, &QAction::triggered, this, [this, name]() {
+            m_bandwidthGuard->setCategoryOverride(name, ProcessCategory::AskFirst);
+        });
+        QAction *actUpdater = classificationMenu->addAction("Treat as updater candidate");
+        connect(actUpdater, &QAction::triggered, this, [this, name]() {
+            m_bandwidthGuard->setCategoryOverride(name, ProcessCategory::AutoCandidate);
+        });
     } else {
         QAction *actCopy = menu.addAction("📋 Copy Connection Details");
         connect(actCopy, &QAction::triggered, this, [name]() {
@@ -509,6 +525,7 @@ void NetworkWidget::onFilterChanged(const QString &text) { m_proxy->setFilterFix
 
 void NetworkWidget::onClearTable()
 {
+    m_bandwidthGuard->reset();
     m_model->clear();
     m_totalPkts = 0;
     ui->lblPackets->setText("0");

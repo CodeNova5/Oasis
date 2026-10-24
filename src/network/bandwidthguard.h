@@ -31,6 +31,8 @@ public:
 
     void observe(const QList<CapturedPacketInfo> &batch);
     void reset();
+    void exemptProcess(const QString &processName, int durationSeconds);
+    void setCategoryOverride(const QString &processName, ProcessCategory category);
 
     static ProcessCategory classifyProcess(const QString &processName,
                                            bool isService,
@@ -52,12 +54,20 @@ private:
         int lowRateSeconds = 0;
     };
 
+    static QString normalizeProcessName(const QString &processName);
+    bool isExempt(const QString &processName);
+    ProcessCategory categoryFor(const ProcessWindow &window, quint32 pid) const;
+    void loadPersistentState();
+    void savePersistentState() const;
+
     static constexpr quint64 DetectionBytesPerMinute = 5ULL * 1024ULL * 1024ULL;
     static constexpr quint64 ReleaseBytesPerMinute = 1ULL * 1024ULL * 1024ULL;
     static constexpr int WindowSeconds = 60;
     static constexpr int ReleaseSeconds = 300;
 
     QHash<quint32, ProcessWindow> m_processes;
+    QHash<QString, qint64> m_exemptions;
+    QHash<QString, ProcessCategory> m_categoryOverrides;
     QTimer *m_timer = nullptr;
 };
 

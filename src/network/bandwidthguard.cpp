@@ -1,6 +1,8 @@
 #include "bandwidthguard.h"
 #include "networkmonitor.h"
 
+#include <QDateTime>
+#include <QSettings>
 #include <QTimer>
 
 BandwidthGuard::BandwidthGuard(QObject *parent)
@@ -9,6 +11,7 @@ BandwidthGuard::BandwidthGuard(QObject *parent)
 {
     m_timer->setInterval(1000);
     connect(m_timer, &QTimer::timeout, this, &BandwidthGuard::onTick);
+    loadPersistentState();
     m_timer->start();
 }
 
@@ -31,6 +34,85 @@ void BandwidthGuard::observe(const QList<CapturedPacketInfo> &batch)
 void BandwidthGuard::reset()
 {
     m_processes.clear();
+}
+
+void BandwidthGuard::exemptProcess(const QString &processName, int durationSeconds)
+{
+    const QString key = normalizeProcessName(processName);
+    if (key.isEmpty()) return;
+
+    m_exemptions.insert(key, QDateTime::currentSecsSinceEpoch() + durationSeconds);
+    savePersistentState();
+}
+
+void BandwidthGuard::setCategoryOverride(const QString &processName, ProcessCategory category)
+{
+    const QString key = normalizeProcessName(processName);
+    if (key.isEmpty()) return;
+
+    m_categoryOverrides.insert(key, category);
+    savePersistentState();
+}
+
+QString BandwidthGuard::normalizeProcessName(const QString &processName)
+{
+    return processName.trimmed().toLower();
+}
+
+bool BandwidthGuard::isExempt(const QString &processName)
+{
+    const QString key = normalizeProcessName(processName);
+    const auto it = m_exemptions.find(key);
+    if (it == m_exemptions.end()) return false;
+
+    if (it.value() > QDateTime::currentSecsSinceEpoch()) return true;
+    m_exemptions.erase(it);
+    savePersistentState();
+    return false;
+}
+
+ProcessCategory BandwidthGuard::categoryFor(const ProcessWindow &window, quint32 pid) const
+{
+    const QString key = normalizeProcessName(window.name);
+    const auto overrideIt = m_categoryOverrides.constFind(key);
+    if (overrideIt != m_categoryOverrides.constEnd()) return overrideIt.value();
+    return classifyProcess(window.name, window.isService, pid);
+}
+
+void BandwidthGuard::loadPersistentState()
+{
+    QSettings settings;
+    settings.beginGroup("BandwidthGuard");
+
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+    const QVariantMap exemptions = settings.value("exemptions").toMap();
+    for (auto it = exemptions.constBegin(); it != exemptions.constEnd(); ++it) {
+        const qint64 expiry = it.value().toLongLong();
+        if (expiry > now) m_exemptions.insert(it.key(), expiry);
+    }
+
+    const QVariantMap overrides = settings.value("categoryOverrides").toMap();
+    for (auto it = overrides.constBegin(); it != overrides.constEnd(); ++it)
+        m_categoryOverrides.insert(it.key(), static_cast<ProcessCategory>(it.value().toInt()));
+
+    settings.endGroup();
+}
+
+void BandwidthGuard::savePersistentState() const
+{
+    QSettings settings;
+    settings.beginGroup("BandwidthGuard");
+
+    QVariantMap exemptions;
+    for (auto it = m_exemptions.constBegin(); it != m_exemptions.constEnd(); ++it)
+        exemptions.insert(it.key(), it.value());
+    settings.setValue("exemptions", exemptions);
+
+    QVariantMap overrides;
+    for (auto it = m_categoryOverrides.constBegin(); it != m_categoryOverrides.constEnd(); ++it)
+        overrides.insert(it.key(), static_cast<int>(it.value()));
+    settings.setValue("categoryOverrides", overrides);
+    settings.endGroup();
 }
 
 ProcessCategory BandwidthGuard::classifyProcess(const QString &processName,
@@ -67,6 +149,13 @@ void BandwidthGuard::onTick()
         quint64 bytesLastMinute = 0;
         for (quint64 bytes : window.buckets) bytesLastMinute += bytes;
 
+        if (isExempt(window.name)) {
+            window.alerted = false;
+            window.lowRateSeconds = 0;
+            ++it;
+            continue;
+        }
+
         if (bytesLastMinute > DetectionBytesPerMinute) {
             window.lowRateSeconds = 0;
             if (!window.alerted) {
@@ -76,7 +165,7 @@ void BandwidthGuard::onTick()
                 event.pid = it.key();
                 event.bytesLastMinute = bytesLastMinute;
                 event.bytesPerSecond = bytesLastMinute / WindowSeconds;
-                event.category = classifyProcess(window.name, window.isService, it.key());
+                event.category = categoryFor(window, it.key());
                 emit sustainedBandwidthExceeded(event);
             }
         } else if (bytesLastMinute < ReleaseBytesPerMinute) {
