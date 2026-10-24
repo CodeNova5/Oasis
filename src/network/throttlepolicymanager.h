@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QHash>
-#include <QMutex>
 #include <QString>
 
 #include "throttlebackend.h"
@@ -25,7 +24,6 @@ private:
     void load();
     void save() const;
 
-    mutable QMutex m_mutex;
     QHash<QString, QString> m_activePolicies;
     ThrottleBackend *m_backend = nullptr;
 };

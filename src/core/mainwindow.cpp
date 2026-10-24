@@ -719,28 +719,26 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
             ? "Background updater candidate"
             : "Background data activity";
 
-    const QString rate = fmtSpeed(event.throttleLimitBitsPerSecond / 8);
-
     QString title = category;
     QString action;
-    if (event.throttleAttempted) {
-        if (event.throttleApplied) {
-            title = "Bandwidth limit applied";
-            action = QString("Uploads limited to %1 for every instance of this executable.\n"
-                             "Right-click the process in NetGuard to remove the limit.").arg(rate);
+    if (event.firewallAttempted) {
+        if (event.firewallBlocked) {
+            title = "Internet access blocked";
+            action = QStringLiteral("Internet access was blocked for every instance of this executable.\n"
+                                    "Right-click the process in NetGuard to restore access.");
         } else {
-            title = "Bandwidth limit failed";
-            action = event.throttleMessage.isEmpty()
-                ? QStringLiteral("The bandwidth limit could not be applied.")
-                : event.throttleMessage;
+            title = "Internet block failed";
+            action = event.firewallMessage.isEmpty()
+                ? QStringLiteral("The firewall rule could not be applied.")
+                : event.firewallMessage;
         }
-    } else if (event.throttleApplied) {
-        title = "Bandwidth limit already active";
-        action = QString("This executable's uploads are already limited to %1.").arg(rate);
-    } else if (!event.throttleMessage.isEmpty()) {
-        action = event.throttleMessage;
+    } else if (event.firewallBlocked) {
+        title = "Internet access already blocked";
+        action = QStringLiteral("This executable is already blocked by a NetGuard firewall rule.");
+    } else if (!event.firewallMessage.isEmpty()) {
+        action = event.firewallMessage;
     } else {
-        action = QStringLiteral("No bandwidth limit was applied.");
+        action = QStringLiteral("No bandwidth limit or block was applied.");
     }
 
     const QString pathText = event.executablePath.isEmpty()
@@ -753,7 +751,7 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         .arg(pathText)
         .arg(action);
 
-    const QSystemTrayIcon::MessageIcon icon = event.throttleAttempted && !event.throttleApplied
+    const QSystemTrayIcon::MessageIcon icon = event.firewallAttempted && !event.firewallBlocked
         ? QSystemTrayIcon::Warning
         : QSystemTrayIcon::Information;
     m_tray->showMessage(title, message, icon, 6000);

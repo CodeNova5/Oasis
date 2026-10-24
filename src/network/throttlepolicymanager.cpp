@@ -25,13 +25,8 @@ ThrottleResult ThrottlePolicyManager::apply(const QString &executablePath)
     const QString path = normalizePath(executablePath);
     const QString policyId = policyIdForPath(path);
     const ThrottleRequest request{path, policyId, DefaultLimitBitsPerSecond};
-
-    // The backend shells out to PowerShell, which can take seconds. It is
-    // intentionally called without the lock so a background auto-throttle
-    // never blocks the UI thread reading or writing the policy list.
     ThrottleResult result = m_backend->apply(request);
     if (result.status == ThrottleStatus::Applied) {
-        QMutexLocker locker(&m_mutex);
         m_activePolicies.insert(path, result.policyId);
         save();
     }
@@ -41,14 +36,9 @@ ThrottleResult ThrottlePolicyManager::apply(const QString &executablePath)
 ThrottleResult ThrottlePolicyManager::remove(const QString &executablePath)
 {
     const QString path = normalizePath(executablePath);
-    QString policyId;
-    {
-        QMutexLocker locker(&m_mutex);
-        policyId = m_activePolicies.value(path, policyIdForPath(path));
-    }
+    const QString policyId = m_activePolicies.value(path, policyIdForPath(path));
     ThrottleResult result = m_backend->remove(policyId);
     if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
-        QMutexLocker locker(&m_mutex);
         m_activePolicies.remove(path);
         save();
     }
@@ -60,8 +50,6 @@ ThrottleResult ThrottlePolicyManager::restoreAll()
     ThrottleResult lastResult;
     lastResult.status = ThrottleStatus::NotApplied;
     lastResult.message = "No active bandwidth policies were found.";
-
-    QMutexLocker locker(&m_mutex);
 
     const QHash<QString, QString> policies = m_activePolicies;
     for (auto it = policies.constBegin(); it != policies.constEnd(); ++it) {
@@ -76,7 +64,6 @@ ThrottleResult ThrottlePolicyManager::restoreAll()
 
 bool ThrottlePolicyManager::isThrottled(const QString &executablePath) const
 {
-    QMutexLocker locker(&m_mutex);
     return m_activePolicies.contains(normalizePath(executablePath));
 }
 

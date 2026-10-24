@@ -30,13 +30,6 @@
 #include <QPalette>
 #include <QVariant>
 #include <QPixmap>
-#include <QPointer>
-#include <QThreadPool>
-#include <QRunnable>
-
-#include <functional>
-#include <memory>
-#include <utility>
 
 #ifndef _WIN32_WINNT
 #  define _WIN32_WINNT 0x0601
@@ -45,6 +38,7 @@
 #include <shellapi.h>
 #include <psapi.h>
 #include "core/windowsicon.h"
+#include "firewall/firewallmanager.h"
 
 // ============================================================================
 // ── Elevate Permissions to allow reading Process Paths (Crucial for Icons) ──
@@ -63,39 +57,6 @@ static void EnableDebugPrivilege() {
         CloseHandle(hToken);
     }
 }
-
-namespace {
-
-// Applies a QoS limit on a worker thread: the backend spawns PowerShell and
-// waits for it, which would otherwise freeze the UI for several seconds.
-class AutoThrottleTask : public QRunnable
-{
-public:
-    using Callback = std::function<void(const BandwidthEvent &, const ThrottleResult &)>;
-
-    AutoThrottleTask(std::shared_ptr<ThrottlePolicyManager> policies,
-                     BandwidthEvent event,
-                     Callback callback)
-        : m_policies(std::move(policies))
-        , m_event(std::move(event))
-        , m_callback(std::move(callback))
-    {
-    }
-
-    void run() override
-    {
-        const ThrottleResult result = m_policies->apply(m_event.executablePath);
-        if (m_callback)
-            m_callback(m_event, result);
-    }
-
-private:
-    std::shared_ptr<ThrottlePolicyManager> m_policies;
-    BandwidthEvent m_event;
-    Callback m_callback;
-};
-
-} // namespace
 
 // ============================================================================
 // ── Process Properties Dialog Implementation ──
@@ -286,7 +247,9 @@ NetworkWidget::NetworkWidget(QWidget *parent)
 
     m_monitor = new NetworkMonitor(this);
         m_bandwidthGuard = new BandwidthGuard(this);
-    m_throttlePolicies = std::make_shared<ThrottlePolicyManager>();
+    m_throttlePolicies = new ThrottlePolicyManager;
+    m_firewall = new FirewallManager(this);
+    m_firewall->initialize();
 
         qRegisterMetaType<BandwidthEvent>("BandwidthEvent");
         connect(m_bandwidthGuard, &BandwidthGuard::sustainedBandwidthExceeded,
@@ -314,6 +277,7 @@ NetworkWidget::~NetworkWidget()
 {
     m_monitor->stopCapture();
     m_monitor->wait(1500);
+    delete m_throttlePolicies;
     delete ui;
 }
 
@@ -388,6 +352,15 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
             m_bandwidthGuard->exemptProcess(name, 2 * 60 * 60);
         });
 
+        const QString procPath = getExactProcessPath(pid, name);
+        const bool internetBlocked = !procPath.isEmpty() && m_firewall->isBlocked(procPath);
+        QAction *actNet = menu.addAction(internetBlocked
+            ? "🌐 Restore internet access"
+            : "🚫 Block internet access");
+        connect(actNet, &QAction::triggered, this, [this, name, procPath]() {
+            toggleInternetAccess(name, procPath);
+        });
+
         QMenu *classificationMenu = menu.addMenu("Classify process");
         QAction *actAskFirst = classificationMenu->addAction("Ask before any future action");
         connect(actAskFirst, &QAction::triggered, this, [this, name]() {
@@ -453,7 +426,7 @@ void NetworkWidget::requestThrottle(quint32 pid, const QString &procName)
 
 void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
 {
-    // Only background updaters are limited without asking: their traffic is
+    // Only background updaters are acted on without asking: their traffic is
     // not user-initiated. Everything else is reported and left alone.
     if (event.category != ProcessCategory::AutoCandidate) {
         emit bandwidthAlert(event);
@@ -462,58 +435,65 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
 
     if (event.executablePath.isEmpty()) {
         BandwidthEvent alert = event;
-        alert.throttleMessage = QStringLiteral(
-            "The executable path could not be resolved, so no limit was applied.");
+        alert.firewallMessage = QStringLiteral(
+            "The executable path could not be resolved, so internet access was not blocked.");
         emit bandwidthAlert(alert);
         return;
     }
 
-    if (m_throttlePolicies->isThrottled(event.executablePath)) {
+    // Firewall rules are path-wide, so block once and let the existing rule
+    // cover every instance of this executable.
+    if (m_firewall->isBlocked(event.executablePath)) {
         BandwidthEvent alert = event;
-        alert.throttleApplied = true;
-        alert.throttleLimitBitsPerSecond = ThrottlePolicyManager::DefaultLimitBitsPerSecond;
+        alert.firewallBlocked = true;
         emit bandwidthAlert(alert);
         return;
     }
-
-    // The policy is path-wide, so several processes of the same executable
-    // must only cause one apply and therefore one notification.
-    if (m_throttleInFlight.contains(event.executablePath))
-        return;
-    m_throttleInFlight.insert(event.executablePath);
-
-    QPointer<NetworkWidget> self(this);
-    AutoThrottleTask::Callback onDone =
-        [self](const BandwidthEvent &detected, const ThrottleResult &result) {
-            if (!self)
-                return;
-            QMetaObject::invokeMethod(self.data(), [self, detected, result]() {
-                if (self)
-                    self->onAutoThrottleFinished(detected, result);
-            }, Qt::QueuedConnection);
-        };
-
-    QThreadPool::globalInstance()->start(
-        new AutoThrottleTask(m_throttlePolicies, event, onDone));
-}
-
-void NetworkWidget::onAutoThrottleFinished(const BandwidthEvent &event, const ThrottleResult &result)
-{
-    m_throttleInFlight.remove(event.executablePath);
 
     BandwidthEvent alert = event;
-    alert.throttleAttempted = true;
-    alert.throttleLimitBitsPerSecond = ThrottlePolicyManager::DefaultLimitBitsPerSecond;
-
-    if (result.status == ThrottleStatus::Applied) {
-        alert.throttleApplied = true;
-    } else {
-        alert.throttleMessage = result.message.isEmpty()
-            ? QStringLiteral("The bandwidth limit could not be applied.")
-            : result.message;
-    }
+    alert.firewallAttempted = true;
+    alert.firewallBlocked = m_firewall->blockApp(event.executablePath);
+    if (!alert.firewallBlocked)
+        alert.firewallMessage = QStringLiteral("The firewall rule could not be applied.");
 
     emit bandwidthAlert(alert);
+}
+
+void NetworkWidget::toggleInternetAccess(const QString &procName, const QString &path)
+{
+    if (path.isEmpty()) {
+        QMessageBox::warning(this, "Firewall unavailable",
+                             "The executable path could not be resolved for this process.");
+        return;
+    }
+
+    if (m_firewall->isBlocked(path)) {
+        if (QMessageBox::question(this, "Restore internet access",
+                                  QString("Allow internet access again for:\n%1?").arg(path))
+            != QMessageBox::Yes)
+            return;
+
+        m_firewall->removeAppRules(path);
+        // Do not let the guard immediately re-block what the user just restored.
+        m_bandwidthGuard->exemptProcess(procName, 2 * 60 * 60);
+        return;
+    }
+
+    const QString prompt = QString(
+        "Block all internet access for this executable?\n\n%1\n\n"
+        "This is path-wide and affects every running and future instance.\n"
+        "Restore it from this menu at any time.").arg(path);
+    if (QMessageBox::question(this, "Block internet access", prompt,
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    if (!m_firewall->blockApp(path)) {
+        QMessageBox::warning(this, "Firewall rule not applied",
+                             m_firewall->lastError().isEmpty()
+                                 ? "The firewall rule could not be created."
+                                 : m_firewall->lastError());
+    }
 }
 
 void NetworkWidget::autoStart() {

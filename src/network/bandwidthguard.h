@@ -25,10 +25,9 @@ struct BandwidthEvent
 
     // Filled in after the alert has been acted upon, so the user is told
     // what actually happened rather than just that usage was high.
-    bool    throttleAttempted = false;
-    bool    throttleApplied = false;
-    quint64 throttleLimitBitsPerSecond = 0;
-    QString throttleMessage;
+    bool    firewallAttempted = false;
+    bool    firewallBlocked = false;
+    QString firewallMessage;
 };
 
 class BandwidthGuard : public QObject
