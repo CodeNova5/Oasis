@@ -46,6 +46,8 @@ public:
 private:
     static bool performFirstInstall();
     static bool performUpdate(const QString &oldVersion);
+    /// Replace an installed exe of the same version when the local build is newer
+    static bool syncStaleInstall();
     static void killOtherInstances();
     static bool copyExe();
     static bool createDesktopShortcut();

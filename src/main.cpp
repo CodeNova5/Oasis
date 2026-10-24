@@ -106,6 +106,15 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+    // -- Self-install / auto-update check -------------------------------------
+    // Must run BEFORE the single-instance guard: the installed copy holds the
+    // shared memory lock, and this instance may need to replace it.
+    // Copies exe to Program Files\NetGuard on first run, or replaces an older
+    // build on update. Returns false when it relaunched the installed copy
+    // (this instance must exit).
+    if (!AppInstaller::run())
+        return 0;
+
     // -- Single-instance lock (QSharedMemory) ---------------------------------
     QSharedMemory sharedMemory("UltimateNetGuardAIO_SharedMemory");
     if (!sharedMemory.create(1))
@@ -144,20 +153,6 @@ int main(int argc, char *argv[])
     QFont f("Segoe UI", 9);
     f.setHintingPreference(QFont::PreferFullHinting);
     app.setFont(f);
-
-    // -- Self-install / auto-update check ------------------------------------
-    // Copies exe to Program Files\NetGuard on first run, or replaces old
-    // version on update.  Returns false if the app was relaunched from the
-    // installed location (this instance must exit).
-    if (!AppInstaller::isRunningFromInstallDir()) {
-        // We are about to relaunch from Program Files — detach the shared memory
-        // first so the new instance doesn't think we are still running.
-        sharedMemory.detach();
-        AppInstaller::run();
-        return 0;
-    }
-    // Running from install dir → ensure version.dat is current
-    AppInstaller::run();
 
     // -- Show main window -----------------------------------------------------
     MainWindow w;

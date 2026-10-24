@@ -110,7 +110,12 @@ bool AppInstaller::run()
         QString oldVer = readInstalledVersion();
 
         if (!oldVer.isEmpty() && oldVer == APP_VERSION_STR) {
-            // Same version already installed → relaunch silently
+            // Same version already installed. The installed exe can still be an
+            // older build (typical after a local rebuild without a version
+            // bump), so replace it silently if this binary is newer, then
+            // relaunch. Without this, stale code in Program Files keeps
+            // running no matter how often the project is rebuilt.
+            syncStaleInstall();
             launchInstalledAndExit();
             return false;
         }
@@ -218,6 +223,35 @@ bool AppInstaller::createDesktopShortcut()
 
     CoUninitialize();
     return success;
+}
+
+// ============================================================================
+//  Same-version re-sync  (local rebuilds)
+// ============================================================================
+
+bool AppInstaller::syncStaleInstall()
+{
+    QFileInfo src(QCoreApplication::applicationFilePath());
+    QFileInfo dst(installedExePath());
+
+    if (!src.exists() || !dst.exists())
+        return false;
+
+    // Installed copy is the same build or newer → leave it alone
+    if (src.lastModified() <= dst.lastModified())
+        return false;
+
+    // The installed instance may still be running and holding the file open.
+    killOtherInstances();
+
+    if (!copyExe()) {
+        qWarning() << "NetGuard: could not replace stale installed exe at"
+                   << installedExePath();
+        return false;
+    }
+
+    writeVersionFile();
+    return true;
 }
 
 // ============================================================================

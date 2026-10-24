@@ -514,7 +514,7 @@ void NetworkWidget::onStartStop()
 
 void NetworkWidget::onCaptureStarted() {
     m_capturing = true;
-    ui->btnStartStop->setText("⏹  Stop");
+    ui->btnStartStop->setText("⏹  Stoppp");
     ui->cmbAdapter->setEnabled(false);
     ui->lblStatus->setText("● Live capture…");
 }
