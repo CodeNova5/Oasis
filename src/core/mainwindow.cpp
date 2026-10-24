@@ -719,10 +719,14 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
             ? "Background updater candidate"
             : "Background data activity";
 
-    const QString message = QString("%1 used %2 in the last minute (PID %3).\nNo bandwidth limit was applied.")
+    const QString pathText = event.executablePath.isEmpty()
+        ? QString()
+        : QString("\nPath: %1").arg(event.executablePath);
+    const QString message = QString("%1 used %2 in the last minute (PID %3).%4\nNo bandwidth limit was applied.")
         .arg(event.processName)
         .arg(fmtBytes(event.bytesLastMinute))
-        .arg(event.pid);
+        .arg(event.pid)
+        .arg(pathText);
     m_tray->showMessage(category, message, QSystemTrayIcon::Information, 6000);
 }
 

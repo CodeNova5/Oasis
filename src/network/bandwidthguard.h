@@ -17,6 +17,7 @@ enum class ProcessCategory {
 struct BandwidthEvent
 {
     QString processName;
+    QString executablePath;
     quint32 pid = 0;
     quint64 bytesLastMinute = 0;
     quint64 bytesPerSecond = 0;
@@ -47,6 +48,7 @@ private slots:
 private:
     struct ProcessWindow {
         QString name;
+        QString executablePath;
         QVector<quint64> buckets;
         quint64 currentBytes = 0;
         bool isService = false;
@@ -55,6 +57,7 @@ private:
     };
 
     static QString normalizeProcessName(const QString &processName);
+    static QString resolveExecutablePath(quint32 pid);
     bool isExempt(const QString &processName);
     ProcessCategory categoryFor(const ProcessWindow &window, quint32 pid) const;
     void loadPersistentState();

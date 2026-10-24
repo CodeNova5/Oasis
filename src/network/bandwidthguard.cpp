@@ -5,6 +5,8 @@
 #include <QSettings>
 #include <QTimer>
 
+#include <windows.h>
+
 BandwidthGuard::BandwidthGuard(QObject *parent)
     : QObject(parent)
     , m_timer(new QTimer(this))
@@ -24,6 +26,8 @@ void BandwidthGuard::observe(const QList<CapturedPacketInfo> &batch)
         if (!window.name.isEmpty() && window.name != info.proc)
             window = ProcessWindow{};
         window.name = info.proc.isEmpty() ? QString("PID %1").arg(info.pid) : info.proc;
+        if (window.executablePath.isEmpty())
+            window.executablePath = resolveExecutablePath(info.pid);
         window.isService = window.isService || info.isService;
 
         const ParsedPacket &packet = info.pkt;
@@ -57,6 +61,18 @@ void BandwidthGuard::setCategoryOverride(const QString &processName, ProcessCate
 QString BandwidthGuard::normalizeProcessName(const QString &processName)
 {
     return processName.trimmed().toLower();
+}
+
+QString BandwidthGuard::resolveExecutablePath(quint32 pid)
+{
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!process) return {};
+
+    wchar_t pathBuffer[32768] = {};
+    DWORD pathLength = static_cast<DWORD>(std::size(pathBuffer));
+    const BOOL resolved = QueryFullProcessImageNameW(process, 0, pathBuffer, &pathLength);
+    CloseHandle(process);
+    return resolved ? QString::fromWCharArray(pathBuffer, static_cast<int>(pathLength)) : QString();
 }
 
 bool BandwidthGuard::isExempt(const QString &processName)
@@ -162,6 +178,7 @@ void BandwidthGuard::onTick()
                 window.alerted = true;
                 BandwidthEvent event;
                 event.processName = window.name;
+                event.executablePath = window.executablePath;
                 event.pid = it.key();
                 event.bytesLastMinute = bytesLastMinute;
                 event.bytesPerSecond = bytesLastMinute / WindowSeconds;

@@ -36,6 +36,8 @@ SOURCES += \
     src/core/windowsicon.cpp \
     src/network/networkmonitor.cpp \
     src/network/bandwidthguard.cpp \
+    src/network/throttlebackend.cpp \
+    src/network/windowsqosbackend.cpp \
     src/network/networkmodel.cpp \
     src/network/networkwidget.cpp \
     src/network/packetparser.cpp \
@@ -58,6 +60,8 @@ HEADERS += \
     src/core/windowsicon.h \
     src/network/networkmonitor.h \
     src/network/bandwidthguard.h \
+    src/network/throttlebackend.h \
+    src/network/windowsqosbackend.h \
     src/network/networkmodel.h \
     src/network/networkwidget.h \
     src/network/packetparser.h \
