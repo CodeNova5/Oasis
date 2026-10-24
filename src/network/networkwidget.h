@@ -11,6 +11,7 @@
 #include "networkmonitor.h"
 #include "networkmodel.h"
 #include "bandwidthguard.h"
+#include "throttlepolicymanager.h"
 
 namespace Ui { class NetworkWidget; }
 
@@ -67,11 +68,13 @@ public:
 private:
     void populateAdapterCombo();
     QIcon getIconByPid(quint32 pid, const QString &procName);
+    void requestThrottle(quint32 pid, const QString &procName);
 
     Ui::NetworkWidget       *ui = nullptr;
     NetworkMonitor          *m_monitor = nullptr;
     NetworkTreeModel        *m_model = nullptr;
     BandwidthGuard          *m_bandwidthGuard = nullptr;
+    ThrottlePolicyManager   *m_throttlePolicies = nullptr;
     QSortFilterProxyModel   *m_proxy = nullptr;
 
     QList<AdapterInfo>      m_adapters;

@@ -246,6 +246,7 @@ NetworkWidget::NetworkWidget(QWidget *parent)
 
     m_monitor = new NetworkMonitor(this);
         m_bandwidthGuard = new BandwidthGuard(this);
+    m_throttlePolicies = new ThrottlePolicyManager;
 
         qRegisterMetaType<BandwidthEvent>("BandwidthEvent");
         connect(m_bandwidthGuard, &BandwidthGuard::sustainedBandwidthExceeded,
@@ -273,6 +274,7 @@ NetworkWidget::~NetworkWidget()
 {
     m_monitor->stopCapture();
     m_monitor->wait(1500);
+    delete m_throttlePolicies;
     delete ui;
 }
 
@@ -356,6 +358,12 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
         connect(actUpdater, &QAction::triggered, this, [this, name]() {
             m_bandwidthGuard->setCategoryOverride(name, ProcessCategory::AutoCandidate);
         });
+
+        menu.addSeparator();
+        QAction *actThrottle = menu.addAction("Throttle this executable to 50 KiB/s...");
+        connect(actThrottle, &QAction::triggered, this, [this, pid, name]() {
+            requestThrottle(pid, name);
+        });
     } else {
         QAction *actCopy = menu.addAction("📋 Copy Connection Details");
         connect(actCopy, &QAction::triggered, this, [name]() {
@@ -364,6 +372,44 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
     }
 
     menu.exec(ui->treeView->viewport()->mapToGlobal(pos));
+}
+
+void NetworkWidget::requestThrottle(quint32 pid, const QString &procName)
+{
+    const QString path = getExactProcessPath(pid, procName);
+    if (path.isEmpty()) {
+        QMessageBox::warning(this, "Throttle unavailable",
+                             "The executable path could not be resolved for this process.");
+        return;
+    }
+
+    if (m_throttlePolicies->isThrottled(path)) {
+        if (QMessageBox::question(this, "Remove bandwidth limit",
+                                  QString("Remove the 50 KiB/s limit from:\n%1?").arg(path)) == QMessageBox::Yes) {
+            const ThrottleResult result = m_throttlePolicies->remove(path);
+            if (result.status != ThrottleStatus::Removed && result.status != ThrottleStatus::NotApplied)
+                QMessageBox::warning(this, "QoS policy", result.message);
+        }
+        return;
+    }
+
+    const QString prompt = QString(
+        "Apply a 50 KiB/s limit to this executable?\n\n%1\n\n"
+        "This is path-wide and affects every running and future instance of this executable.\n"
+        "The limit will remain until you remove it.").arg(path);
+    if (QMessageBox::question(this, "Confirm bandwidth limit", prompt,
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    const ThrottleResult result = m_throttlePolicies->apply(path);
+    if (result.status == ThrottleStatus::Applied) {
+        QMessageBox::information(this, "Bandwidth limit applied",
+                                 "The executable is now limited to 50 KiB/s.\n\n"
+                                 "Use the process menu again to remove the limit.");
+    } else {
+        QMessageBox::warning(this, "Bandwidth limit not applied", result.message);
+    }
 }
 
 void NetworkWidget::autoStart() {

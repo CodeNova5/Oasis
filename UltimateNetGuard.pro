@@ -38,6 +38,7 @@ SOURCES += \
     src/network/bandwidthguard.cpp \
     src/network/throttlebackend.cpp \
     src/network/windowsqosbackend.cpp \
+    src/network/throttlepolicymanager.cpp \
     src/network/networkmodel.cpp \
     src/network/networkwidget.cpp \
     src/network/packetparser.cpp \
@@ -62,6 +63,7 @@ HEADERS += \
     src/network/bandwidthguard.h \
     src/network/throttlebackend.h \
     src/network/windowsqosbackend.h \
+    src/network/throttlepolicymanager.h \
     src/network/networkmodel.h \
     src/network/networkwidget.h \
     src/network/packetparser.h \
