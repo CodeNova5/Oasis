@@ -26,6 +26,7 @@ class NetworkWidget;
 class FirewallWidget;
 class HardwareWidget;
 class TaskbarOverlay;
+struct BandwidthEvent;
 
 // Data structure to hold daily traffic per application
 struct DailyAppStat {
@@ -50,6 +51,7 @@ private slots:
     void onMinimizeToTray();
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void onNetworkSpeed(quint64 rxBps, quint64 txBps);
+    void onBandwidthAlert(const BandwidthEvent &event);
     void onHardwareSnapshot(const HardwareSnapshot &snap);
 
     void saveSettings();

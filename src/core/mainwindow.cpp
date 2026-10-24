@@ -631,6 +631,7 @@ void MainWindow::setupWidgets()
 
     connect(m_netWidget, &NetworkWidget::speedUpdated, this, &MainWindow::onNetworkSpeed, Qt::QueuedConnection);
     connect(m_netWidget, &NetworkWidget::speedUpdated, m_overlay, &TaskbarOverlay::updateSpeed, Qt::QueuedConnection);
+    connect(m_netWidget, &NetworkWidget::bandwidthAlert, this, &MainWindow::onBandwidthAlert, Qt::QueuedConnection);
 
     connect(m_hwWidget->monitor(), &HardwareMonitor::snapshotReady, this, [this](const HardwareSnapshot &snap){
         onHardwareSnapshot(snap);
@@ -706,6 +707,23 @@ void MainWindow::onNetworkSpeed(quint64 rxBps, quint64 txBps)
     ui->rxLabel->setText("↓ " + fmtSpeed(rxBps));
     ui->txLabel->setText("↑ " + fmtSpeed(txBps));
     m_tray->setToolTip(QString("NetGuard AIO\n↓ %1  ↑ %2").arg(fmtSpeed(rxBps), fmtSpeed(txBps)));
+}
+
+void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
+{
+    if (!m_tray) return;
+
+    const QString category = event.category == ProcessCategory::AskFirst
+        ? "Possible active download"
+        : event.category == ProcessCategory::AutoCandidate
+            ? "Background updater candidate"
+            : "Background data activity";
+
+    const QString message = QString("%1 used %2 in the last minute (PID %3).\nNo bandwidth limit was applied.")
+        .arg(event.processName)
+        .arg(fmtBytes(event.bytesLastMinute))
+        .arg(event.pid);
+    m_tray->showMessage(category, message, QSystemTrayIcon::Information, 6000);
 }
 
 void MainWindow::onHardwareSnapshot(const HardwareSnapshot &snap)

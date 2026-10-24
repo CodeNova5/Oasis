@@ -10,6 +10,7 @@
 #include <QEvent>
 #include "networkmonitor.h"
 #include "networkmodel.h"
+#include "bandwidthguard.h"
 
 namespace Ui { class NetworkWidget; }
 
@@ -41,6 +42,7 @@ protected:
 
 signals:
     void speedUpdated(quint64 rxBps, quint64 txBps);
+    void bandwidthAlert(const BandwidthEvent &event);
 
 private slots:
     void onAdapterChanged(int idx);
@@ -69,6 +71,7 @@ private:
     Ui::NetworkWidget       *ui = nullptr;
     NetworkMonitor          *m_monitor = nullptr;
     NetworkTreeModel        *m_model = nullptr;
+    BandwidthGuard          *m_bandwidthGuard = nullptr;
     QSortFilterProxyModel   *m_proxy = nullptr;
 
     QList<AdapterInfo>      m_adapters;

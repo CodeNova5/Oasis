@@ -35,6 +35,7 @@ SOURCES += \
     src/core/appinstaller.cpp \
     src/core/windowsicon.cpp \
     src/network/networkmonitor.cpp \
+    src/network/bandwidthguard.cpp \
     src/network/networkmodel.cpp \
     src/network/networkwidget.cpp \
     src/network/packetparser.cpp \
@@ -56,6 +57,7 @@ HEADERS += \
     src/core/appinstaller.h \
     src/core/windowsicon.h \
     src/network/networkmonitor.h \
+    src/network/bandwidthguard.h \
     src/network/networkmodel.h \
     src/network/networkwidget.h \
     src/network/packetparser.h \

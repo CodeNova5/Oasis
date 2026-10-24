@@ -245,6 +245,11 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     hv->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     m_monitor = new NetworkMonitor(this);
+        m_bandwidthGuard = new BandwidthGuard(this);
+
+        qRegisterMetaType<BandwidthEvent>("BandwidthEvent");
+        connect(m_bandwidthGuard, &BandwidthGuard::sustainedBandwidthExceeded,
+            this, &NetworkWidget::bandwidthAlert);
 
     connect(m_monitor, &NetworkMonitor::packetsCapturedBatch, this, &NetworkWidget::onPacketsCapturedBatch, Qt::QueuedConnection);
     connect(m_monitor, &NetworkMonitor::speedUpdated, this, &NetworkWidget::onSpeedUpdated, Qt::QueuedConnection);
@@ -460,6 +465,7 @@ void NetworkWidget::onCaptureStopped() {
 
 void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batch)
 {
+    m_bandwidthGuard->observe(batch);
     m_model->addPackets(batch);
     m_totalPkts += batch.size();
     ui->lblPackets->setText(QString::number(m_totalPkts));
