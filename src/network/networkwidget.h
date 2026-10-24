@@ -8,6 +8,8 @@
 #include <QSortFilterProxyModel>
 #include <QDialog>
 #include <QEvent>
+#include <QSet>
+#include <memory>
 #include "networkmonitor.h"
 #include "networkmodel.h"
 #include "bandwidthguard.h"
@@ -58,6 +60,9 @@ private slots:
     void onCaptureStarted();
     void onCaptureStopped();
 
+    void onBandwidthDetected(const BandwidthEvent &event);
+    void onAutoThrottleFinished(const BandwidthEvent &event, const ThrottleResult &result);
+
     void onTreeViewContextMenu(const QPoint &pos);
 
 public:
@@ -74,10 +79,11 @@ private:
     NetworkMonitor          *m_monitor = nullptr;
     NetworkTreeModel        *m_model = nullptr;
     BandwidthGuard          *m_bandwidthGuard = nullptr;
-    ThrottlePolicyManager   *m_throttlePolicies = nullptr;
+    std::shared_ptr<ThrottlePolicyManager> m_throttlePolicies;
     QSortFilterProxyModel   *m_proxy = nullptr;
 
     QList<AdapterInfo>      m_adapters;
+    QSet<QString>           m_throttleInFlight;
     bool                    m_capturing = false;
     quint64                 m_totalPkts = 0;
 

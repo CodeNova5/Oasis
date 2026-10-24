@@ -22,6 +22,13 @@ struct BandwidthEvent
     quint64 bytesLastMinute = 0;
     quint64 bytesPerSecond = 0;
     ProcessCategory category = ProcessCategory::Unknown;
+
+    // Filled in after the alert has been acted upon, so the user is told
+    // what actually happened rather than just that usage was high.
+    bool    throttleAttempted = false;
+    bool    throttleApplied = false;
+    quint64 throttleLimitBitsPerSecond = 0;
+    QString throttleMessage;
 };
 
 class BandwidthGuard : public QObject

@@ -719,15 +719,44 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
             ? "Background updater candidate"
             : "Background data activity";
 
+    const QString rate = fmtSpeed(event.throttleLimitBitsPerSecond / 8);
+
+    QString title = category;
+    QString action;
+    if (event.throttleAttempted) {
+        if (event.throttleApplied) {
+            title = "Bandwidth limit applied";
+            action = QString("Uploads limited to %1 for every instance of this executable.\n"
+                             "Right-click the process in NetGuard to remove the limit.").arg(rate);
+        } else {
+            title = "Bandwidth limit failed";
+            action = event.throttleMessage.isEmpty()
+                ? QStringLiteral("The bandwidth limit could not be applied.")
+                : event.throttleMessage;
+        }
+    } else if (event.throttleApplied) {
+        title = "Bandwidth limit already active";
+        action = QString("This executable's uploads are already limited to %1.").arg(rate);
+    } else if (!event.throttleMessage.isEmpty()) {
+        action = event.throttleMessage;
+    } else {
+        action = QStringLiteral("No bandwidth limit was applied.");
+    }
+
     const QString pathText = event.executablePath.isEmpty()
         ? QString()
         : QString("\nPath: %1").arg(event.executablePath);
-    const QString message = QString("%1 used %2 in the last minute (PID %3).%4\nNo bandwidth limit was applied.")
+    const QString message = QString("%1 used %2 in the last minute (PID %3).%4\n%5")
         .arg(event.processName)
         .arg(fmtBytes(event.bytesLastMinute))
         .arg(event.pid)
-        .arg(pathText);
-    m_tray->showMessage(category, message, QSystemTrayIcon::Information, 6000);
+        .arg(pathText)
+        .arg(action);
+
+    const QSystemTrayIcon::MessageIcon icon = event.throttleAttempted && !event.throttleApplied
+        ? QSystemTrayIcon::Warning
+        : QSystemTrayIcon::Information;
+    m_tray->showMessage(title, message, icon, 6000);
 }
 
 void MainWindow::onHardwareSnapshot(const HardwareSnapshot &snap)

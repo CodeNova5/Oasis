@@ -30,6 +30,13 @@
 #include <QPalette>
 #include <QVariant>
 #include <QPixmap>
+#include <QPointer>
+#include <QThreadPool>
+#include <QRunnable>
+
+#include <functional>
+#include <memory>
+#include <utility>
 
 #ifndef _WIN32_WINNT
 #  define _WIN32_WINNT 0x0601
@@ -56,6 +63,39 @@ static void EnableDebugPrivilege() {
         CloseHandle(hToken);
     }
 }
+
+namespace {
+
+// Applies a QoS limit on a worker thread: the backend spawns PowerShell and
+// waits for it, which would otherwise freeze the UI for several seconds.
+class AutoThrottleTask : public QRunnable
+{
+public:
+    using Callback = std::function<void(const BandwidthEvent &, const ThrottleResult &)>;
+
+    AutoThrottleTask(std::shared_ptr<ThrottlePolicyManager> policies,
+                     BandwidthEvent event,
+                     Callback callback)
+        : m_policies(std::move(policies))
+        , m_event(std::move(event))
+        , m_callback(std::move(callback))
+    {
+    }
+
+    void run() override
+    {
+        const ThrottleResult result = m_policies->apply(m_event.executablePath);
+        if (m_callback)
+            m_callback(m_event, result);
+    }
+
+private:
+    std::shared_ptr<ThrottlePolicyManager> m_policies;
+    BandwidthEvent m_event;
+    Callback m_callback;
+};
+
+} // namespace
 
 // ============================================================================
 // ── Process Properties Dialog Implementation ──
@@ -246,11 +286,11 @@ NetworkWidget::NetworkWidget(QWidget *parent)
 
     m_monitor = new NetworkMonitor(this);
         m_bandwidthGuard = new BandwidthGuard(this);
-    m_throttlePolicies = new ThrottlePolicyManager;
+    m_throttlePolicies = std::make_shared<ThrottlePolicyManager>();
 
         qRegisterMetaType<BandwidthEvent>("BandwidthEvent");
         connect(m_bandwidthGuard, &BandwidthGuard::sustainedBandwidthExceeded,
-            this, &NetworkWidget::bandwidthAlert);
+            this, &NetworkWidget::onBandwidthDetected, Qt::QueuedConnection);
 
     connect(m_monitor, &NetworkMonitor::packetsCapturedBatch, this, &NetworkWidget::onPacketsCapturedBatch, Qt::QueuedConnection);
     connect(m_monitor, &NetworkMonitor::speedUpdated, this, &NetworkWidget::onSpeedUpdated, Qt::QueuedConnection);
@@ -274,7 +314,6 @@ NetworkWidget::~NetworkWidget()
 {
     m_monitor->stopCapture();
     m_monitor->wait(1500);
-    delete m_throttlePolicies;
     delete ui;
 }
 
@@ -412,6 +451,71 @@ void NetworkWidget::requestThrottle(quint32 pid, const QString &procName)
     }
 }
 
+void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
+{
+    // Only background updaters are limited without asking: their traffic is
+    // not user-initiated. Everything else is reported and left alone.
+    if (event.category != ProcessCategory::AutoCandidate) {
+        emit bandwidthAlert(event);
+        return;
+    }
+
+    if (event.executablePath.isEmpty()) {
+        BandwidthEvent alert = event;
+        alert.throttleMessage = QStringLiteral(
+            "The executable path could not be resolved, so no limit was applied.");
+        emit bandwidthAlert(alert);
+        return;
+    }
+
+    if (m_throttlePolicies->isThrottled(event.executablePath)) {
+        BandwidthEvent alert = event;
+        alert.throttleApplied = true;
+        alert.throttleLimitBitsPerSecond = ThrottlePolicyManager::DefaultLimitBitsPerSecond;
+        emit bandwidthAlert(alert);
+        return;
+    }
+
+    // The policy is path-wide, so several processes of the same executable
+    // must only cause one apply and therefore one notification.
+    if (m_throttleInFlight.contains(event.executablePath))
+        return;
+    m_throttleInFlight.insert(event.executablePath);
+
+    QPointer<NetworkWidget> self(this);
+    AutoThrottleTask::Callback onDone =
+        [self](const BandwidthEvent &detected, const ThrottleResult &result) {
+            if (!self)
+                return;
+            QMetaObject::invokeMethod(self.data(), [self, detected, result]() {
+                if (self)
+                    self->onAutoThrottleFinished(detected, result);
+            }, Qt::QueuedConnection);
+        };
+
+    QThreadPool::globalInstance()->start(
+        new AutoThrottleTask(m_throttlePolicies, event, onDone));
+}
+
+void NetworkWidget::onAutoThrottleFinished(const BandwidthEvent &event, const ThrottleResult &result)
+{
+    m_throttleInFlight.remove(event.executablePath);
+
+    BandwidthEvent alert = event;
+    alert.throttleAttempted = true;
+    alert.throttleLimitBitsPerSecond = ThrottlePolicyManager::DefaultLimitBitsPerSecond;
+
+    if (result.status == ThrottleStatus::Applied) {
+        alert.throttleApplied = true;
+    } else {
+        alert.throttleMessage = result.message.isEmpty()
+            ? QStringLiteral("The bandwidth limit could not be applied.")
+            : result.message;
+    }
+
+    emit bandwidthAlert(alert);
+}
+
 void NetworkWidget::autoStart() {
     if (m_adapters.isEmpty()) populateAdapterCombo();
     if (m_adapters.isEmpty()) return;
@@ -514,7 +618,7 @@ void NetworkWidget::onStartStop()
 
 void NetworkWidget::onCaptureStarted() {
     m_capturing = true;
-    ui->btnStartStop->setText("⏹  Stoppp");
+    ui->btnStartStop->setText("⏹  Sto");
     ui->cmbAdapter->setEnabled(false);
     ui->lblStatus->setText("● Live capture…");
 }
