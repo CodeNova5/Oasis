@@ -3,18 +3,13 @@
 
 #include <QDateTime>
 #include <QSettings>
-#include <QTimer>
 
 #include <windows.h>
 
 BandwidthGuard::BandwidthGuard(QObject *parent)
     : QObject(parent)
-    , m_timer(new QTimer(this))
 {
-    m_timer->setInterval(1000);
-    connect(m_timer, &QTimer::timeout, this, &BandwidthGuard::onTick);
     loadPersistentState();
-    m_timer->start();
 }
 
 void BandwidthGuard::observe(const QList<CapturedPacketInfo> &batch)
@@ -31,7 +26,18 @@ void BandwidthGuard::observe(const QList<CapturedPacketInfo> &batch)
         window.isService = window.isService || info.isService;
 
         const ParsedPacket &packet = info.pkt;
-        window.currentBytes += packet.wireLen ? packet.wireLen : packet.captureLen;
+        window.totalBytes += packet.wireLen ? packet.wireLen : packet.captureLen;
+
+        if (!window.alerted && window.totalBytes > DetectionBytes && !isExempt(window.name)) {
+            window.alerted = true;
+            BandwidthEvent event;
+            event.processName = window.name;
+            event.executablePath = window.executablePath;
+            event.pid = info.pid;
+            event.totalBytes = window.totalBytes;
+            event.category = categoryFor(window, info.pid);
+            emit sustainedBandwidthExceeded(event);
+        }
     }
 }
 
@@ -151,50 +157,4 @@ ProcessCategory BandwidthGuard::classifyProcess(const QString &processName,
     }
 
     return ProcessCategory::Unknown;
-}
-
-void BandwidthGuard::onTick()
-{
-    for (auto it = m_processes.begin(); it != m_processes.end();) {
-        ProcessWindow &window = it.value();
-        window.buckets.append(window.currentBytes);
-        window.currentBytes = 0;
-        if (window.buckets.size() > WindowSeconds)
-            window.buckets.remove(0, window.buckets.size() - WindowSeconds);
-
-        quint64 bytesLastMinute = 0;
-        for (quint64 bytes : window.buckets) bytesLastMinute += bytes;
-
-        if (isExempt(window.name)) {
-            window.alerted = false;
-            window.lowRateSeconds = 0;
-            ++it;
-            continue;
-        }
-
-        if (bytesLastMinute > DetectionBytesPerMinute) {
-            window.lowRateSeconds = 0;
-            if (!window.alerted) {
-                window.alerted = true;
-                BandwidthEvent event;
-                event.processName = window.name;
-                event.executablePath = window.executablePath;
-                event.pid = it.key();
-                event.bytesLastMinute = bytesLastMinute;
-                event.bytesPerSecond = bytesLastMinute / WindowSeconds;
-                event.category = categoryFor(window, it.key());
-                emit sustainedBandwidthExceeded(event);
-            }
-        } else if (bytesLastMinute < ReleaseBytesPerMinute) {
-            ++window.lowRateSeconds;
-            if (window.lowRateSeconds >= ReleaseSeconds) {
-                it = m_processes.erase(it);
-                continue;
-            }
-        } else {
-            window.lowRateSeconds = 0;
-        }
-
-        ++it;
-    }
 }

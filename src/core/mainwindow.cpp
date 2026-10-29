@@ -744,9 +744,9 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
     const QString pathText = event.executablePath.isEmpty()
         ? QString()
         : QString("\nPath: %1").arg(event.executablePath);
-    const QString message = QString("%1 used %2 in the last minute (PID %3).%4\n%5")
+    const QString message = QString("%1 used %2 in this capture session (PID %3).%4\n%5")
         .arg(event.processName)
-        .arg(fmtBytes(event.bytesLastMinute))
+        .arg(fmtBytes(event.totalBytes))
         .arg(event.pid)
         .arg(pathText)
         .arg(action);
@@ -754,6 +754,7 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
     const QSystemTrayIcon::MessageIcon icon = event.firewallAttempted && !event.firewallBlocked
         ? QSystemTrayIcon::Warning
         : QSystemTrayIcon::Information;
+    qWarning().noquote() << title << "-" << message;
     m_tray->showMessage(title, message, icon, 6000);
 }
 

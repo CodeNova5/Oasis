@@ -2,8 +2,6 @@
 
 #include <QObject>
 #include <QHash>
-#include <QTimer>
-#include <QVector>
 
 struct CapturedPacketInfo;
 
@@ -19,8 +17,7 @@ struct BandwidthEvent
     QString processName;
     QString executablePath;
     quint32 pid = 0;
-    quint64 bytesLastMinute = 0;
-    quint64 bytesPerSecond = 0;
+    quint64 totalBytes = 0;
     ProcessCategory category = ProcessCategory::Unknown;
 
     // Filled in after the alert has been acted upon, so the user is told
@@ -48,18 +45,13 @@ public:
 signals:
     void sustainedBandwidthExceeded(const BandwidthEvent &event);
 
-private slots:
-    void onTick();
-
 private:
     struct ProcessWindow {
         QString name;
         QString executablePath;
-        QVector<quint64> buckets;
-        quint64 currentBytes = 0;
+        quint64 totalBytes = 0;
         bool isService = false;
         bool alerted = false;
-        int lowRateSeconds = 0;
     };
 
     static QString normalizeProcessName(const QString &processName);
@@ -69,15 +61,11 @@ private:
     void loadPersistentState();
     void savePersistentState() const;
 
-    static constexpr quint64 DetectionBytesPerMinute = 5ULL * 1024ULL * 1024ULL;
-    static constexpr quint64 ReleaseBytesPerMinute = 1ULL * 1024ULL * 1024ULL;
-    static constexpr int WindowSeconds = 60;
-    static constexpr int ReleaseSeconds = 300;
+    static constexpr quint64 DetectionBytes = 10ULL * 1024ULL * 1024ULL;
 
     QHash<quint32, ProcessWindow> m_processes;
     QHash<QString, qint64> m_exemptions;
     QHash<QString, ProcessCategory> m_categoryOverrides;
-    QTimer *m_timer = nullptr;
 };
 
 Q_DECLARE_METATYPE(BandwidthEvent)

@@ -426,9 +426,14 @@ void NetworkWidget::requestThrottle(quint32 pid, const QString &procName)
 
 void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
 {
+    const QString usageText = QString("%1 used %2 in this capture session")
+        .arg(event.processName)
+        .arg(NetworkTreeModel::formatBytes(event.totalBytes));
+
     // Only background updaters are acted on without asking: their traffic is
     // not user-initiated. Everything else is reported and left alone.
     if (event.category != ProcessCategory::AutoCandidate) {
+        ui->lblStatus->setText("⚠ " + usageText);
         emit bandwidthAlert(event);
         return;
     }
@@ -437,6 +442,7 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
         BandwidthEvent alert = event;
         alert.firewallMessage = QStringLiteral(
             "The executable path could not be resolved, so internet access was not blocked.");
+        ui->lblStatus->setText("⚠ " + usageText + " - path unavailable");
         emit bandwidthAlert(alert);
         return;
     }
@@ -446,6 +452,7 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
     if (m_firewall->isBlocked(event.executablePath)) {
         BandwidthEvent alert = event;
         alert.firewallBlocked = true;
+        ui->lblStatus->setText("⛔ " + usageText + " - access already blocked");
         emit bandwidthAlert(alert);
         return;
     }
@@ -455,6 +462,10 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
     alert.firewallBlocked = m_firewall->blockApp(event.executablePath);
     if (!alert.firewallBlocked)
         alert.firewallMessage = QStringLiteral("The firewall rule could not be applied.");
+
+    ui->lblStatus->setText(alert.firewallBlocked
+        ? "⛔ " + usageText + " - internet access blocked"
+        : "⚠ " + usageText + " - block failed");
 
     emit bandwidthAlert(alert);
 }
@@ -598,7 +609,7 @@ void NetworkWidget::onStartStop()
 
 void NetworkWidget::onCaptureStarted() {
     m_capturing = true;
-    ui->btnStartStop->setText("⏹  Sto");
+    ui->btnStartStop->setText("⏹  Stop");
     ui->cmbAdapter->setEnabled(false);
     ui->lblStatus->setText("● Live capture…");
 }
