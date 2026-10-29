@@ -430,8 +430,8 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
         .arg(event.processName)
         .arg(NetworkTreeModel::formatBytes(event.totalBytes));
 
-    // Only background updaters are acted on without asking: their traffic is
-    // not user-initiated. Everything else is reported and left alone.
+    // Only background updaters are acted on automatically. User-facing apps
+    // remain notification-only until the user chooses a context-menu action.
     if (event.category != ProcessCategory::AutoCandidate) {
         ui->lblStatus->setText("⚠ " + usageText);
         emit bandwidthAlert(event);
@@ -440,32 +440,30 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
 
     if (event.executablePath.isEmpty()) {
         BandwidthEvent alert = event;
-        alert.firewallMessage = QStringLiteral(
-            "The executable path could not be resolved, so internet access was not blocked.");
+        alert.throttleMessage = QStringLiteral(
+            "The executable path could not be resolved, so no bandwidth limit was applied.");
         ui->lblStatus->setText("⚠ " + usageText + " - path unavailable");
         emit bandwidthAlert(alert);
         return;
     }
 
-    // Firewall rules are path-wide, so block once and let the existing rule
-    // cover every instance of this executable.
-    if (m_firewall->isBlocked(event.executablePath)) {
-        BandwidthEvent alert = event;
-        alert.firewallBlocked = true;
-        ui->lblStatus->setText("⛔ " + usageText + " - access already blocked");
-        emit bandwidthAlert(alert);
-        return;
+    BandwidthEvent alert = event;
+    alert.throttleAttempted = true;
+    if (m_throttlePolicies->isThrottled(event.executablePath)) {
+        alert.throttled = true;
+        alert.throttleMessage = QStringLiteral(
+            "A 50 KiB/s limit was already active for this executable.");
+    } else {
+        const ThrottleResult result = m_throttlePolicies->apply(event.executablePath);
+        alert.throttled = result.status == ThrottleStatus::Applied;
+        alert.throttleMessage = alert.throttled
+            ? QStringLiteral("A 50 KiB/s limit was applied to this executable.")
+            : result.message;
     }
 
-    BandwidthEvent alert = event;
-    alert.firewallAttempted = true;
-    alert.firewallBlocked = m_firewall->blockApp(event.executablePath);
-    if (!alert.firewallBlocked)
-        alert.firewallMessage = QStringLiteral("The firewall rule could not be applied.");
-
-    ui->lblStatus->setText(alert.firewallBlocked
-        ? "⛔ " + usageText + " - internet access blocked"
-        : "⚠ " + usageText + " - block failed");
+    ui->lblStatus->setText(alert.throttled
+        ? "⚙ " + usageText + " - throttled to 50 KiB/s"
+        : "⚠ " + usageText + " - throttle not applied");
 
     emit bandwidthAlert(alert);
 }

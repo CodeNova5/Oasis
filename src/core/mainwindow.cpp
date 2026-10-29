@@ -721,7 +721,19 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
 
     QString title = category;
     QString action;
-    if (event.firewallAttempted) {
+    if (event.throttleAttempted) {
+        if (event.throttled) {
+            title = "Bandwidth limited";
+            action = event.throttleMessage.isEmpty()
+                ? QStringLiteral("A 50 KiB/s limit was applied to this executable.")
+                : event.throttleMessage;
+        } else {
+            title = "Bandwidth limit not applied";
+            action = event.throttleMessage.isEmpty()
+                ? QStringLiteral("The QoS policy could not be applied.")
+                : event.throttleMessage;
+        }
+    } else if (event.firewallAttempted) {
         if (event.firewallBlocked) {
             title = "Internet access blocked";
             action = QStringLiteral("Internet access was blocked for every instance of this executable.\n"
@@ -751,7 +763,8 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         .arg(pathText)
         .arg(action);
 
-    const QSystemTrayIcon::MessageIcon icon = event.firewallAttempted && !event.firewallBlocked
+    const QSystemTrayIcon::MessageIcon icon = (event.throttleAttempted && !event.throttled) ||
+                                              (event.firewallAttempted && !event.firewallBlocked)
         ? QSystemTrayIcon::Warning
         : QSystemTrayIcon::Information;
     qWarning().noquote() << title << "-" << message;

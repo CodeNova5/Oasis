@@ -25,6 +25,9 @@ struct BandwidthEvent
     bool    firewallAttempted = false;
     bool    firewallBlocked = false;
     QString firewallMessage;
+    bool    throttleAttempted = false;
+    bool    throttled = false;
+    QString throttleMessage;
 };
 
 class BandwidthGuard : public QObject
