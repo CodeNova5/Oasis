@@ -426,13 +426,15 @@ void NetworkWidget::requestThrottle(quint32 pid, const QString &procName)
 
 void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
 {
+    if (m_dataSaverMode == 0) return;
+
     const QString usageText = QString("%1 used %2 in this capture session")
         .arg(event.processName)
         .arg(NetworkTreeModel::formatBytes(event.totalBytes));
 
     // Only background updaters are acted on automatically. User-facing apps
     // remain notification-only until the user chooses a context-menu action.
-    if (event.category != ProcessCategory::AutoCandidate) {
+    if (m_dataSaverMode != 2 || event.category != ProcessCategory::AutoCandidate) {
         ui->lblStatus->setText("⚠ " + usageText);
         emit bandwidthAlert(event);
         return;
@@ -466,6 +468,17 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
         : "⚠ " + usageText + " - throttle not applied");
 
     emit bandwidthAlert(alert);
+}
+
+void NetworkWidget::setDataSaverMode(int mode)
+{
+    m_dataSaverMode = qBound(0, mode, 2);
+    if (m_dataSaverMode == 0)
+        ui->lblStatus->setText("Data Saver is off.");
+    else if (m_dataSaverMode == 1)
+        ui->lblStatus->setText("Data Saver is monitoring.");
+    else
+        ui->lblStatus->setText("Data Saver enforcement is enabled.");
 }
 
 void NetworkWidget::toggleInternetAccess(const QString &procName, const QString &path)

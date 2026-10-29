@@ -80,6 +80,8 @@ MainWindow::MainWindow(QWidget *parent)
         saveSettings();
     });
     connect(ui->chkStartMinimized, &QCheckBox::toggled, this, &MainWindow::saveSettings);
+        connect(ui->cmbDataSaverMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onDataSaverModeChanged);
 
     connect(ui->chkEnableOverlay, &QCheckBox::toggled, this, &MainWindow::applySettingsToOverlay);
     connect(ui->spinOverlayFontSize, QOverload<int>::of(&QSpinBox::valueChanged), this, &MainWindow::applySettingsToOverlay);
@@ -503,6 +505,7 @@ void MainWindow::loadSettings()
 
     ui->chkRunAtStartup->setChecked(settings.value("General/RunAtStartup", true).toBool());
     ui->chkStartMinimized->setChecked(settings.value("General/StartMinimized", false).toBool());
+    ui->cmbDataSaverMode->setCurrentIndex(settings.value("DataSaver/Mode", 1).toInt());
 
     bool isDark = settings.value("General/DarkTheme", true).toBool();
     if (!isDark && StyleManager::instance().isDark()) {
@@ -536,6 +539,7 @@ void MainWindow::saveSettings()
 
     settings.setValue("General/RunAtStartup", ui->chkRunAtStartup->isChecked());
     settings.setValue("General/StartMinimized", ui->chkStartMinimized->isChecked());
+    settings.setValue("DataSaver/Mode", ui->cmbDataSaverMode->currentIndex());
     settings.setValue("General/DarkTheme", StyleManager::instance().isDark());
 
     settings.setValue("Overlay/Enabled", ui->chkEnableOverlay->isChecked());
@@ -769,6 +773,12 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         : QSystemTrayIcon::Information;
     qWarning().noquote() << title << "-" << message;
     m_tray->showMessage(title, message, icon, 6000);
+}
+
+void MainWindow::onDataSaverModeChanged(int mode)
+{
+    if (m_netWidget) m_netWidget->setDataSaverMode(mode);
+    saveSettings();
 }
 
 void MainWindow::onHardwareSnapshot(const HardwareSnapshot &snap)

@@ -52,6 +52,7 @@ private slots:
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void onNetworkSpeed(quint64 rxBps, quint64 txBps);
     void onBandwidthAlert(const BandwidthEvent &event);
+    void onDataSaverModeChanged(int mode);
     void onHardwareSnapshot(const HardwareSnapshot &snap);
 
     void saveSettings();

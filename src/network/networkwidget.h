@@ -39,6 +39,7 @@ public:
     ~NetworkWidget() override;
 
     void autoStart();
+    void setDataSaverMode(int mode);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -86,6 +87,7 @@ private:
     QList<AdapterInfo>      m_adapters;
     bool                    m_capturing = false;
     quint64                 m_totalPkts = 0;
+    int                     m_dataSaverMode = 1;
 
     QHash<QString, QIcon>   m_iconCache;
 };

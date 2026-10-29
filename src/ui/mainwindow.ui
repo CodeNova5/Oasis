@@ -463,6 +463,60 @@
           </layout>
          </widget>
         </item>
+          <item>
+           <widget class="QGroupBox" name="groupBoxDataSaver">
+            <property name="title">
+             <string>Data Saver</string>
+            </property>
+            <layout class="QFormLayout">
+             <property name="horizontalSpacing">
+              <number>20</number>
+             </property>
+             <property name="verticalSpacing">
+              <number>15</number>
+             </property>
+             <property name="margin" stdset="0">
+              <number>20</number>
+             </property>
+             <item row="0" column="0">
+              <widget class="QLabel" name="lblDataSaverMode">
+               <property name="text">
+                <string>Mode:</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="1">
+              <widget class="QComboBox" name="cmbDataSaverMode">
+               <item>
+                <property name="text">
+                 <string>Off</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>Monitor / Notify</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>Enforce known app policies</string>
+                </property>
+               </item>
+              </widget>
+             </item>
+             <item row="1" column="0" colspan="2">
+              <widget class="QLabel" name="lblDataSaverInfo">
+               <property name="text">
+                <string>Processes are detected after 10 MiB in the current capture session. QoS limits affect all instances of an executable.</string>
+               </property>
+               <property name="wordWrap">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
         <item>
          <widget class="QGroupBox" name="groupBoxOverlay">
           <property name="title">
