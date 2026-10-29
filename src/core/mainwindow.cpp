@@ -82,6 +82,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->chkStartMinimized, &QCheckBox::toggled, this, &MainWindow::saveSettings);
         connect(ui->cmbDataSaverMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onDataSaverModeChanged);
+            connect(ui->btnRestoreDataSaver, &QPushButton::clicked,
+                this, &MainWindow::onRestoreDataSaverPolicies);
 
     connect(ui->chkEnableOverlay, &QCheckBox::toggled, this, &MainWindow::applySettingsToOverlay);
     connect(ui->spinOverlayFontSize, QOverload<int>::of(&QSpinBox::valueChanged), this, &MainWindow::applySettingsToOverlay);
@@ -779,6 +781,11 @@ void MainWindow::onDataSaverModeChanged(int mode)
 {
     if (m_netWidget) m_netWidget->setDataSaverMode(mode);
     saveSettings();
+}
+
+void MainWindow::onRestoreDataSaverPolicies()
+{
+    if (m_netWidget) m_netWidget->restoreAllDataSaverPolicies();
 }
 
 void MainWindow::onHardwareSnapshot(const HardwareSnapshot &snap)

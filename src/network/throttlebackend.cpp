@@ -17,3 +17,8 @@ ThrottleResult MonitorOnlyThrottleBackend::remove(const QString &policyId)
     result.message = "No bandwidth policy was present.";
     return result;
 }
+
+bool MonitorOnlyThrottleBackend::isApplied(const QString &) const
+{
+    return false;
+}

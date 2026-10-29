@@ -472,13 +472,30 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
 
 void NetworkWidget::setDataSaverMode(int mode)
 {
+    const bool leavingEnforceMode = m_dataSaverMode == 2 && mode != 2;
     m_dataSaverMode = qBound(0, mode, 2);
+
+    if (leavingEnforceMode)
+        restoreAllDataSaverPolicies();
+
     if (m_dataSaverMode == 0)
         ui->lblStatus->setText("Data Saver is off.");
     else if (m_dataSaverMode == 1)
         ui->lblStatus->setText("Data Saver is monitoring.");
     else
         ui->lblStatus->setText("Data Saver enforcement is enabled.");
+}
+
+void NetworkWidget::restoreAllDataSaverPolicies()
+{
+    const ThrottleResult result = m_throttlePolicies->restoreAll();
+    if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
+        ui->lblStatus->setText("Data Saver policies restored.");
+        QMessageBox::information(this, "Data Saver", result.message);
+    } else {
+        ui->lblStatus->setText("⚠ Some Data Saver policies could not be restored.");
+        QMessageBox::warning(this, "Data Saver", result.message);
+    }
 }
 
 void NetworkWidget::toggleInternetAccess(const QString &procName, const QString &path)

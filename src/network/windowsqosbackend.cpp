@@ -60,6 +60,21 @@ ThrottleResult WindowsQosThrottleBackend::remove(const QString &policyId)
     return runPowerShell(script, ThrottleStatus::Removed, policyId);
 }
 
+bool WindowsQosThrottleBackend::isApplied(const QString &policyId) const
+{
+    if (policyId.isEmpty()) return false;
+
+    const QString script = QString(
+        "$ErrorActionPreference = 'Stop'; "
+        "$policy = Get-NetQosPolicy -Name %1 -PolicyStore ActiveStore "
+        "-ErrorAction SilentlyContinue; "
+        "if ($null -ne $policy) { $policy.Name }")
+        .arg(quotePowerShell(policyId));
+    const ThrottleResult result = runPowerShell(script, ThrottleStatus::Applied, policyId);
+    return result.status == ThrottleStatus::Applied &&
+           result.message.trimmed().compare(policyId, Qt::CaseInsensitive) == 0;
+}
+
 QString WindowsQosThrottleBackend::makePolicyName(const ThrottleRequest &request)
 {
     const QByteArray digest = QCryptographicHash::hash(
@@ -93,5 +108,6 @@ ThrottleResult WindowsQosThrottleBackend::runPowerShell(const QString &script,
                 output.isEmpty() ? "The QoS operation failed." : output, true};
     }
 
-    return {successStatus, policyId, "QoS policy operation completed.", true};
+    return {successStatus, policyId,
+            output.isEmpty() ? "QoS policy operation completed." : output, true};
 }

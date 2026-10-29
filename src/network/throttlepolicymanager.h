@@ -23,6 +23,7 @@ private:
     static QString policyIdForPath(const QString &path);
     void load();
     void save() const;
+    void reconcile();
 
     QHash<QString, QString> m_activePolicies;
     ThrottleBackend *m_backend = nullptr;

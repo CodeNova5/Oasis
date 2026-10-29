@@ -11,6 +11,7 @@ ThrottlePolicyManager::ThrottlePolicyManager()
     : m_backend(new WindowsQosThrottleBackend)
 {
     load();
+    reconcile();
 }
 
 ThrottlePolicyManager::~ThrottlePolicyManager()
@@ -97,4 +98,18 @@ void ThrottlePolicyManager::save() const
         policies.insert(it.key(), it.value());
     settings.setValue("activePolicies", policies);
     settings.endGroup();
+}
+
+void ThrottlePolicyManager::reconcile()
+{
+    bool changed = false;
+    for (auto it = m_activePolicies.begin(); it != m_activePolicies.end();) {
+        if (m_backend->isApplied(it.value())) {
+            ++it;
+        } else {
+            it = m_activePolicies.erase(it);
+            changed = true;
+        }
+    }
+    if (changed) save();
 }

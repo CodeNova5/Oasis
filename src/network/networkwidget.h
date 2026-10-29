@@ -40,6 +40,7 @@ public:
 
     void autoStart();
     void setDataSaverMode(int mode);
+    void restoreAllDataSaverPolicies();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

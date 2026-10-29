@@ -53,6 +53,7 @@ private slots:
     void onNetworkSpeed(quint64 rxBps, quint64 txBps);
     void onBandwidthAlert(const BandwidthEvent &event);
     void onDataSaverModeChanged(int mode);
+    void onRestoreDataSaverPolicies();
     void onHardwareSnapshot(const HardwareSnapshot &snap);
 
     void saveSettings();
