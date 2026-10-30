@@ -41,6 +41,9 @@ public:
     void autoStart();
     void setDataSaverMode(int mode);
     void restoreAllDataSaverPolicies();
+    void requestThrottlePath(const QString &path);
+    void exemptProcess(const QString &processName, int durationSeconds);
+    void toggleInternetAccess(const QString &procName, const QString &path);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -75,7 +78,6 @@ private:
     void populateAdapterCombo();
     QIcon getIconByPid(quint32 pid, const QString &procName);
     void requestThrottle(quint32 pid, const QString &procName);
-    void toggleInternetAccess(const QString &procName, const QString &path);
 
     Ui::NetworkWidget       *ui = nullptr;
     NetworkMonitor          *m_monitor = nullptr;

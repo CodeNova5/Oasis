@@ -84,6 +84,16 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onDataSaverModeChanged);
             connect(ui->btnRestoreDataSaver, &QPushButton::clicked,
                 this, &MainWindow::onRestoreDataSaverPolicies);
+                connect(ui->cmbDataSaverPageMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    this, [this](int mode) {
+                    if (ui->cmbDataSaverMode->currentIndex() != mode)
+                        ui->cmbDataSaverMode->setCurrentIndex(mode);
+                    });
+                connect(ui->btnRestoreDataSaverPage, &QPushButton::clicked,
+                    this, &MainWindow::onRestoreDataSaverPolicies);
+                    ui->tableDataSaverDetections->setContextMenuPolicy(Qt::CustomContextMenu);
+                    connect(ui->tableDataSaverDetections, &QTableWidget::customContextMenuRequested,
+                        this, &MainWindow::onDataSaverDetectionMenu);
 
     connect(ui->chkEnableOverlay, &QCheckBox::toggled, this, &MainWindow::applySettingsToOverlay);
     connect(ui->spinOverlayFontSize, QOverload<int>::of(&QSpinBox::valueChanged), this, &MainWindow::applySettingsToOverlay);
@@ -717,8 +727,6 @@ void MainWindow::onNetworkSpeed(quint64 rxBps, quint64 txBps)
 
 void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
 {
-    if (!m_tray) return;
-
     const QString category = event.category == ProcessCategory::AskFirst
         ? "Possible active download"
         : event.category == ProcessCategory::AutoCandidate
@@ -769,6 +777,22 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         .arg(pathText)
         .arg(action);
 
+    if (ui->tableDataSaverDetections) {
+        const int row = ui->tableDataSaverDetections->rowCount();
+        ui->tableDataSaverDetections->insertRow(row);
+        ui->tableDataSaverDetections->setItem(row, 0, new QTableWidgetItem(event.processName));
+        ui->tableDataSaverDetections->setItem(row, 1, new QTableWidgetItem(event.executablePath));
+        ui->tableDataSaverDetections->setItem(row, 2, new QTableWidgetItem(fmtBytes(event.totalBytes)));
+        ui->tableDataSaverDetections->setItem(row, 3, new QTableWidgetItem(category));
+        ui->tableDataSaverDetections->setItem(row, 4, new QTableWidgetItem(action));
+        ui->tableDataSaverDetections->item(row, 0)->setData(Qt::UserRole, event.processName);
+        ui->tableDataSaverDetections->item(row, 0)->setData(Qt::UserRole + 1, event.executablePath);
+        ui->tableDataSaverDetections->item(row, 0)->setData(Qt::UserRole + 2, event.pid);
+        ui->tableDataSaverDetections->resizeColumnsToContents();
+    }
+
+    if (!m_tray) return;
+
     const QSystemTrayIcon::MessageIcon icon = (event.throttleAttempted && !event.throttled) ||
                                               (event.firewallAttempted && !event.firewallBlocked)
         ? QSystemTrayIcon::Warning
@@ -780,12 +804,46 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
 void MainWindow::onDataSaverModeChanged(int mode)
 {
     if (m_netWidget) m_netWidget->setDataSaverMode(mode);
+    if (ui->cmbDataSaverPageMode->currentIndex() != mode)
+        ui->cmbDataSaverPageMode->setCurrentIndex(mode);
     saveSettings();
 }
 
 void MainWindow::onRestoreDataSaverPolicies()
 {
     if (m_netWidget) m_netWidget->restoreAllDataSaverPolicies();
+}
+
+void MainWindow::onDataSaverDetectionMenu(const QPoint &pos)
+{
+    if (!m_netWidget) return;
+
+    QTableWidgetItem *item = ui->tableDataSaverDetections->itemAt(pos);
+    if (!item) return;
+
+    QTableWidgetItem *processItem = ui->tableDataSaverDetections->item(item->row(), 0);
+    if (!processItem) return;
+
+    const QString processName = processItem->data(Qt::UserRole).toString();
+    const QString executablePath = processItem->data(Qt::UserRole + 1).toString();
+    if (processName.isEmpty()) return;
+
+    QMenu menu(this);
+    QAction *keepFullSpeed = menu.addAction("Keep full speed for 2 hours");
+    QAction *throttle = menu.addAction("Throttle executable to 50 KiB/s...");
+    QAction *block = menu.addAction("Block internet access as fallback...");
+
+    connect(keepFullSpeed, &QAction::triggered, this, [this, processName]() {
+        m_netWidget->exemptProcess(processName, 2 * 60 * 60);
+    });
+    connect(throttle, &QAction::triggered, this, [this, executablePath]() {
+        m_netWidget->requestThrottlePath(executablePath);
+    });
+    connect(block, &QAction::triggered, this, [this, processName, executablePath]() {
+        m_netWidget->toggleInternetAccess(processName, executablePath);
+    });
+
+    menu.exec(ui->tableDataSaverDetections->viewport()->mapToGlobal(pos));
 }
 
 void MainWindow::onHardwareSnapshot(const HardwareSnapshot &snap)

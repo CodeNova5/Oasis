@@ -395,6 +395,17 @@ void NetworkWidget::requestThrottle(quint32 pid, const QString &procName)
         return;
     }
 
+    requestThrottlePath(path);
+}
+
+void NetworkWidget::requestThrottlePath(const QString &path)
+{
+    if (path.isEmpty()) {
+        QMessageBox::warning(this, "Throttle unavailable",
+                             "The executable path could not be resolved for this process.");
+        return;
+    }
+
     if (m_throttlePolicies->isThrottled(path)) {
         if (QMessageBox::question(this, "Remove bandwidth limit",
                                   QString("Remove the 50 KiB/s limit from:\n%1?").arg(path)) == QMessageBox::Yes) {
@@ -422,6 +433,12 @@ void NetworkWidget::requestThrottle(quint32 pid, const QString &procName)
     } else {
         QMessageBox::warning(this, "Bandwidth limit not applied", result.message);
     }
+}
+
+void NetworkWidget::exemptProcess(const QString &processName, int durationSeconds)
+{
+    m_bandwidthGuard->exemptProcess(processName, durationSeconds);
+    ui->lblStatus->setText(QString("%1 exempted from Data Saver alerts.").arg(processName));
 }
 
 void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
