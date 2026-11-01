@@ -58,6 +58,13 @@ static void EnableDebugPrivilege() {
     }
 }
 
+static QString bandwidthUsageText(const BandwidthEvent &event)
+{
+    return QString("%1 used %2 in this capture session")
+        .arg(event.processName)
+        .arg(NetworkTreeModel::formatBytes(event.totalBytes));
+}
+
 // ============================================================================
 // ── Process Properties Dialog Implementation ──
 // ============================================================================
@@ -247,7 +254,14 @@ NetworkWidget::NetworkWidget(QWidget *parent)
 
     m_monitor = new NetworkMonitor(this);
         m_bandwidthGuard = new BandwidthGuard(this);
-    m_throttlePolicies = new ThrottlePolicyManager;
+    m_throttlePolicies = new ThrottlePolicyManager(this);
+    // QoS changes run on a worker thread, so results arrive asynchronously.
+    connect(m_throttlePolicies, &ThrottlePolicyManager::throttleApplied,
+            this, &NetworkWidget::onThrottleApplied);
+    connect(m_throttlePolicies, &ThrottlePolicyManager::throttleRemoved,
+            this, &NetworkWidget::onThrottleRemoved);
+    connect(m_throttlePolicies, &ThrottlePolicyManager::throttlesRestored,
+            this, &NetworkWidget::onThrottlesRestored);
     m_firewall = new FirewallManager(this);
     m_firewall->initialize();
 
@@ -409,9 +423,8 @@ void NetworkWidget::requestThrottlePath(const QString &path)
     if (m_throttlePolicies->isThrottled(path)) {
         if (QMessageBox::question(this, "Remove bandwidth limit",
                                   QString("Remove the 50 KiB/s limit from:\n%1?").arg(path)) == QMessageBox::Yes) {
-            const ThrottleResult result = m_throttlePolicies->remove(path);
-            if (result.status != ThrottleStatus::Removed && result.status != ThrottleStatus::NotApplied)
-                QMessageBox::warning(this, "QoS policy", result.message);
+            ui->lblStatus->setText("Removing the bandwidth limit...");
+            m_throttlePolicies->remove(path);
         }
         return;
     }
@@ -425,14 +438,8 @@ void NetworkWidget::requestThrottlePath(const QString &path)
                               QMessageBox::No) != QMessageBox::Yes)
         return;
 
-    const ThrottleResult result = m_throttlePolicies->apply(path);
-    if (result.status == ThrottleStatus::Applied) {
-        QMessageBox::information(this, "Bandwidth limit applied",
-                                 "The executable is now limited to 50 KiB/s.\n\n"
-                                 "Use the process menu again to remove the limit.");
-    } else {
-        QMessageBox::warning(this, "Bandwidth limit not applied", result.message);
-    }
+    ui->lblStatus->setText("Applying a 50 KiB/s limit...");
+    m_throttlePolicies->apply(path);
 }
 
 void NetworkWidget::exemptProcess(const QString &processName, int durationSeconds)
@@ -445,9 +452,7 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
 {
     if (m_dataSaverMode == 0) return;
 
-    const QString usageText = QString("%1 used %2 in this capture session")
-        .arg(event.processName)
-        .arg(NetworkTreeModel::formatBytes(event.totalBytes));
+    const QString usageText = bandwidthUsageText(event);
 
     // Only background updaters are acted on automatically. User-facing apps
     // remain notification-only until the user chooses a context-menu action.
@@ -472,19 +477,16 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
         alert.throttled = true;
         alert.throttleMessage = QStringLiteral(
             "A 50 KiB/s limit was already active for this executable.");
-    } else {
-        const ThrottleResult result = m_throttlePolicies->apply(event.executablePath);
-        alert.throttled = result.status == ThrottleStatus::Applied;
-        alert.throttleMessage = alert.throttled
-            ? QStringLiteral("A 50 KiB/s limit was applied to this executable.")
-            : result.message;
+        ui->lblStatus->setText("⚙ " + usageText + " - throttled to 50 KiB/s");
+        emit bandwidthAlert(alert);
+        return;
     }
 
-    ui->lblStatus->setText(alert.throttled
-        ? "⚙ " + usageText + " - throttled to 50 KiB/s"
-        : "⚠ " + usageText + " - throttle not applied");
-
-    emit bandwidthAlert(alert);
+    // The QoS call runs on the throttle worker; this alert is completed when the
+    // result arrives in onThrottleApplied().
+    m_pendingThrottleEvents.insert(ThrottlePolicyManager::normalizePath(event.executablePath), alert);
+    ui->lblStatus->setText("⚙ " + usageText + " - applying a 50 KiB/s limit...");
+    m_throttlePolicies->apply(event.executablePath);
 }
 
 void NetworkWidget::setDataSaverMode(int mode)
@@ -505,7 +507,59 @@ void NetworkWidget::setDataSaverMode(int mode)
 
 void NetworkWidget::restoreAllDataSaverPolicies()
 {
-    const ThrottleResult result = m_throttlePolicies->restoreAll();
+    m_pendingThrottleEvents.clear();
+    ui->lblStatus->setText("Restoring Data Saver policies...");
+    m_throttlePolicies->restoreAll();
+}
+
+void NetworkWidget::onThrottleApplied(const QString &executablePath, const ThrottleResult &result)
+{
+    const bool applied = result.status == ThrottleStatus::Applied;
+
+    const auto pending = m_pendingThrottleEvents.find(executablePath);
+    if (pending != m_pendingThrottleEvents.end()) {
+        BandwidthEvent alert = pending.value();
+        m_pendingThrottleEvents.erase(pending);
+
+        alert.throttled = applied;
+        alert.throttleMessage = applied
+            ? QStringLiteral("A 50 KiB/s limit was applied to this executable.")
+            : result.message;
+
+        ui->lblStatus->setText(applied
+            ? "⚙ " + bandwidthUsageText(alert) + " - throttled to 50 KiB/s"
+            : "⚠ " + bandwidthUsageText(alert) + " - throttle not applied");
+
+        emit bandwidthAlert(alert);
+        return;
+    }
+
+    if (applied) {
+        ui->lblStatus->setText("Bandwidth limit applied.");
+        QMessageBox::information(this, "Bandwidth limit applied",
+                                 "The executable is now limited to 50 KiB/s.\n\n"
+                                 "Use the process menu again to remove the limit.");
+    } else {
+        ui->lblStatus->setText("⚠ Bandwidth limit not applied.");
+        QMessageBox::warning(this, "Bandwidth limit not applied", result.message);
+    }
+}
+
+void NetworkWidget::onThrottleRemoved(const QString &executablePath, const ThrottleResult &result)
+{
+    Q_UNUSED(executablePath);
+
+    if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
+        ui->lblStatus->setText("Bandwidth limit removed.");
+        return;
+    }
+
+    ui->lblStatus->setText("⚠ Bandwidth limit could not be removed.");
+    QMessageBox::warning(this, "QoS policy", result.message);
+}
+
+void NetworkWidget::onThrottlesRestored(const ThrottleResult &result)
+{
     if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
         ui->lblStatus->setText("Data Saver policies restored.");
         QMessageBox::information(this, "Data Saver", result.message);

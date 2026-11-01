@@ -1,30 +1,87 @@
 #pragma once
 
 #include <QHash>
+#include <QObject>
 #include <QString>
+#include <QStringList>
+#include <QVariantMap>
 
 #include "throttlebackend.h"
 
-class ThrottlePolicyManager
+class QThread;
+
+// ── Worker ───────────────────────────────────────────────────────────────────
+// Lives on its own thread. Every backend call spawns PowerShell and blocks for
+// up to 15 s, so none of it may run on the GUI thread.
+class ThrottleWorker : public QObject
 {
+    Q_OBJECT
 public:
-    ThrottlePolicyManager();
-    ~ThrottlePolicyManager();
+    explicit ThrottleWorker(QObject *parent = nullptr);
+    ~ThrottleWorker() override;
+
+public slots:
+    void applyRequest(const QString &executablePath, const QString &policyId,
+                      quint64 limitBitsPerSecond);
+    void removeRequest(const QString &executablePath, const QString &policyId);
+    void restoreAllRequest(const QVariantMap &policies);
+    void verifyRequest(const QVariantMap &policies);
+
+signals:
+    void applied(const QString &executablePath, const ThrottleResult &result);
+    void removed(const QString &executablePath, const ThrottleResult &result);
+    void restored(const ThrottleResult &result, const QStringList &remainingPolicyIds);
+    void verified(const QStringList &existingPolicyIds);
+
+private:
+    ThrottleBackend *m_backend = nullptr;
+};
+
+// ── Manager ──────────────────────────────────────────────────────────────────
+class ThrottlePolicyManager : public QObject
+{
+    Q_OBJECT
+public:
+    explicit ThrottlePolicyManager(QObject *parent = nullptr);
+    ~ThrottlePolicyManager() override;
 
     static constexpr quint64 DefaultLimitBitsPerSecond = 409600;
 
-    ThrottleResult apply(const QString &executablePath);
-    ThrottleResult remove(const QString &executablePath);
-    ThrottleResult restoreAll();
+    static QString normalizePath(const QString &path);
+
+    // These return immediately; the outcome arrives through the signals below.
+    void apply(const QString &executablePath);
+    void remove(const QString &executablePath);
+    void restoreAll();
+
+    // Purely a cache lookup, no PowerShell involved.
     bool isThrottled(const QString &executablePath) const;
 
+signals:
+    void throttleApplied(const QString &executablePath, const ThrottleResult &result);
+    void throttleRemoved(const QString &executablePath, const ThrottleResult &result);
+    void throttlesRestored(const ThrottleResult &result);
+
+    // Internal hand-off to the worker thread.
+    void applyRequested(const QString &executablePath, const QString &policyId,
+                        quint64 limitBitsPerSecond);
+    void removeRequested(const QString &executablePath, const QString &policyId);
+    void restoreAllRequested(const QVariantMap &policies);
+    void verifyRequested(const QVariantMap &policies);
+
+private slots:
+    void onWorkerApplied(const QString &executablePath, const ThrottleResult &result);
+    void onWorkerRemoved(const QString &executablePath, const ThrottleResult &result);
+    void onWorkerRestored(const ThrottleResult &result, const QStringList &remainingPolicyIds);
+    void onWorkerVerified(const QStringList &existingPolicyIds);
+
 private:
-    static QString normalizePath(const QString &path);
     static QString policyIdForPath(const QString &path);
+    QVariantMap policySnapshot() const;
     void load();
     void save() const;
-    void reconcile();
 
     QHash<QString, QString> m_activePolicies;
-    ThrottleBackend *m_backend = nullptr;
+    QThread *m_thread = nullptr;
+    ThrottleWorker *m_worker = nullptr;
 };

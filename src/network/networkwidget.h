@@ -4,6 +4,7 @@
  */
 #pragma once
 
+#include <QHash>
 #include <QWidget>
 #include <QSortFilterProxyModel>
 #include <QDialog>
@@ -66,6 +67,9 @@ private slots:
     void onCaptureStopped();
 
     void onBandwidthDetected(const BandwidthEvent &event);
+    void onThrottleApplied(const QString &executablePath, const ThrottleResult &result);
+    void onThrottleRemoved(const QString &executablePath, const ThrottleResult &result);
+    void onThrottlesRestored(const ThrottleResult &result);
 
     void onTreeViewContextMenu(const QPoint &pos);
 
@@ -93,4 +97,6 @@ private:
     int                     m_dataSaverMode = 1;
 
     QHash<QString, QIcon>   m_iconCache;
+    // Auto-throttle alerts waiting for the worker thread to report back.
+    QHash<QString, BandwidthEvent> m_pendingThrottleEvents;
 };

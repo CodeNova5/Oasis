@@ -36,7 +36,6 @@ SOURCES += \
     src/core/windowsicon.cpp \
     src/network/networkmonitor.cpp \
     src/network/bandwidthguard.cpp \
-    src/network/throttlebackend.cpp \
     src/network/windowsqosbackend.cpp \
     src/network/throttlepolicymanager.cpp \
     src/network/networkmodel.cpp \
