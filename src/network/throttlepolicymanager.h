@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QVariantMap>
@@ -50,9 +51,11 @@ public:
     static QString normalizePath(const QString &path);
 
     // These return immediately; the outcome arrives through the signals below.
-    void apply(const QString &executablePath);
+    // `automatic` marks a limit applied by Data Saver enforcement, which is the
+    // only kind restoreAutoApplied() will take back.
+    void apply(const QString &executablePath, bool automatic = false);
     void remove(const QString &executablePath);
-    void restoreAll();
+    void restoreAutoApplied();
 
     // Purely a cache lookup, no PowerShell involved.
     bool isThrottled(const QString &executablePath) const;
@@ -82,6 +85,9 @@ private:
     void save() const;
 
     QHash<QString, QString> m_activePolicies;
+    // Paths whose limit was applied by Data Saver enforcement, not by the user.
+    QSet<QString> m_autoApplied;
+    QHash<QString, bool> m_pendingAutomatic;
     QThread *m_thread = nullptr;
     ThrottleWorker *m_worker = nullptr;
 };

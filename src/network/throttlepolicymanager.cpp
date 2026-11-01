@@ -140,11 +140,12 @@ ThrottlePolicyManager::~ThrottlePolicyManager()
 
 constexpr quint64 ThrottlePolicyManager::DefaultLimitBitsPerSecond;
 
-void ThrottlePolicyManager::apply(const QString &executablePath)
+void ThrottlePolicyManager::apply(const QString &executablePath, bool automatic)
 {
     const QString path = normalizePath(executablePath);
     if (path.isEmpty()) return;
 
+    m_pendingAutomatic.insert(path, automatic);
     emit applyRequested(path, policyIdForPath(path), DefaultLimitBitsPerSecond);
 }
 
@@ -157,13 +158,19 @@ void ThrottlePolicyManager::remove(const QString &executablePath)
     emit removeRequested(path, policyId);
 }
 
-void ThrottlePolicyManager::restoreAll()
+void ThrottlePolicyManager::restoreAutoApplied()
 {
-    if (m_activePolicies.isEmpty()) {
+    QVariantMap policies;
+    for (auto it = m_activePolicies.constBegin(); it != m_activePolicies.constEnd(); ++it) {
+        if (m_autoApplied.contains(it.key()))
+            policies.insert(it.key(), it.value());
+    }
+
+    if (policies.isEmpty()) {
         emit throttlesRestored(noPoliciesResult());
         return;
     }
-    emit restoreAllRequested(policySnapshot());
+    emit restoreAllRequested(policies);
 }
 
 bool ThrottlePolicyManager::isThrottled(const QString &executablePath) const
@@ -193,10 +200,16 @@ QVariantMap ThrottlePolicyManager::policySnapshot() const
 void ThrottlePolicyManager::onWorkerApplied(const QString &executablePath,
                                             const ThrottleResult &result)
 {
+    const bool automatic = m_pendingAutomatic.take(executablePath);
     if (result.status == ThrottleStatus::Applied) {
         m_activePolicies.insert(executablePath, result.policyId.isEmpty()
                                                     ? policyIdForPath(executablePath)
                                                     : result.policyId);
+        // A user-applied limit always wins over an automatic one.
+        if (automatic)
+            m_autoApplied.insert(executablePath);
+        else
+            m_autoApplied.remove(executablePath);
         save();
     }
     emit throttleApplied(executablePath, result);
@@ -207,6 +220,7 @@ void ThrottlePolicyManager::onWorkerRemoved(const QString &executablePath,
 {
     if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
         m_activePolicies.remove(executablePath);
+        m_autoApplied.remove(executablePath);
         save();
     }
     emit throttleRemoved(executablePath, result);
@@ -216,10 +230,12 @@ void ThrottlePolicyManager::onWorkerRestored(const ThrottleResult &result,
                                              const QStringList &remainingPolicyIds)
 {
     for (auto it = m_activePolicies.begin(); it != m_activePolicies.end();) {
-        if (remainingPolicyIds.contains(it.value()))
+        if (remainingPolicyIds.contains(it.value())) {
             ++it;
-        else
+        } else {
+            m_autoApplied.remove(it.key());
             it = m_activePolicies.erase(it);
+        }
     }
     save();
     emit throttlesRestored(result);
@@ -246,6 +262,11 @@ void ThrottlePolicyManager::load()
     const QVariantMap policies = settings.value("activePolicies").toMap();
     for (auto it = policies.constBegin(); it != policies.constEnd(); ++it)
         m_activePolicies.insert(it.key(), it.value().toString());
+
+    const QStringList autoPolicies = settings.value("autoPolicies").toStringList();
+    for (const QString &path : autoPolicies) {
+        if (m_activePolicies.contains(path)) m_autoApplied.insert(path);
+    }
     settings.endGroup();
 }
 
@@ -257,5 +278,11 @@ void ThrottlePolicyManager::save() const
     for (auto it = m_activePolicies.constBegin(); it != m_activePolicies.constEnd(); ++it)
         policies.insert(it.key(), it.value());
     settings.setValue("activePolicies", policies);
+
+    QStringList autoPolicies;
+    for (const QString &path : m_autoApplied) {
+        if (m_activePolicies.contains(path)) autoPolicies << path;
+    }
+    settings.setValue("autoPolicies", autoPolicies);
     settings.endGroup();
 }

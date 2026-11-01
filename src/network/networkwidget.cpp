@@ -486,7 +486,8 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
     // result arrives in onThrottleApplied().
     m_pendingThrottleEvents.insert(ThrottlePolicyManager::normalizePath(event.executablePath), alert);
     ui->lblStatus->setText("⚙ " + usageText + " - applying a 50 KiB/s limit...");
-    m_throttlePolicies->apply(event.executablePath);
+    // Marked automatic so leaving enforce mode takes this limit back again.
+    m_throttlePolicies->apply(event.executablePath, true);
 }
 
 void NetworkWidget::setDataSaverMode(int mode)
@@ -509,7 +510,7 @@ void NetworkWidget::restoreAllDataSaverPolicies()
 {
     m_pendingThrottleEvents.clear();
     ui->lblStatus->setText("Restoring Data Saver policies...");
-    m_throttlePolicies->restoreAll();
+    m_throttlePolicies->restoreAutoApplied();
 }
 
 void NetworkWidget::onThrottleApplied(const QString &executablePath, const ThrottleResult &result)
