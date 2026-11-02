@@ -37,6 +37,8 @@ SOURCES += \
     src/network/networkmonitor.cpp \
     src/network/bandwidthguard.cpp \
     src/network/windowsqosbackend.cpp \
+    src/network/windivertapi.cpp \
+    src/network/downloadthrottle.cpp \
     src/network/throttlepolicymanager.cpp \
     src/network/networkmodel.cpp \
     src/network/networkwidget.cpp \
@@ -62,6 +64,8 @@ HEADERS += \
     src/network/bandwidthguard.h \
     src/network/throttlebackend.h \
     src/network/windowsqosbackend.h \
+    src/network/windivertapi.h \
+    src/network/downloadthrottle.h \
     src/network/throttlepolicymanager.h \
     src/network/networkmodel.h \
     src/network/networkwidget.h \
@@ -92,6 +96,11 @@ INCLUDEPATH += \
     src/firewall \
     src/hardware \
     src/taskbar
+
+# ─── WinDivert (download shaping) ────────────────────────────────────────────
+# WinDivert is resolved at runtime, so nothing links against it at build time.
+# Ship WinDivert.dll + WinDivert64.sys next to UltimateNetGuard.exe (or in a
+# windivert/ subfolder); without them only uploads are throttled via QoS.
 
 # ─── Windows system libraries ────────────────────────────────────────────────
 win32: LIBS += \

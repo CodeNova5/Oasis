@@ -1,5 +1,6 @@
 #include "throttlepolicymanager.h"
 
+#include "downloadthrottle.h"
 #include "windowsqosbackend.h"
 
 #include <QCryptographicHash>
@@ -15,6 +16,18 @@ ThrottleResult noPoliciesResult()
     result.status = ThrottleStatus::NotApplied;
     result.message = "No active bandwidth policies were found.";
     return result;
+}
+
+// Windows QoS can only shape egress, so a policy is a pair: QoS for uploads,
+// WinDivert for downloads. Say which halves actually took effect.
+QString withDownloadChannelNote(const QString &base)
+{
+    const QString reason = DownloadShaper::unavailableReason();
+    const QString note = reason.isEmpty()
+        ? QStringLiteral("The limit applies to downloads (WinDivert) and uploads (Windows QoS).")
+        : QStringLiteral("Only uploads are limited (Windows QoS). Download shaping is "
+                         "unavailable: %1").arg(reason);
+    return base.isEmpty() ? note : base + '\n' + note;
 }
 }
 
@@ -88,6 +101,14 @@ ThrottlePolicyManager::ThrottlePolicyManager(QObject *parent)
 
     load();
 
+    // Download shaping is in-process, so it is driven straight from the policy
+    // cache instead of round-tripping through the QoS worker thread.
+    m_download = new DownloadShaper;
+    connect(m_download, &DownloadShaper::shaperError,
+            this, &ThrottlePolicyManager::downloadLimiterError);
+    m_download->start();
+    rebuildDownloadLimits();
+
     m_thread = new QThread;
     m_thread->setObjectName(QStringLiteral("ThrottleWorker"));
     m_worker = new ThrottleWorker;
@@ -121,6 +142,17 @@ ThrottlePolicyManager::ThrottlePolicyManager(QObject *parent)
 
 ThrottlePolicyManager::~ThrottlePolicyManager()
 {
+    if (m_download) {
+        m_download->stop();
+        if (m_download->wait(3000)) {
+            delete m_download;
+        } else {
+            // Parked inside a WinDivert call; the OS reclaims it at exit.
+            m_download->disconnect(this);
+        }
+        m_download = nullptr;
+    }
+
     if (!m_thread) return;
 
     m_thread->quit();
@@ -143,16 +175,29 @@ constexpr quint64 ThrottlePolicyManager::DefaultLimitBitsPerSecond;
 void ThrottlePolicyManager::apply(const QString &executablePath, bool automatic)
 {
     const QString path = normalizePath(executablePath);
-    if (path.isEmpty()) return;
+    if (path.isEmpty() || m_inFlight.contains(path)) return;
 
+    m_inFlight.insert(path);
     m_pendingAutomatic.insert(path, automatic);
+
+    // The download half starts immediately instead of waiting for the
+    // PowerShell round trip that installs the QoS policy.
+    if (!m_downloadLimits.contains(path)) {
+        m_downloadLimits.insert(path, DefaultLimitBitsPerSecond);
+        pushDownloadLimits();
+    }
+
     emit applyRequested(path, policyIdForPath(path), DefaultLimitBitsPerSecond);
 }
 
 void ThrottlePolicyManager::remove(const QString &executablePath)
 {
     const QString path = normalizePath(executablePath);
-    if (path.isEmpty()) return;
+    if (path.isEmpty() || m_inFlight.contains(path)) return;
+
+    m_inFlight.insert(path);
+    if (m_downloadLimits.remove(path) > 0)
+        pushDownloadLimits();
 
     const QString policyId = m_activePolicies.value(path, policyIdForPath(path));
     emit removeRequested(path, policyId);
@@ -160,9 +205,11 @@ void ThrottlePolicyManager::remove(const QString &executablePath)
 
 void ThrottlePolicyManager::restoreAutoApplied()
 {
+    if (m_restoreInFlight) return;
+
     QVariantMap policies;
     for (auto it = m_activePolicies.constBegin(); it != m_activePolicies.constEnd(); ++it) {
-        if (m_autoApplied.contains(it.key()))
+        if (m_autoApplied.contains(it.key()) && !m_inFlight.contains(it.key()))
             policies.insert(it.key(), it.value());
     }
 
@@ -170,6 +217,11 @@ void ThrottlePolicyManager::restoreAutoApplied()
         emit throttlesRestored(noPoliciesResult());
         return;
     }
+
+    m_restoreInFlight = true;
+    m_restoringPaths = policies.keys();
+    for (const QString &path : m_restoringPaths)
+        m_inFlight.insert(path);
     emit restoreAllRequested(policies);
 }
 
@@ -200,7 +252,10 @@ QVariantMap ThrottlePolicyManager::policySnapshot() const
 void ThrottlePolicyManager::onWorkerApplied(const QString &executablePath,
                                             const ThrottleResult &result)
 {
+    m_inFlight.remove(executablePath);
     const bool automatic = m_pendingAutomatic.take(executablePath);
+
+    ThrottleResult outcome = result;
     if (result.status == ThrottleStatus::Applied) {
         m_activePolicies.insert(executablePath, result.policyId.isEmpty()
                                                     ? policyIdForPath(executablePath)
@@ -211,13 +266,20 @@ void ThrottlePolicyManager::onWorkerApplied(const QString &executablePath,
         else
             m_autoApplied.remove(executablePath);
         save();
+        outcome.message = withDownloadChannelNote(result.message);
+    } else if (m_downloadLimits.remove(executablePath) > 0) {
+        // The QoS policy did not install, so drop the optimistic download limit
+        // too rather than leaving a silent half-limit behind.
+        pushDownloadLimits();
     }
-    emit throttleApplied(executablePath, result);
+    emit throttleApplied(executablePath, outcome);
 }
 
 void ThrottlePolicyManager::onWorkerRemoved(const QString &executablePath,
                                             const ThrottleResult &result)
 {
+    m_inFlight.remove(executablePath);
+
     if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
         m_activePolicies.remove(executablePath);
         m_autoApplied.remove(executablePath);
@@ -229,6 +291,12 @@ void ThrottlePolicyManager::onWorkerRemoved(const QString &executablePath,
 void ThrottlePolicyManager::onWorkerRestored(const ThrottleResult &result,
                                              const QStringList &remainingPolicyIds)
 {
+    // Every policy in that restore request has now been attempted.
+    m_restoreInFlight = false;
+    for (const QString &path : m_restoringPaths)
+        m_inFlight.remove(path);
+    m_restoringPaths.clear();
+
     for (auto it = m_activePolicies.begin(); it != m_activePolicies.end();) {
         if (remainingPolicyIds.contains(it.value())) {
             ++it;
@@ -238,6 +306,7 @@ void ThrottlePolicyManager::onWorkerRestored(const ThrottleResult &result,
         }
     }
     save();
+    rebuildDownloadLimits();
     emit throttlesRestored(result);
 }
 
@@ -253,6 +322,27 @@ void ThrottlePolicyManager::onWorkerVerified(const QStringList &existingPolicyId
         }
     }
     if (changed) save();
+    // Whatever survived the check is still limited on the way down.
+    rebuildDownloadLimits();
+}
+
+bool ThrottlePolicyManager::isDownloadShapingAvailable() const
+{
+    return DownloadShaper::unavailableReason().isEmpty();
+}
+
+void ThrottlePolicyManager::rebuildDownloadLimits()
+{
+    m_downloadLimits.clear();
+    for (auto it = m_activePolicies.constBegin(); it != m_activePolicies.constEnd(); ++it)
+        m_downloadLimits.insert(it.key(), DefaultLimitBitsPerSecond);
+    pushDownloadLimits();
+}
+
+void ThrottlePolicyManager::pushDownloadLimits()
+{
+    if (m_download)
+        m_download->setPolicies(m_downloadLimits);
 }
 
 void ThrottlePolicyManager::load()

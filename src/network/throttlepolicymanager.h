@@ -10,6 +10,7 @@
 #include "throttlebackend.h"
 
 class QThread;
+class DownloadShaper;
 
 // ── Worker ───────────────────────────────────────────────────────────────────
 // Lives on its own thread. Every backend call spawns PowerShell and blocks for
@@ -60,10 +61,15 @@ public:
     // Purely a cache lookup, no PowerShell involved.
     bool isThrottled(const QString &executablePath) const;
 
+    // Downloads are shaped with WinDivert, uploads with Windows QoS.
+    bool isDownloadShapingAvailable() const;
+
 signals:
     void throttleApplied(const QString &executablePath, const ThrottleResult &result);
     void throttleRemoved(const QString &executablePath, const ThrottleResult &result);
     void throttlesRestored(const ThrottleResult &result);
+    // The WinDivert download shaper could not start, or stopped working.
+    void downloadLimiterError(const QString &message);
 
     // Internal hand-off to the worker thread.
     void applyRequested(const QString &executablePath, const QString &policyId,
@@ -84,10 +90,24 @@ private:
     void load();
     void save() const;
 
+    // The download shaper mirrors the active policy set; these keep it in sync.
+    void rebuildDownloadLimits();
+    void pushDownloadLimits();
+
     QHash<QString, QString> m_activePolicies;
     // Paths whose limit was applied by Data Saver enforcement, not by the user.
     QSet<QString> m_autoApplied;
     QHash<QString, bool> m_pendingAutomatic;
+    // Paths with a QoS call already running. A second request for the same path
+    // is dropped so PowerShell is never asked twice in parallel; the running call
+    // still reports its own result.
+    QSet<QString> m_inFlight;
+    bool m_restoreInFlight = false;
+    QStringList m_restoringPaths;
     QThread *m_thread = nullptr;
     ThrottleWorker *m_worker = nullptr;
+
+    // Path -> limit (bits/s) currently enforced by the WinDivert download shaper.
+    QHash<QString, quint64> m_downloadLimits;
+    DownloadShaper *m_download = nullptr;
 };

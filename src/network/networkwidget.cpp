@@ -262,6 +262,10 @@ NetworkWidget::NetworkWidget(QWidget *parent)
             this, &NetworkWidget::onThrottleRemoved);
     connect(m_throttlePolicies, &ThrottlePolicyManager::throttlesRestored,
             this, &NetworkWidget::onThrottlesRestored);
+    connect(m_throttlePolicies, &ThrottlePolicyManager::downloadLimiterError,
+            this, [this](const QString &message) {
+                ui->lblStatus->setText("⚠ Download shaping: " + message);
+            });
     m_firewall = new FirewallManager(this);
     m_firewall->initialize();
 
@@ -431,6 +435,7 @@ void NetworkWidget::requestThrottlePath(const QString &path)
 
     const QString prompt = QString(
         "Apply a 50 KiB/s limit to this executable?\n\n%1\n\n"
+        "Downloads are shaped with WinDivert and uploads with Windows QoS.\n"
         "This is path-wide and affects every running and future instance of this executable.\n"
         "The limit will remain until you remove it.").arg(path);
     if (QMessageBox::question(this, "Confirm bandwidth limit", prompt,
@@ -538,8 +543,9 @@ void NetworkWidget::onThrottleApplied(const QString &executablePath, const Throt
     if (applied) {
         ui->lblStatus->setText("Bandwidth limit applied.");
         QMessageBox::information(this, "Bandwidth limit applied",
-                                 "The executable is now limited to 50 KiB/s.\n\n"
-                                 "Use the process menu again to remove the limit.");
+                                 QString("The executable is now limited to 50 KiB/s.\n\n%1\n\n"
+                                         "Use the process menu again to remove the limit.")
+                                     .arg(result.message));
     } else {
         ui->lblStatus->setText("⚠ Bandwidth limit not applied.");
         QMessageBox::warning(this, "Bandwidth limit not applied", result.message);
@@ -556,7 +562,7 @@ void NetworkWidget::onThrottleRemoved(const QString &executablePath, const Throt
     }
 
     ui->lblStatus->setText("⚠ Bandwidth limit could not be removed.");
-    QMessageBox::warning(this, "QoS policy", result.message);
+    QMessageBox::warning(this, "Bandwidth limit", result.message);
 }
 
 void NetworkWidget::onThrottlesRestored(const ThrottleResult &result)
