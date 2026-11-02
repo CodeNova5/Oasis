@@ -61,8 +61,6 @@ public:
     // Purely a cache lookup, no PowerShell involved.
     bool isThrottled(const QString &executablePath) const;
 
-    // Downloads are shaped with WinDivert, uploads with Windows QoS.
-    bool isDownloadShapingAvailable() const;
 
 signals:
     void throttleApplied(const QString &executablePath, const ThrottleResult &result);

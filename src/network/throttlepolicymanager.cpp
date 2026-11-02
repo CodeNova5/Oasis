@@ -326,11 +326,6 @@ void ThrottlePolicyManager::onWorkerVerified(const QStringList &existingPolicyId
     rebuildDownloadLimits();
 }
 
-bool ThrottlePolicyManager::isDownloadShapingAvailable() const
-{
-    return DownloadShaper::unavailableReason().isEmpty();
-}
-
 void ThrottlePolicyManager::rebuildDownloadLimits()
 {
     m_downloadLimits.clear();
