@@ -43,7 +43,8 @@ SOURCES += \
     src/network/networkmodel.cpp \
     src/network/networkwidget.cpp \
     src/network/packetparser.cpp \
-    src/firewall/firewallmanager.cpp \
+    src/network/testfixtures.cpp \
+    src/network/policy.cpp \\\n    src/network/diagnostics.cpp \\\n    src/firewall/firewallmanager.cpp \
     src/firewall/firewallmodel.cpp \
     src/firewall/firewallwidget.cpp \
     src/hardware/hardwaremonitor.cpp \
