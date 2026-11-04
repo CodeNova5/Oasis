@@ -39,6 +39,7 @@
 - [System Requirements](#-system-requirements)
 - [Installation](#-installation)
 - [Building from Source](#-building-from-source)
+- [Bandwidth Throttling (QoS + WinDivert)](#-bandwidth-throttling-qos--windivert)
 - [Project Architecture](#-project-architecture)
 - [Module Deep Dive](#-module-deep-dive)
   - [Network Traffic Monitor](#-module-1-real-time-network-traffic-monitor)
@@ -97,6 +98,7 @@ The application is designed for:
 | Module | Description | Highlights |
 |--------|-------------|------------|
 | 🌐 **Network Monitor** | Real-time packet capture & analysis | Raw sockets, IPv4/IPv6, per-process tracking, Smart Auto-Detect |
+| ⏱️ **Bandwidth Throttling** | Per-executable download & upload limits | WinDivert inbound shaping + Windows QoS egress policy |
 | 🛡️ **Firewall Manager** | Windows Firewall COM API integration | Block/Allow, Whitelist Lockdown, Drag & Drop, Rule Import/Export |
 | 💻 **Hardware Monitor** | CPU, RAM, GPU, Disk monitoring | WMI + PDH, temperature sensors, circular gauges |
 | 📊 **Usage History** | Per-app daily bandwidth tracking | JSON persistence, CSV export, time filters, full icon resolution |
@@ -363,6 +365,8 @@ Changing the display mode **instantly re-renders** the RAM label without waiting
 
 See [Building from Source](#-building-from-source) below.
 
+> **Download throttling is optional:** it needs the WinDivert runtime. See [Download Shaping Runtime (WinDivert)](#download-shaping-runtime-windivert) for the two files to drop in and where they go.
+
 ---
 
 ## 🔧 Building from Source
@@ -403,6 +407,45 @@ mingw32-make -j%NUMBER_OF_PROCESSORS%
 qmake UltimateNetGuard.pro CONFIG+=release CONFIG+=static
 mingw32-make -j%NUMBER_OF_PROCESSORS%
 ```
+
+---
+
+## ⏱️ Bandwidth Throttling (QoS + WinDivert)
+
+A bandwidth limit is enforced in two halves, because no single Windows mechanism can shape both directions.
+
+| Direction | Engine | Where it shapes |
+|-----------|--------|-----------------|
+| **Upload (TX)** | Windows QoS — `New-NetQosPolicy -ThrottleRateActionBitsPerSecond`, `ActiveStore` | Kernel packet scheduler, egress only |
+| **Download (RX)** | WinDivert — diverge inbound packets, pace them per executable, re-inject | User-mode shaper on the inbound path |
+
+**Why not one engine?**
+
+- Windows QoS has no inbound equivalent of `ThrottleRateAction`, so a policy alone never slows a download.
+- WinDivert *could* do both, but pacing inbound **and** outbound would push every packet of a throttled app through user space, add jitter to uploads, and make the kernel driver mandatory for something the QoS scheduler already does for free.
+
+### What a limit covers
+
+- **Per executable, path-wide** — every running and future instance of that executable, matching how firewall rules behave.
+- **TCP and UDP**, IPv4 and IPv6, all connections of the executable sharing one rate budget.
+- **Not affected:** loopback traffic, ICMP, and protocols other than TCP/UDP.
+- Handshakes and ACK-only packets are re-injected immediately; only payload-bearing packets are paced, and never for more than ~300 ms, so TCP does not fall into retransmission timeouts.
+- Policies are persisted and re-applied at startup (the download half is rebuilt from the stored policy list).
+
+### Download Shaping Runtime (WinDivert)
+
+WinDivert is resolved at runtime, so the project builds and runs without it — download limits simply stay inactive and the UI says why.
+
+1. Download WinDivert 2.2.x (x64) from [reqrypt.org/windivert.html](https://reqrypt.org/windivert.html).
+2. Copy `WinDivert.dll` and `WinDivert64.sys` into [`third_party/windivert/`](third_party/windivert/README.txt).
+3. Rebuild (`run.sh` or `qmake` + `mingw32-make`). The build copies both files next to `UltimateNetGuard.exe` automatically.
+4. Run NetGuard as administrator — WinDivert requires elevation to install and open its driver.
+
+The loader also searches `bin/`, `bin/windivert/`, `bin/windivert/x64/` and `bin/x64/`, so dropping the two files into any of those works as well. A 32-bit build needs `WinDivert32.sys` instead.
+
+**Startup check:** the app opens a WinDivert handle once at launch with a filter that cannot match a packet (`inbound and tcp.DstPort == 0 and tcp.DstPort == 1`), which proves the driver is installed and the process is elevated without diverting any traffic. On failure the status bar reports `⚠ Download shaping: ...` and results for later limits name the missing piece.
+
+WinDivert is © Basil Twitter / reqrypt.org and dual-licensed LGPLv3 / GPLv2. Ship its `LICENSE` alongside the binaries when redistributing.
 
 ---
 
@@ -543,6 +586,7 @@ The network monitor is the heart of Ultimate NetGuard AIO. It provides deep, per
 | Process Properties | Show detailed info dialog | Custom `QDialog` with icon, path, stats |
 | Open File Location | Open Explorer at process path | `QDesktopServices::openUrl()` with `/select,` |
 | Copy Connection Info | Copy src:port to clipboard | `QApplication::clipboard()->setText()` |
+| Throttle Executable | Apply a 50 KiB/s limit to every instance | Windows QoS policy (upload) + WinDivert shaper (download) |
 
 ---
 
@@ -871,6 +915,8 @@ Ultimate NetGuard AIO ships with **6 professionally curated firewall rule profil
 | `AdjustTokenPrivileges` | `advapi32.h` | Enable SeDebugPrivilege |
 | `IsUserAnAdmin` | `shlobj.h` | Admin privilege check |
 | `CreateDXGIFactory` / `EnumAdapters` | `dxgi.h` | GPU adapter enumeration & identification |
+| `WinDivertOpen` / `WinDivertRecvEx` / `WinDivertSend` | `windivert.h` (loaded at runtime) | Download shaping: diverge, pace and re-inject inbound packets |
+| `New-NetQosPolicy` / `Remove-NetQosPolicy` | PowerShell (`NetQos`) | Upload shaping via a Windows QoS policy |
 
 </div>
 
@@ -965,6 +1011,14 @@ It **cannot** see the encrypted content of HTTPS traffic. It only sees that traf
 <summary><b>Q: Can I use this on a network I don't own?</b></summary>
 
 **Only with explicit authorization.** This tool is designed for monitoring your own machine's traffic. Using it to monitor traffic on networks or machines without authorization may violate local laws.
+</details>
+
+<details>
+<summary><b>Q: I applied a 50 KiB/s limit but the download is still fast — why?</b></summary>
+
+A limit has two halves. The **upload** half is a Windows QoS policy and works on any Windows 10+ machine. The **download** half needs the WinDivert runtime (`WinDivert.dll` + `WinDivert64.sys`) next to the executable, plus administrator rights — without it only uploads are limited.
+
+Check the message shown when the limit is applied: it either confirms both directions or states that download shaping is unavailable and why. See [Download Shaping Runtime (WinDivert)](#download-shaping-runtime-windivert).
 </details>
 
 <details>

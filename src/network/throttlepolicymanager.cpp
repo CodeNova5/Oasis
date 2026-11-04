@@ -106,6 +106,12 @@ ThrottlePolicyManager::ThrottlePolicyManager(QObject *parent)
     m_download = new DownloadShaper;
     connect(m_download, &DownloadShaper::shaperError,
             this, &ThrottlePolicyManager::downloadLimiterError);
+    connect(m_download, &DownloadShaper::availabilityChecked,
+            this, [this](bool available, const QString &reason) {
+                m_downloadStatus = available ? QString() : reason;
+                if (!available && !reason.isEmpty())
+                    emit downloadLimiterError(reason);
+            });
     m_download->start();
     rebuildDownloadLimits();
 

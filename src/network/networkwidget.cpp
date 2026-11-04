@@ -266,6 +266,11 @@ NetworkWidget::NetworkWidget(QWidget *parent)
             this, [this](const QString &message) {
                 ui->lblStatus->setText("⚠ Download shaping: " + message);
             });
+    // The WinDivert probe runs on the shaper thread; surface a result that
+    // arrived before the connection above existed.
+    const QString downloadStatus = m_throttlePolicies->downloadLimiterStatus();
+    if (!downloadStatus.isEmpty())
+        ui->lblStatus->setText("⚠ Download shaping: " + downloadStatus);
     m_firewall = new FirewallManager(this);
     m_firewall->initialize();
 

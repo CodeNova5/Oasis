@@ -98,9 +98,10 @@ INCLUDEPATH += \
     src/taskbar
 
 # ─── WinDivert (download shaping) ────────────────────────────────────────────
-# WinDivert is resolved at runtime, so nothing links against it at build time.
-# Ship WinDivert.dll + WinDivert64.sys next to UltimateNetGuard.exe (or in a
-# windivert/ subfolder); without them only uploads are throttled via QoS.
+# Resolved at runtime, so nothing links against it at build time. Put
+# WinDivert.dll + WinDivert64.sys in third_party/windivert/ and the bundling
+# rule at the end of this file copies them next to the executable; without them
+# only uploads are throttled (Windows QoS).
 
 # ─── Windows system libraries ────────────────────────────────────────────────
 win32: LIBS += \
@@ -134,3 +135,16 @@ OBJECTS_DIR = $$OUT_PWD/.obj
 MOC_DIR     = $$OUT_PWD/.moc
 RCC_DIR     = $$OUT_PWD/.rcc
 UI_DIR      = $$OUT_PWD/.ui
+
+# ─── WinDivert runtime bundling ──────────────────────────────────────────────
+# Copies the WinDivert runtime from third_party/windivert/ next to the
+# executable after linking. The leading "-" makes make ignore a copy that has
+# become stale (files removed after qmake ran) instead of failing the build.
+win32 {
+    WINDIVERT_BUNDLE = $$files($$PWD/third_party/windivert/WinDivert.dll)
+    WINDIVERT_BUNDLE += $$files($$PWD/third_party/windivert/WinDivert64.sys)
+    WINDIVERT_BUNDLE += $$files($$PWD/third_party/windivert/WinDivert32.sys)
+    for(windivert_file, WINDIVERT_BUNDLE) {
+        QMAKE_POST_LINK += - $$QMAKE_COPY \"$$shell_path($$windivert_file)\" \"$$shell_path($$DESTDIR)\" $$escape_expand(\\n\\t)
+    }
+}

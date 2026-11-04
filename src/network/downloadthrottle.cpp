@@ -265,10 +265,27 @@ void DownloadShaper::run()
 {
     windivert::Api &api = windivert::Api::instance();
     if (!api.loaded()) {
-        emit shaperError(api.unavailableReason());
+        emit availabilityChecked(false, api.unavailableReason());
         while (!stopRequested())
             WaitForSingleObject(static_cast<HANDLE>(m_wakeEvent), 500);
         return;
+    }
+
+    // Startup capability check. Opening a handle proves the driver is installed
+    // and that this process is elevated; the filter cannot match a packet, so
+    // the probe diverts no traffic. Failures are still reported per policy.
+    {
+        HANDLE probe = api.open("inbound and tcp.DstPort == 0 and tcp.DstPort == 1",
+                                windivert::LayerNetwork, 0, 0);
+        if (probe == INVALID_HANDLE_VALUE) {
+            emit availabilityChecked(false,
+                QStringLiteral("WinDivert could not start (error %1). WinDivert.dll and "
+                               "WinDivert64.sys must sit next to the application, and "
+                               "NetGuard must run as administrator.").arg(GetLastError()));
+        } else {
+            api.close(probe);
+            emit availabilityChecked(true, QString());
+        }
     }
 
     QElapsedTimer clock;

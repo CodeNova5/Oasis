@@ -33,6 +33,8 @@ public:
 signals:
     void shaperError(const QString &message);
     void limitingActiveChanged(bool active);
+    // Result of the startup capability check (driver present, process elevated).
+    void availabilityChecked(bool available, const QString &reason);
 
 protected:
     void run() override;

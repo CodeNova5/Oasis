@@ -61,6 +61,9 @@ public:
     // Purely a cache lookup, no PowerShell involved.
     bool isThrottled(const QString &executablePath) const;
 
+    // Empty while download shaping works; otherwise why it cannot start.
+    QString downloadLimiterStatus() const { return m_downloadStatus; }
+
 
 signals:
     void throttleApplied(const QString &executablePath, const ThrottleResult &result);
@@ -108,4 +111,5 @@ private:
     // Path -> limit (bits/s) currently enforced by the WinDivert download shaper.
     QHash<QString, quint64> m_downloadLimits;
     DownloadShaper *m_download = nullptr;
+    QString m_downloadStatus;
 };
