@@ -374,6 +374,33 @@ void DownloadShaper::run()
             policies = m_policies;
         }
 
+        if (!queue.isEmpty()) {
+            QQueue<QueuedPacket> remaining;
+            while (!queue.isEmpty()) {
+                QueuedPacket packet = queue.dequeue();
+                if (!policies.contains(packet.key)) {
+                    sendPacket(packet.data.constData(), UINT(packet.data.size()), packet.address);
+                    queuedBytes[packet.key] = qMax<qint64>(
+                        0, queuedBytes.value(packet.key) - packet.bytes);
+                } else {
+                    remaining.enqueue(packet);
+                }
+            }
+            queue = remaining;
+        }
+        for (auto it = nextDeparture.begin(); it != nextDeparture.end();) {
+            if (!policies.contains(it.key()))
+                it = nextDeparture.erase(it);
+            else
+                ++it;
+        }
+        for (auto it = queuedBytes.begin(); it != queuedBytes.end();) {
+            if (!policies.contains(it.key()))
+                it = queuedBytes.erase(it);
+            else
+                ++it;
+        }
+
         if (policies.isEmpty()) {
             if (handle != INVALID_HANDLE_VALUE) {
                 closeHandle();
