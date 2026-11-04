@@ -50,6 +50,7 @@ private:
     static bool syncStaleInstall();
     static void killOtherInstances();
     static bool copyExe();
+    static bool copyRuntimeFiles();
     static bool createDesktopShortcut();
     static void writeVersionFile();
     static void setFullPermissions(const QString &path);

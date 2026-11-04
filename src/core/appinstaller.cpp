@@ -180,8 +180,38 @@ bool AppInstaller::copyExe()
     }
 
     bool ok = QFile::copy(src, dst);
-    if (ok) setFullPermissions(dst);
+    if (ok) {
+        setFullPermissions(dst);
+        ok = copyRuntimeFiles();
+    }
     return ok;
+}
+
+bool AppInstaller::copyRuntimeFiles()
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList runtimeFiles{
+        QStringLiteral("WinDivert.dll"),
+        QStringLiteral("WinDivert64.sys"),
+        QStringLiteral("WinDivert32.sys")
+    };
+
+    for (const QString &fileName : runtimeFiles) {
+        const QString source = QDir(appDir).filePath(fileName);
+        if (!QFile::exists(source))
+            continue;
+
+        const QString destination = QDir(installDir()).filePath(fileName);
+        if (QFile::exists(destination)) {
+            setFullPermissions(destination);
+            QFile::remove(destination);
+        }
+        if (!QFile::copy(source, destination))
+            return false;
+        setFullPermissions(destination);
+    }
+
+    return true;
 }
 
 // ============================================================================
@@ -237,9 +267,10 @@ bool AppInstaller::syncStaleInstall()
     if (!src.exists() || !dst.exists())
         return false;
 
-    // Installed copy is the same build or newer → leave it alone
-    if (src.lastModified() <= dst.lastModified())
-        return false;
+    // Repair runtime files even when the executable itself is current.
+    if (src.lastModified() <= dst.lastModified()) {
+        return copyRuntimeFiles();
+    }
 
     // The installed instance may still be running and holding the file open.
     killOtherInstances();

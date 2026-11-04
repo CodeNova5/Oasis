@@ -31,10 +31,10 @@ constexpr const char *FilterExpression = "inbound and (tcp or udp) and not loopb
 constexpr int PortRefreshIntervalMs = 1000;
 constexpr int RetryAfterErrorMs = 5000;
 constexpr int PathCacheTtlMs = 10000;
-// How much latency the shaper may build up before it stops withholding packets
-// and lets the flow run ahead of the limit. Keeps TCP away from its RTO.
-constexpr int MaxQueuedDelayMs = 300;
-constexpr qint64 MinQueueBudgetBytes = 16 * 1024;
+// Stop receiving diverted packets while a flow is this far ahead. This lets
+// WinDivert's queue and TCP flow control apply backpressure instead of flushing
+// a burst that bypasses the configured rate.
+constexpr qint64 MaxQueuedBytesPerFlow = 256 * 1024;
 
 struct QueuedPacket
 {
@@ -47,10 +47,16 @@ struct QueuedPacket
 
 struct PacketShape
 {
+    quint8 protocol = 0;
     quint16 localPort = 0;
     qint64 wireBytes = 0;
     qint64 payloadBytes = 0;
 };
+
+QString endpointKey(quint8 protocol, quint16 localPort)
+{
+    return QStringLiteral("%1:%2").arg(protocol).arg(localPort);
+}
 
 QString normalizePath(const QString &path)
 {
@@ -82,6 +88,8 @@ bool describeInboundPacket(const char *data, UINT length, PacketShape *shape)
     } else {
         return false;
     }
+
+    shape->protocol = static_cast<quint8>(protocol);
 
     if (ipHeader < 20 || totalLength > qint64(length) || qint64(length) < ipHeader + 4)
         return false;
@@ -120,10 +128,10 @@ QString resolveExecutablePath(quint32 pid)
     return resolved ? QString::fromWCharArray(buffer, static_cast<int>(length)) : QString();
 }
 
-// Local port -> owning PID for both TCP and UDP, IPv4 and IPv6.
-QHash<quint16, quint32> localPortOwners()
+// Protocol/port -> owning PID for both TCP and UDP, IPv4 and IPv6.
+QHash<QString, quint32> localPortOwners()
 {
-    QHash<quint16, quint32> owners;
+    QHash<QString, quint32> owners;
 
     for (const ULONG family : {ULONG(AF_INET), ULONG(AF_INET6)}) {
         DWORD size = 0;
@@ -138,7 +146,7 @@ QHash<quint16, quint32> localPortOwners()
                         const quint16 port = ntohs(static_cast<quint16>(table->table[i].dwLocalPort));
                         const quint32 pid = static_cast<quint32>(table->table[i].dwOwningPid);
                         if (pid > 4)
-                            owners.insert(port, pid);
+                            owners.insert(endpointKey(IPPROTO_TCP, port), pid);
                     }
                 } else {
                     const auto *table = reinterpret_cast<const MIB_TCP6TABLE_OWNER_PID *>(buffer.constData());
@@ -146,7 +154,7 @@ QHash<quint16, quint32> localPortOwners()
                         const quint16 port = ntohs(static_cast<quint16>(table->table[i].dwLocalPort));
                         const quint32 pid = static_cast<quint32>(table->table[i].dwOwningPid);
                         if (pid > 4)
-                            owners.insert(port, pid);
+                            owners.insert(endpointKey(IPPROTO_TCP, port), pid);
                     }
                 }
             }
@@ -164,7 +172,7 @@ QHash<quint16, quint32> localPortOwners()
                         const quint16 port = ntohs(static_cast<quint16>(table->table[i].dwLocalPort));
                         const quint32 pid = static_cast<quint32>(table->table[i].dwOwningPid);
                         if (pid > 4)
-                            owners.insert(port, pid);
+                            owners.insert(endpointKey(IPPROTO_UDP, port), pid);
                     }
                 } else {
                     const auto *table = reinterpret_cast<const MIB_UDP6TABLE_OWNER_PID *>(buffer.constData());
@@ -172,7 +180,7 @@ QHash<quint16, quint32> localPortOwners()
                         const quint16 port = ntohs(static_cast<quint16>(table->table[i].dwLocalPort));
                         const quint32 pid = static_cast<quint32>(table->table[i].dwOwningPid);
                         if (pid > 4)
-                            owners.insert(port, pid);
+                            owners.insert(endpointKey(IPPROTO_UDP, port), pid);
                     }
                 }
             }
@@ -184,11 +192,11 @@ QHash<quint16, quint32> localPortOwners()
 
 // Ports that belong to an executable with an active limit. Only those packets
 // are paced; everything else is re-injected immediately.
-QHash<quint16, QString> buildPortKeyMap(const QHash<QString, quint64> &policies,
-                                        QHash<quint32, QPair<QString, qint64>> &pathCache)
+QHash<QString, QString> buildPortKeyMap(const QHash<QString, quint64> &policies,
+                                         QHash<quint32, QPair<QString, qint64>> &pathCache)
 {
-    QHash<quint16, QString> portKeys;
-    const QHash<quint16, quint32> owners = localPortOwners();
+    QHash<QString, QString> portKeys;
+    const QHash<QString, quint32> owners = localPortOwners();
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
 
     for (auto it = owners.constBegin(); it != owners.constEnd(); ++it) {
@@ -306,8 +314,9 @@ void DownloadShaper::run()
     QQueue<QueuedPacket> queue;
     QHash<QString, qint64> nextDeparture;
     QHash<QString, qint64> queuedBytes;
-    QHash<quint16, QString> portKeys;
+    QHash<QString, QString> portKeys;
     QHash<quint32, QPair<QString, qint64>> pathCache;
+    bool receivePaused = false;
     qint64 nextPortRefresh = 0;
     qint64 retryAt = 0;
     QString lastError;
@@ -388,6 +397,16 @@ void DownloadShaper::run()
                 }
             }
             queue = remaining;
+
+            if (receivePaused) {
+                receivePaused = false;
+                for (auto it = queuedBytes.constBegin(); it != queuedBytes.constEnd(); ++it) {
+                    if (it.value() > MaxQueuedBytesPerFlow / 2) {
+                        receivePaused = true;
+                        break;
+                    }
+                }
+            }
         }
 
         const qint64 nowMs = elapsed();
@@ -430,7 +449,7 @@ void DownloadShaper::run()
                 return;
             }
 
-            const QString key = portKeys.value(shape.localPort);
+            const QString key = portKeys.value(endpointKey(shape.protocol, shape.localPort));
             const quint64 bits = key.isEmpty() ? 0 : policies.value(key, 0);
             if (bits == 0) {
                 sendPacket(data.constData(), length, packetAddress);
@@ -447,26 +466,6 @@ void DownloadShaper::run()
                 return;
             }
 
-            const qint64 budget = qMax<qint64>(MinQueueBudgetBytes,
-                                               qint64(bits) / 8 * MaxQueuedDelayMs / 1000);
-            if (queuedBytes.value(key) + shape.wireBytes > budget) {
-                // Already MaxQueuedDelayMs behind: release this flow instead of
-                // pushing TCP into retransmissions.
-                QQueue<QueuedPacket> remaining;
-                while (!queue.isEmpty()) {
-                    QueuedPacket packet = queue.dequeue();
-                    if (packet.key == key)
-                        sendPacket(packet.data.constData(), UINT(packet.data.size()), packet.address);
-                    else
-                        remaining.enqueue(packet);
-                }
-                queue = remaining;
-                queuedBytes[key] = 0;
-                next = at;
-                sendPacket(data.constData(), length, packetAddress);
-                return;
-            }
-
             QueuedPacket packet;
             packet.data = QByteArray(data.constData(), int(length));
             packet.address = packetAddress;
@@ -475,9 +474,11 @@ void DownloadShaper::run()
             packet.bytes = shape.wireBytes;
             queue.enqueue(packet);
             queuedBytes[key] = queuedBytes.value(key) + shape.wireBytes;
+            if (queuedBytes.value(key) >= MaxQueuedBytesPerFlow)
+                receivePaused = true;
         };
 
-        if (!pendingReceive) {
+        if (!pendingReceive && !receivePaused) {
             ZeroMemory(&overlapped, sizeof(overlapped));
             overlapped.hEvent = recvEvent;
             ResetEvent(recvEvent);
