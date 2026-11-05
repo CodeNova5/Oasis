@@ -70,6 +70,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         if (role == Qt::UserRole) return p.pid;
         if (role == Qt::UserRole + 1) return p.name;
         if (role == Qt::UserRole + 2) return true; // isProcess flag
+        if (role == Qt::UserRole + 6) return p.identityId;
 
         // ── FIX: Custom Role for Numeric Sorting ──
         if (role == Qt::UserRole + 5) {
@@ -88,7 +89,17 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
 
         if (role == Qt::DisplayRole) {
             switch (col) {
-            case COL_NAME: return QString("%1  (PID %2)  •  %3 conn%4").arg(p.name).arg(p.pid).arg(p.conns.size()).arg(p.conns.size() == 1 ? "" : "s");
+            case COL_NAME: {
+                // NG-010: show the resolver's display name when it adds
+                // information beyond the process name (service rows already
+                // carry their service display name).
+                QString label = p.name;
+                if (!p.identityName.isEmpty() && !p.name.startsWith("Service:")
+                    && p.identityName.compare(p.name, Qt::CaseInsensitive) != 0) {
+                    label += " — " + p.identityName;
+                }
+                return QString("%1  (PID %2)  •  %3 conn%4").arg(label).arg(p.pid).arg(p.conns.size()).arg(p.conns.size() == 1 ? "" : "s");
+            }
             case COL_SRC:    return {};
             case COL_DST:    return {};
             case COL_SERVICE:return {};
@@ -175,6 +186,16 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
         const QString name = proc.isEmpty() ? (pid ? QString("PID %1").arg(pid) : "Unknown") : proc;
         const int pRow = findOrAddProcess(name, pid);
         ProcessNode &p = m_procs[pRow];
+
+        // NG-010: identities resolve asynchronously; attach them when they
+        // arrive and refresh the label without touching grouping or icons.
+        if (!info.identityId.isEmpty()
+            && (p.identityId != info.identityId || p.identityName != info.identityName)) {
+            p.identityId = info.identityId;
+            p.identityName = info.identityName;
+            const QModelIndex nameIdx = index(pRow, COL_NAME);
+            emit dataChanged(nameIdx, nameIdx, {Qt::DisplayRole, Qt::UserRole + 6});
+        }
 
         const quint64 bytes  = pkt.wireLen ? pkt.wireLen : pkt.captureLen;
         const bool    isDown = pkt.isDownload;

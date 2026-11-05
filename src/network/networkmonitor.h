@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include "packetparser.h"
+#include "identity/applicationidentity.h"
 
 struct AdapterInfo {
     QString ip;
@@ -28,6 +29,9 @@ struct CapturedPacketInfo {
     quint32 pid;
     QString proc;
     bool isService;
+    // NG-010: durable identity of the owning executable, when resolved.
+    QString identityId;
+    QString identityName;
 };
 Q_DECLARE_METATYPE(QList<CapturedPacketInfo>)
 
@@ -62,6 +66,9 @@ signals:
     void staleMappingDetected(quint32 pid, const QString &expected, const QString &actual);
     // Sent when the capture adapter could not be opened or used.
     void adapterDiagnostic(const QString &adapterName, const QString &reason);
+    // NG-010: emitted once per PID whose executable identity could not be
+    // resolved (typed failure); traffic is still attributed by process name.
+    void identityResolutionFailed(quint32 pid, const QString &status, const QString &message);
 
 protected:
     void run() override;
@@ -92,6 +99,13 @@ private:
     QHash<quint16, quint32> m_tcpListenCache;
     QHash<quint16, quint32> m_udpAnyCache;
     QHash<quint32, QString> m_procCache;
+
+    // NG-010: identity resolution for PIDs that own live connections. Kept on
+    // the cache thread; failures are remembered so protected processes are not
+    // re-opened on every refresh.
+    NetGuard::ApplicationIdentityResolver m_identityResolver;
+    QHash<quint32, NetGuard::ApplicationIdentity> m_identityCache;
+    QHash<quint32, quint32> m_identityFailurePids; // pid -> IdentityResolutionStatus
 
     // Throttles stale-mapping diagnostics emitted from the cache thread.
     qint64 m_lastStaleReportMs = 0;

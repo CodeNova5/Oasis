@@ -11,6 +11,7 @@
 #include "networkmonitor.h"
 #include <QMutexLocker>
 #include <QDateTime>
+#include <QSet>
 #include <thread>
 
 #include <winsock2.h>
@@ -391,6 +392,7 @@ void NetworkMonitor::run()
             quint32 pid  = 0;
             QString proc = "Unknown";
             bool isSvc = false;
+            QString identityId, identityName;
 
             if (pkt.protocol.startsWith("TCP") || pkt.protocol.startsWith("UDP")) {
                 QString sPortStr = QString::number(pkt.srcPort);
@@ -434,9 +436,17 @@ void NetworkMonitor::run()
                     proc = m_procCache.value(pid, "Unknown");
                     if (proc.startsWith("Service:")) isSvc = true;
                 }
+
+                // NG-010: attach the durable identity resolved by the cache
+                // thread. Read under the same lock as the tables above.
+                const auto identityIt = m_identityCache.constFind(pid);
+                if (identityIt != m_identityCache.constEnd()) {
+                    identityId = identityIt->id;
+                    identityName = identityIt->displayName;
+                }
             }
 
-            batch.append({pkt, pid, proc, isSvc});
+            batch.append({pkt, pid, proc, isSvc, identityId, identityName});
 
             qint64 now = QDateTime::currentMSecsSinceEpoch();
             if (now - lastBatchTime >= 250 || batch.size() >= 3000) {
@@ -574,6 +584,46 @@ void NetworkMonitor::updateCaches()
         }
     }
 
+    // ── 3b. Resolve durable identities for PIDs that own live connections ──
+    // Only processes with traffic are resolved, cached across refreshes, and
+    // capped per refresh so version-resource reads never stall the cache loop.
+    QSet<quint32> activePids;
+    for (quint32 pid : tCache)     if (pid) activePids.insert(pid);
+    for (quint32 pid : uCache)     if (pid) activePids.insert(pid);
+    for (quint32 pid : tListenCache) if (pid) activePids.insert(pid);
+    for (quint32 pid : uAnyCache)  if (pid) activePids.insert(pid);
+
+    QHash<quint32, NetGuard::ApplicationIdentity> idCache;
+    QHash<quint32, quint32> failureCache;
+    {
+        QMutexLocker lk(&m_cacheMutex);
+        for (auto it = m_identityCache.constBegin(); it != m_identityCache.constEnd(); ++it)
+            if (activePids.contains(it.key())) idCache.insert(it.key(), it.value());
+        for (auto it = m_identityFailurePids.constBegin(); it != m_identityFailurePids.constEnd(); ++it)
+            if (activePids.contains(it.key())) failureCache.insert(it.key(), it.value());
+    }
+
+    int resolvedThisRefresh = 0;
+    for (quint32 pid : activePids) {
+        if (idCache.contains(pid) || failureCache.contains(pid)) continue;
+        if (resolvedThisRefresh >= 64) break;
+        ++resolvedThisRefresh;
+
+        const NetGuard::IdentityResolution resolution = m_identityResolver.resolvePid(pid);
+        if (resolution.ok()) {
+            idCache.insert(pid, resolution.identity);
+            continue;
+        }
+
+        failureCache.insert(pid, static_cast<quint32>(resolution.status));
+        // Exiting processes are expected; only report failures that hide an
+        // executable we can still attribute.
+        if (resolution.status != NetGuard::IdentityResolutionStatus::ProcessNotFound)
+            emit identityResolutionFailed(pid,
+                NetGuard::identityResolutionStatusName(resolution.status),
+                resolution.message);
+    }
+
     // ── 4. Detect stale mappings: a connection key changed owner ──
     // Rate-limited to once per 5 seconds so a churning table cannot flood
     // the diagnostics model.
@@ -609,6 +659,8 @@ void NetworkMonitor::updateCaches()
     m_tcpListenCache = tListenCache;
     m_udpAnyCache = uAnyCache;
     m_procCache = pCache;
+    m_identityCache = idCache;
+    m_identityFailurePids = failureCache;
 }
 
 void NetworkMonitor::refreshLocalIPs()

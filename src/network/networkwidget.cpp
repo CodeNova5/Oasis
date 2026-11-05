@@ -307,6 +307,10 @@ NetworkWidget::NetworkWidget(QWidget *parent)
             [this](const QString &adapter, const QString &reason) {
         m_diagnostics->reportAdapterUnavailable(adapter, reason);
     }, Qt::QueuedConnection);
+    connect(m_monitor, &NetworkMonitor::identityResolutionFailed, this,
+            [this](quint32 pid, const QString &status, const QString &message) {
+        m_diagnostics->reportUnresolvedPid(pid, status, message);
+    }, Qt::QueuedConnection);
 
     connect(ui->cmbAdapter, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &NetworkWidget::onAdapterChanged);
     connect(ui->btnStartStop, &QPushButton::clicked, this, &NetworkWidget::onStartStop);

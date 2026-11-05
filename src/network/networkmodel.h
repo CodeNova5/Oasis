@@ -29,6 +29,8 @@ struct ProcessNode
     QString  name;
     QIcon    icon;
     quint32  pid    = 0;
+    QString  identityId;   // NG-010 durable executable identity, when resolved
+    QString  identityName; // display name derived from version metadata
     quint64  totalRxSpeed = 0;
     quint64  totalTxSpeed = 0;
     quint64  totalRxBytes = 0;
