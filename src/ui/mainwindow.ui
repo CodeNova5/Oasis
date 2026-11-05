@@ -545,6 +545,78 @@
           </layout>
          </widget>
         </item>
+        <item>
+         <widget class="QGroupBox" name="groupBoxDiagnostics">
+          <property name="title">
+           <string>Diagnostics (capture gaps)</string>
+          </property>
+          <layout class="QVBoxLayout">
+           <property name="spacing">
+            <number>10</number>
+           </property>
+           <property name="margin" stdset="0">
+            <number>20</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="lblDiagnosticsSummary">
+             <property name="text">
+              <string>No capture gaps recorded.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTableView" name="tableDiagnostics">
+             <property name="alternatingRowColors">
+              <bool>true</bool>
+             </property>
+             <property name="selectionBehavior">
+              <enum>QAbstractItemView::SelectRows</enum>
+             </property>
+             <property name="editTriggers">
+              <set>QAbstractItemView::NoEditTriggers</set>
+             </property>
+             <property name="minimumHeight">
+              <number>160</number>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout">
+             <item>
+              <widget class="QPushButton" name="btnExportDiagnostics">
+               <property name="text">
+                <string>Export diagnostics (JSON)</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnClearDiagnostics">
+               <property name="text">
+                <string>Clear diagnostics</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="diagnosticsSpacer">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>0</width>
+                 <height>0</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
           <item>
            <widget class="QGroupBox" name="groupBoxDataSaver">
             <property name="title">

@@ -54,6 +54,15 @@ signals:
     void captureStarted();
     void captureStopped();
 
+    // ── NG-003 diagnostics: aggregated capture gaps, safe to emit often ──
+    // Sent at the packet-batch cadence with per-interval counts (0 = none).
+    void captureGapDetected(int droppedPackets, int unresolvedPids,
+                            int unknownDirections, const QString &adapterName);
+    // Sent when a cached connection mapping changes owner between refreshes.
+    void staleMappingDetected(quint32 pid, const QString &expected, const QString &actual);
+    // Sent when the capture adapter could not be opened or used.
+    void adapterDiagnostic(const QString &adapterName, const QString &reason);
+
 protected:
     void run() override;
 
@@ -83,4 +92,7 @@ private:
     QHash<quint16, quint32> m_tcpListenCache;
     QHash<quint16, quint32> m_udpAnyCache;
     QHash<quint32, QString> m_procCache;
+
+    // Throttles stale-mapping diagnostics emitted from the cache thread.
+    qint64 m_lastStaleReportMs = 0;
 };

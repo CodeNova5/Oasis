@@ -13,6 +13,7 @@
 #include "networkmodel.h"
 #include "bandwidthguard.h"
 #include "throttlepolicymanager.h"
+#include "diagnostics.h"
 
 class FirewallManager;
 
@@ -77,6 +78,7 @@ public:
     QString getExactProcessPath(quint32 pid, const QString &procName);
     void selectAdapterByIPOrAuto(const QString &ipOrAuto);
     QList<AdapterInfo> getAdapterList() const { return m_adapters; }
+    DiagnosticsModel *diagnosticsModel() const { return m_diagnostics; }
 
 private:
     void populateAdapterCombo();
@@ -85,6 +87,7 @@ private:
 
     Ui::NetworkWidget       *ui = nullptr;
     NetworkMonitor          *m_monitor = nullptr;
+    DiagnosticsModel        *m_diagnostics = nullptr;
     NetworkTreeModel        *m_model = nullptr;
     BandwidthGuard          *m_bandwidthGuard = nullptr;
     ThrottlePolicyManager   *m_throttlePolicies = nullptr;

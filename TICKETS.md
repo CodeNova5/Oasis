@@ -19,7 +19,7 @@ The application builds with Qt 6.11.1 / MinGW 13.1 (`qmake UltimateNetGuard.pro`
 | --- | --- | --- | --- |
 | NG-001 | Partial | `src/network/testfixtures.*`: builders for browser download, updater, Windows service, DNS, TLS, VPN, unknown, game launcher, and IDE update, plus `runAllFixtures()` with identity assertions | Respawn-worker fixture added (`createRespawnWorkerFixture()`); `runAllFixtures()` now iterates all fixtures including respawn; identity/category assertions are recorded but not fully validated without `classifyProcess` integration; no Windows 10/11 run |
 | NG-002 | Partial | `src/network/policy.*`: identity, observation, policy, throttle-result, and audit-event structs with Qt metatypes and JSON helpers | Contract schema version added; `ThrottleResult` renamed to `NetworkPolicyThrottleResult` to avoid collision with `throttlebackend.h`; no round-trip test; no production consumer yet |
-| NG-003 | Partial | `src/network/diagnostics.*`: `DiagnosticsModel`, typed reasons, and reporters for drops, unresolved PIDs, unknown direction, stale mappings, and unavailable adapters | Model is never constructed; no support view or export; no capture or policy call site reports into it |
+| NG-003 | Partial | `src/network/diagnostics.*`: bounded `DiagnosticsModel` (500 records) with typed reasons, table columns, summary counts, and versioned JSON export; `NetworkMonitor` emits aggregated gap signals (drops, unresolved PIDs, unknown direction, stale mappings, adapter failures); `NetworkWidget` feeds the model; Settings tab has a Diagnostics support view with export and clear | Not exercised at runtime; no automated coverage for the export schema or the gap signals |
 | NG-010 | Partial | `src/identity/applicationidentity.*`: canonical-path resolution, version metadata, SHA-1 identity IDs, typed failures, and `QSettings` `IdentityStore` (schema 1) | Path equivalence, typed failures, and restart persistence untested at runtime; resolver not wired into monitoring |
 
 NG-011 through NG-016 and all of Phases 2–6 are **not started**. NG-011 and NG-012 can build on the NG-010 resolver; NG-014 also needs NG-013.
@@ -46,7 +46,7 @@ NG-011 through NG-016 and all of Phases 2–6 are **not started**. NG-011 and NG
 
 ### NG-003 Add diagnostics for capture gaps
 
-- **Status:** Partial — `DiagnosticsModel` and reporters exist in `src/network/diagnostics.*`; nothing constructs the model or feeds it from capture/policy code, and there is no support view or export yet.
+- **Status:** Partial — `DiagnosticsModel` is constructed in `NetworkWidget`, bounded at 500 records, and exposed through a Diagnostics group on the Settings tab (table, summary, JSON export, clear). `NetworkMonitor` reports dropped/truncated packets, unresolved owner PIDs, ambiguous direction, stale connection mappings, and adapter setup failures via queued signals; reporting is aggregated per batch so monitoring is not interrupted. Runtime exercise and export-schema tests are still missing.
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** NG-002

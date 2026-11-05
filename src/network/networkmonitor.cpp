@@ -249,12 +249,14 @@ void NetworkMonitor::run()
     emit captureStarted();
 
     if (m_adapterIP.isEmpty()) {
+        emit adapterDiagnostic(QString(), QStringLiteral("No adapter IP set."));
         emit captureError("No adapter IP set.");
         m_captureRunning.store(false); emit captureStopped(); return;
     }
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2,2), &wsa)) {
+        emit adapterDiagnostic(m_adapterIP, QStringLiteral("WSAStartup failed."));
         emit captureError("WSAStartup failed.");
         m_captureRunning.store(false); emit captureStopped(); return;
     }
@@ -264,6 +266,7 @@ void NetworkMonitor::run()
     SOCKET sock6 = INVALID_SOCKET;
 
     if (sock4 == INVALID_SOCKET) {
+        emit adapterDiagnostic(m_adapterIP, QStringLiteral("Raw socket unavailable — run as Administrator."));
         emit captureError("WSASocket failed — run as Administrator.");
         WSACleanup(); m_captureRunning.store(false); emit captureStopped(); return;
     }
@@ -273,6 +276,7 @@ void NetworkMonitor::run()
     sockaddr_in sa4 = {}; sa4.sin_family = AF_INET; sa4.sin_addr.s_addr = inet_addr(m_adapterIP.toLatin1().constData());
 
     if (bind(sock4, reinterpret_cast<sockaddr*>(&sa4), sizeof(sa4)) == SOCKET_ERROR) {
+        emit adapterDiagnostic(m_adapterIP, QStringLiteral("bind() IPv4 failed."));
         emit captureError("bind() IPv4 failed.");
         closesocket(sock4); WSACleanup(); m_captureRunning.store(false); emit captureStopped(); return;
     }
@@ -300,6 +304,22 @@ void NetworkMonitor::run()
     QList<CapturedPacketInfo> batch;
     batch.reserve(5000);
     qint64 lastBatchTime = QDateTime::currentMSecsSinceEpoch();
+
+    // NG-003: aggregate capture gaps per report interval so diagnostics stay
+    // cheap and never interrupt the capture loop.
+    int droppedSinceReport = 0;
+    int unresolvedSinceReport = 0;
+    int unknownDirectionSinceReport = 0;
+
+    auto flushGaps = [&]() {
+        if (droppedSinceReport > 0 || unresolvedSinceReport > 0 || unknownDirectionSinceReport > 0) {
+            emit captureGapDetected(droppedSinceReport, unresolvedSinceReport,
+                                    unknownDirectionSinceReport, m_adapterIP);
+            droppedSinceReport = 0;
+            unresolvedSinceReport = 0;
+            unknownDirectionSinceReport = 0;
+        }
+    };
 
     std::atomic<bool> cacheStop{false};
     std::thread cacheThread([this, &cacheStop]() {
@@ -331,7 +351,15 @@ void NetworkMonitor::run()
             if (activeSock == INVALID_SOCKET) continue;
 
             int len = recv(activeSock, buf.data(), buf.size(), 0);
-            if (len == SOCKET_ERROR) { if (WSAGetLastError() == WSAEMSGSIZE) len = buf.size(); else continue; }
+            if (len == SOCKET_ERROR) {
+                if (WSAGetLastError() == WSAEMSGSIZE) {
+                    len = buf.size();          // truncated packet: capture gap
+                    ++droppedSinceReport;
+                } else {
+                    ++droppedSinceReport;      // socket error: capture gap
+                    continue;
+                }
+            }
             else if (len <= 0) continue;
 
             ParsedPacket pkt = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(buf.constData()), static_cast<uint32_t>(len));
@@ -340,15 +368,25 @@ void NetworkMonitor::run()
             const bool srcIsLocal = m_localIPs.contains(pkt.srcIP) || pkt.srcIP == m_adapterIP || pkt.srcIP == m_adapterIPv6 || pkt.srcIP.startsWith("127.") || pkt.srcIP == "::1";
             const bool dstIsLocal = m_localIPs.contains(pkt.dstIP) || pkt.dstIP == m_adapterIP || pkt.dstIP == m_adapterIPv6 || pkt.dstIP.startsWith("127.") || pkt.dstIP == "::1";
 
+            bool directionKnown = true;
             if (dstIsLocal && !srcIsLocal) {
                 pkt.isDownload = true;
             } else if (srcIsLocal && !dstIsLocal) {
                 pkt.isDownload = false;
             } else if (dstIsLocal && srcIsLocal) {
                 pkt.isDownload = (pkt.dstIP == m_adapterIP || pkt.dstIP == m_adapterIPv6);
+                // Both endpoints are local: direction is only known when one of
+                // them is this adapter (otherwise it is loopback/another adapter).
+                directionKnown = (pkt.dstIP == m_adapterIP || pkt.dstIP == m_adapterIPv6 ||
+                                  pkt.srcIP == m_adapterIP || pkt.srcIP == m_adapterIPv6);
             } else {
+                // Neither endpoint is local: the packet belongs to another adapter
+                // (promiscuous capture) and its direction cannot be attributed.
                 pkt.isDownload = (pkt.dstIP == m_adapterIP || pkt.dstIP == m_adapterIPv6);
+                directionKnown = false;
             }
+            if (!directionKnown)
+                ++unknownDirectionSinceReport;
 
             quint32 pid  = 0;
             QString proc = "Unknown";
@@ -388,6 +426,7 @@ void NetworkMonitor::run()
                 if (pid == 0) {
                     proc = "System Services / Network Overhead";
                     isSvc = true;
+                    ++unresolvedSinceReport;   // NG-003: owner PID not resolvable
                 } else if (pid == 4) {
                     proc = "System Kernel (ntoskrnl)";
                     isSvc = true;
@@ -403,12 +442,14 @@ void NetworkMonitor::run()
             if (now - lastBatchTime >= 250 || batch.size() >= 3000) {
                 emit packetsCapturedBatch(batch);
                 batch.clear();
+                flushGaps();
                 lastBatchTime = now;
             }
         }
     }
 
     if (!batch.isEmpty()) emit packetsCapturedBatch(batch);
+    flushGaps();
 
     cacheStop.store(true);
     cacheThread.join();
@@ -530,6 +571,35 @@ void NetworkMonitor::updateCaches()
                     CloseHandle(hProc);
                 }
             }
+        }
+    }
+
+    // ── 4. Detect stale mappings: a connection key changed owner ──
+    // Rate-limited to once per 5 seconds so a churning table cannot flood
+    // the diagnostics model.
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs - m_lastStaleReportMs >= 5000) {
+        QList<QPair<quint32, quint32>> changes; // old pid -> new pid
+        {
+            QMutexLocker lk(&m_cacheMutex);
+            const auto scan = [&changes](const QHash<QString, quint32> &oldMap,
+                                         const QHash<QString, quint32> &newMap) {
+                for (auto it = newMap.constBegin(); it != newMap.constEnd() && changes.size() < 3; ++it) {
+                    const quint32 oldPid = oldMap.value(it.key(), 0);
+                    if (oldPid != 0 && it.value() != 0 && oldPid != it.value())
+                        changes.append(qMakePair(oldPid, it.value()));
+                }
+            };
+            scan(m_tcpCache, tCache);
+            if (changes.size() < 3)
+                scan(m_udpCache, uCache);
+        }
+        if (!changes.isEmpty()) {
+            m_lastStaleReportMs = nowMs;
+            for (const auto &change : changes)
+                emit staleMappingDetected(change.first,
+                                          QStringLiteral("PID %1").arg(change.first),
+                                          QStringLiteral("PID %1").arg(change.second));
         }
     }
 

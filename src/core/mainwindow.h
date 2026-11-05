@@ -26,6 +26,7 @@ class NetworkWidget;
 class FirewallWidget;
 class HardwareWidget;
 class TaskbarOverlay;
+class DiagnosticsModel;
 struct BandwidthEvent;
 
 // Data structure to hold daily traffic per application
@@ -65,12 +66,17 @@ private slots:
     void onClearHistory();
     void onHistoryFilterChanged(int index);
 
+    void refreshDiagnosticsSummary();
+    void onExportDiagnostics();
+    void onClearDiagnostics();
+
     void recordLiveTraffic();
     void refreshHistoryUI();
     void saveHistoryToJson();
 
 private:
     void setupWidgets();
+    void setupDiagnosticsView();
     void setupTray();
     void animateLiveBadge();
     void loadSettings();

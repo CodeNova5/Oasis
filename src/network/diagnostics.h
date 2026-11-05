@@ -54,6 +54,12 @@ enum class AdapterStatus : int {
     Other
 };
 
+enum class MappingStatus : int {
+    Fresh = 0,
+    StaleMapping,
+    MissingMapping
+};
+
 // ─── Diagnostic record ──────────────────────────────────────────────────────
 struct DiagnosticRecord
 {
@@ -62,6 +68,7 @@ struct DiagnosticRecord
     PidResolutionStatus pidStatus = PidResolutionStatus::Resolved;
     DirectionStatus directionStatus = DirectionStatus::DirectionKnown;
     AdapterStatus adapterStatus = AdapterStatus::AdapterAvailable;
+    MappingStatus mappingStatus = MappingStatus::Fresh;
     QString details;         // Human-readable description
     QString context;         // Where/what was happening (e.g. "capture loop", "policy apply")
     quint32 affectedPid = 0; // PID involved, if any
@@ -75,6 +82,7 @@ enum DiagnosticsRole : int {
     RolePidStatus,                     // PidResolutionStatus (int)
     RoleDirectionStatus,               // DirectionStatus (int)
     RoleAdapterStatus,                 // AdapterStatus (int)
+    RoleMappingStatus,                 // MappingStatus (int)
     RoleDetails,                       // QString
     RoleContext,                       // QString
     RoleAffectedPid,                   // quint32
@@ -83,20 +91,26 @@ enum DiagnosticsRole : int {
 
 // ─── DiagnosticsModel ───────────────────────────────────────────────────────
 // A QAbstractListModel that holds DiagnosticRecord objects and reports gap statistics.
+// Records are bounded so a persistent capture gap cannot grow memory without limit.
 // The UI can subscribe to model signals to show a support/diagnostics view.
 class DiagnosticsModel : public QAbstractListModel
 {
     Q_OBJECT
 public:
+    // Upper bound on retained records. The oldest record is evicted first.
+    enum { MaxRecords = 500 };
+
     explicit DiagnosticsModel(QObject *parent = nullptr);
     ~DiagnosticsModel() override = default;
 
     // QAbstractListModel interface
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
+    int columnCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
+    QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
 
-    // Public API: add a diagnostic record (emits layoutChanged)
+    // Public API: add a diagnostic record (bounded, oldest evicted first)
     void addRecord(const DiagnosticRecord &record);
 
     // Remove every record (reset / export).
@@ -113,7 +127,12 @@ public:
     int droppedPacketsCount() const;
     int unresolvedPidsCount() const;
     int unknownDirectionCount() const;
+    int staleMappingsCount() const;
+    int adapterUnavailableCount() const;
     QList<DiagnosticRecord> records() const;
+
+    // Export the current diagnostics as versioned JSON (no packet payloads).
+    QString toJson() const;
 
 signals:
     // Emitted when a new record is added; the UI can react or filter

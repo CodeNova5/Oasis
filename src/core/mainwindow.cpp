@@ -13,6 +13,7 @@
 #include "appinstaller.h"
 #include "windowsicon.h"
 #include "network/networkwidget.h"
+#include "network/diagnostics.h"
 #include "firewall/firewallwidget.h"
 #include "hardware/hardwarewidget.h"
 #include "taskbar/taskbaroverlay.h"
@@ -27,6 +28,8 @@
 #include <QApplication>
 #include <QDir>
 #include <QTreeView>
+#include <QTableView>
+#include <QHeaderView>
 #include <QAbstractItemModel>
 #include <QStandardPaths>
 #include <QJsonDocument>
@@ -58,6 +61,7 @@ MainWindow::MainWindow(QWidget *parent)
         move(scr->availableGeometry().center() - rect().center());
 
     setupWidgets();
+    setupDiagnosticsView();
     setupTray();
 
     loadSettings();
@@ -423,6 +427,77 @@ void MainWindow::onClearHistory()
         saveHistoryToJson();
         refreshHistoryUI();
     }
+}
+
+void MainWindow::setupDiagnosticsView()
+{
+    DiagnosticsModel *diag = m_netWidget ? m_netWidget->diagnosticsModel() : nullptr;
+    if (!diag)
+        return;
+
+    ui->tableDiagnostics->setModel(diag);
+    QHeaderView *header = ui->tableDiagnostics->horizontalHeader();
+    header->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(2, QHeaderView::Stretch);
+    header->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    ui->tableDiagnostics->verticalHeader()->setVisible(false);
+
+    connect(diag, &QAbstractItemModel::rowsInserted, this, &MainWindow::refreshDiagnosticsSummary);
+    connect(diag, &QAbstractItemModel::rowsRemoved, this, &MainWindow::refreshDiagnosticsSummary);
+    connect(diag, &QAbstractItemModel::modelReset, this, &MainWindow::refreshDiagnosticsSummary);
+    connect(ui->btnExportDiagnostics, &QPushButton::clicked, this, &MainWindow::onExportDiagnostics);
+    connect(ui->btnClearDiagnostics, &QPushButton::clicked, this, &MainWindow::onClearDiagnostics);
+
+    refreshDiagnosticsSummary();
+}
+
+void MainWindow::refreshDiagnosticsSummary()
+{
+    DiagnosticsModel *diag = m_netWidget ? m_netWidget->diagnosticsModel() : nullptr;
+    if (!diag)
+        return;
+
+    if (diag->rowCount() == 0) {
+        ui->lblDiagnosticsSummary->setText("No capture gaps recorded.");
+        return;
+    }
+
+    ui->lblDiagnosticsSummary->setText(
+        QString("%1 records · %2 dropped · %3 unresolved PID · %4 unknown direction · %5 stale mapping · %6 adapter")
+            .arg(diag->rowCount())
+            .arg(diag->droppedPacketsCount())
+            .arg(diag->unresolvedPidsCount())
+            .arg(diag->unknownDirectionCount())
+            .arg(diag->staleMappingsCount())
+            .arg(diag->adapterUnavailableCount()));
+}
+
+void MainWindow::onExportDiagnostics()
+{
+    DiagnosticsModel *diag = m_netWidget ? m_netWidget->diagnosticsModel() : nullptr;
+    if (!diag)
+        return;
+
+    const QString fileName = QFileDialog::getSaveFileName(this, "Export Diagnostics",
+        QDir::homePath() + "/NetGuard_Diagnostics.json", "JSON Files (*.json)");
+    if (fileName.isEmpty()) return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Export Error", "Could not create the file.");
+        return;
+    }
+
+    file.write(diag->toJson().toUtf8());
+    file.close();
+    QMessageBox::information(this, "Export Successful", "Diagnostics exported successfully!");
+}
+
+void MainWindow::onClearDiagnostics()
+{
+    if (DiagnosticsModel *diag = m_netWidget ? m_netWidget->diagnosticsModel() : nullptr)
+        diag->clear();
 }
 
 void MainWindow::onExportHistory()

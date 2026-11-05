@@ -253,6 +253,7 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     hv->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     m_monitor = new NetworkMonitor(this);
+    m_diagnostics = new DiagnosticsModel(this);
         m_bandwidthGuard = new BandwidthGuard(this);
     m_throttlePolicies = new ThrottlePolicyManager(this);
     // QoS changes run on a worker thread, so results arrive asynchronously.
@@ -283,6 +284,29 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     connect(m_monitor, &NetworkMonitor::captureError, this, &NetworkWidget::onCaptureError, Qt::QueuedConnection);
     connect(m_monitor, &NetworkMonitor::captureStarted, this, &NetworkWidget::onCaptureStarted, Qt::QueuedConnection);
     connect(m_monitor, &NetworkMonitor::captureStopped, this, &NetworkWidget::onCaptureStopped, Qt::QueuedConnection);
+
+    // NG-003: capture gaps are reported on the GUI thread so the support view
+    // and export only ever touch the model from one thread.
+    connect(m_monitor, &NetworkMonitor::captureGapDetected, this,
+            [this](int dropped, int unresolved, int unknownDirection, const QString &adapter) {
+        if (dropped > 0)
+            m_diagnostics->reportDroppedPackets(dropped, adapter, QStringLiteral("capture loop"));
+        if (unresolved > 0)
+            m_diagnostics->reportUnresolvedPid(0, QStringLiteral("System Services / Network Overhead"),
+                                              QStringLiteral("capture loop"));
+        if (unknownDirection > 0)
+            m_diagnostics->reportUnknownDirection(
+                QStringLiteral("%1 packets with ambiguous direction").arg(unknownDirection),
+                QStringLiteral("capture loop"));
+    }, Qt::QueuedConnection);
+    connect(m_monitor, &NetworkMonitor::staleMappingDetected, this,
+            [this](quint32 pid, const QString &expected, const QString &actual) {
+        m_diagnostics->reportStaleMapping(pid, expected, actual, QStringLiteral("connection cache"));
+    }, Qt::QueuedConnection);
+    connect(m_monitor, &NetworkMonitor::adapterDiagnostic, this,
+            [this](const QString &adapter, const QString &reason) {
+        m_diagnostics->reportAdapterUnavailable(adapter, reason);
+    }, Qt::QueuedConnection);
 
     connect(ui->cmbAdapter, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &NetworkWidget::onAdapterChanged);
     connect(ui->btnStartStop, &QPushButton::clicked, this, &NetworkWidget::onStartStop);
