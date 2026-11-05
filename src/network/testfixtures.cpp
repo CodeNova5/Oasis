@@ -413,7 +413,32 @@ QList<TestPacketFixture> createIdeUpdateFixture()
     return fixtures;
 }
 
-// ─── Convenience: convert QHostAddress to uint32_t ─────────────────────────
+// ─── Respawn worker: traffic from a worker that respawns after termination ─────
+QList<TestPacketFixture> createRespawnWorkerFixture()
+{
+    QList<TestPacketFixture> fixtures;
+
+    // Simulate: worker process that respawns after termination    // This models background worker processes that restart when killed    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
+    uint32_t dstIp = qHostAddressToIp32("192.0.0.1");
+
+    // First fixture: worker initial connection    TestPacketFixture f;    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, "192.168.1.100", "192.0.0.1", true);
+    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
+    f.scenario = TrafficScenario::RespawnWorker;
+    f.expectedCategory = "AutoCandidate";
+    f.expectedIdentity = "Worker process (respawn)";
+    fixtures.append(f);
+
+    // Second fixture: worker respawn after termination    TestPacketFixture f2;
+    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 443, "192.168.1.100", "192.0.0.1", true);
+    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
+    f2.scenario = TrafficScenario::RespawnWorker;
+    f2.expectedCategory = "AutoCandidate";
+    f2.expectedIdentity = "Worker process (respawn #2)";
+    fixtures.append(f2);
+
+    return fixtures;
+}
+
 uint32_t qHostAddressToIp32(const QString &addr)
 {
     QHostAddress ha(addr);
@@ -436,34 +461,29 @@ FixtureResult runAllFixtures()
         createVpnFixture(),
         createUnknownFixture(),
         createGameLauncherFixture(),
-        createIdeUpdateFixture()
+        createIdeUpdateFixture(),
+        createRespawnWorkerFixture()
     };
 
     for (const auto &batch : allFixtures) {
         for (const auto &f : batch) {
-            // Simple validation: check that parsed is valid and category matches
-            if (!f.parsed.valid) {
+            // Simple validation: check that parsed is valid and category matches            if (!f.parsed.valid) {
                 result.details += QString("FAIL %1: parsed invalid\
 ").arg(static_cast<int>(f.scenario));
                 result.failed++;
                 continue;
             }
 
-            // Check category match
-            if (f.expectedCategory != "Unknown" && f.expectedCategory != "Protected" &&
+            // Check category match            if (f.expectedCategory != "Unknown" && f.expectedCategory != "Protected" &&
                 f.expectedCategory != "AskFirst" && f.expectedCategory != "AutoCandidate") {
                 // Category check skipped for Unknown category
             } else if (f.expectedCategory != "Unknown") {
-                // We'll just note it as passed for now - actual comparison
-                // would need the classifyProcess logic integrated
+                // We'll just note it as passed for now - actual comparison                // would need the classifyProcess logic integrated
             }
 
             result.passed++;
             result.details += QString("PASS %1: %2 -> %3\
-")
-                .arg(static_cast<int>(f.scenario))
-                .arg(f.expectedIdentity)
-                .arg(f.expectedCategory);
+")                .arg(static_cast<int>(f.scenario))                .arg(f.expectedIdentity)                .arg(f.expectedCategory);
         }
     }
 

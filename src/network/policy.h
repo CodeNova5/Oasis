@@ -84,7 +84,7 @@ Q_DECLARE_METATYPE(NetworkPolicy)
 
 // ─── Throttle result ────────────────────────────────────────────────────────
 // Returned by enforcement coordinator to describe what happened with a policy.
-struct ThrottleResult
+struct NetworkPolicyThrottleResult
 {
     enum class Status { NotApplied, Applied, Removed, Failed };
     Status status = Status::NotApplied;
@@ -97,7 +97,7 @@ struct ThrottleResult
     QString downloadReason;  // Why download shaping succeeded/fails
 };
 
-Q_DECLARE_METATYPE(ThrottleResult)
+Q_DECLARE_METATYPE(NetworkPolicyThrottleResult)
 
 // ─── Audit event ────────────────────────────────────────────────────────────
 // Persisted audit record for detection, classification, recommendation, decision, enforcement.
@@ -131,8 +131,8 @@ ActivityObservation fromJsonActivityObservation(const QString &json);
 QString toJson(const NetworkPolicy &policy);
 NetworkPolicy fromJsonNetworkPolicy(const QString &json);
 
-QString toJson(const ThrottleResult &result);
-ThrottleResult fromJsonThrottleResult(const QString &json);
+QString toJson(const NetworkPolicyThrottleResult &result);
+NetworkPolicyThrottleResult fromJsonNetworkPolicyThrottleResult(const QString &json);
 
 QString toJson(const AuditEvent &event);
 AuditEvent fromJsonAuditEvent(const QString &json);

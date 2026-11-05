@@ -176,7 +176,7 @@ NetworkPolicy fromJsonNetworkPolicy(const QString &json)
 
 // ─── Throttle Result serialization ──────────────────────────────────────────
 
-QString toJson(const ThrottleResult &result)
+QString toJson(const NetworkPolicyThrottleResult &result)
 {
     QJsonObject obj;
     obj[QStringLiteral("status")] = static_cast<int>(result.status);
@@ -191,16 +191,16 @@ QString toJson(const ThrottleResult &result)
     return QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 }
 
-ThrottleResult fromJsonThrottleResult(const QString &json)
+NetworkPolicyThrottleResult fromJsonThrottleResult(const QString &json)
 {
-    ThrottleResult result;
+    NetworkPolicyThrottleResult result;
     QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
     if (doc.isNull() || !doc.isObject()) {
-        qWarning() << "Invalid JSON for ThrottleResult";
+        qWarning() << "Invalid JSON for NetworkPolicyThrottleResult";
         return result;
     }
     QJsonObject obj = doc.object();
-    result.status = static_cast<ThrottleResult::Status>(
+    result.status = static_cast<NetworkPolicyThrottleResult::Status>(
         obj.value(QStringLiteral("status")).toInt());
     result.message = obj.value(QStringLiteral("message")).toString();
     result.policyId = obj.value(QStringLiteral("policyId")).toString();

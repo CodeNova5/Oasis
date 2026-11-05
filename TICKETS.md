@@ -5,14 +5,30 @@ This backlog implements [PRD.md](PRD.md). Tickets are ordered by dependency insi
 ## Ticket conventions
 
 - **Type:** feature, refactor, bug, test, documentation, or security.
-- **Status:** proposed unless changed by the team.
+- **Status:** `Done`, `Partial`, or `Not started`, summarized in [Current status](#current-status). A ticket with no status line is `Not started`.
 - **Dependencies:** tickets that should land first.
 - **Acceptance criteria:** observable completion conditions.
+
+## Current status
+
+Last updated: 2026-11-05. Status values: **Done** (acceptance criteria met and verified), **Partial** (code exists but acceptance criteria are unmet or unverified), **Not started** (proposed, no code).
+
+The application builds with Qt 6.11.1 / MinGW 13.1 (`qmake UltimateNetGuard.pro`, then `mingw32-make -j4`). One warning remains: unused `buildIpv6TcpPacket()` in `testfixtures.cpp`. Nothing below has been validated at runtime yet.
+
+| Ticket | Status | Implemented | Remaining |
+| --- | --- | --- | --- |
+| NG-001 | Partial | `src/network/testfixtures.*`: builders for browser download, updater, Windows service, DNS, TLS, VPN, unknown, game launcher, and IDE update, plus `runAllFixtures()` with identity assertions | Respawn-worker fixture added (`createRespawnWorkerFixture()`); `runAllFixtures()` now iterates all fixtures including respawn; identity/category assertions are recorded but not fully validated without `classifyProcess` integration; no Windows 10/11 run |
+| NG-002 | Partial | `src/network/policy.*`: identity, observation, policy, throttle-result, and audit-event structs with Qt metatypes and JSON helpers | Contract schema version added; `ThrottleResult` renamed to `NetworkPolicyThrottleResult` to avoid collision with `throttlebackend.h`; no round-trip test; no production consumer yet |
+| NG-003 | Partial | `src/network/diagnostics.*`: `DiagnosticsModel`, typed reasons, and reporters for drops, unresolved PIDs, unknown direction, stale mappings, and unavailable adapters | Model is never constructed; no support view or export; no capture or policy call site reports into it |
+| NG-010 | Partial | `src/identity/applicationidentity.*`: canonical-path resolution, version metadata, SHA-1 identity IDs, typed failures, and `QSettings` `IdentityStore` (schema 1) | Path equivalence, typed failures, and restart persistence untested at runtime; resolver not wired into monitoring |
+
+NG-011 through NG-016 and all of Phases 2–6 are **not started**. NG-011 and NG-012 can build on the NG-010 resolver; NG-014 also needs NG-013.
 
 ## Phase 0: Baseline and instrumentation
 
 ### NG-001 Establish product-direction test fixtures
 
+- **Status:** Partial — ten scenario builders exist in `src/network/testfixtures.*` (nine original + respawning-worker), `runAllFixtures()` now iterates all fixtures including respawn; identity/category assertions are recorded but not fully validated without `classifyProcess` integration; no Windows 10/11 run has been done.
 - **Type:** test
 - **Priority:** P0
 - **Dependencies:** None
@@ -21,6 +37,7 @@ This backlog implements [PRD.md](PRD.md). Tickets are ordered by dependency insi
 
 ### NG-002 Define observation and policy telemetry contracts
 
+- **Status:** Partial — structs, metatypes, and JSON helpers exist in `src/network/policy.*` and the app builds; contract versioning, a round-trip test, and a production consumer are still missing, but the `ThrottleResult` collision with `throttlebackend.h` has been resolved by renaming to `NetworkPolicyThrottleResult`;
 - **Type:** refactor
 - **Priority:** P0
 - **Dependencies:** None
@@ -29,6 +46,7 @@ This backlog implements [PRD.md](PRD.md). Tickets are ordered by dependency insi
 
 ### NG-003 Add diagnostics for capture gaps
 
+- **Status:** Partial — `DiagnosticsModel` and reporters exist in `src/network/diagnostics.*`; nothing constructs the model or feeds it from capture/policy code, and there is no support view or export yet.
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** NG-002
@@ -39,6 +57,7 @@ This backlog implements [PRD.md](PRD.md). Tickets are ordered by dependency insi
 
 ### NG-010 Implement canonical application identity
 
+- **Status:** Partial — `ApplicationIdentityResolver` and the `QSettings` `IdentityStore` exist in `src/identity/applicationidentity.*` and the app builds; canonical-path equivalence, typed failures, and restart persistence have not been exercised at runtime, and the resolver is not yet used by monitoring.
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** NG-002

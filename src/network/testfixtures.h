@@ -55,6 +55,9 @@ QList<TestPacketFixture> createUnknownFixture();
 QList<TestPacketFixture> createGameLauncherFixture();
 QList<TestPacketFixture> createIdeUpdateFixture();
 
+// ─── Respawn worker: traffic from a worker that respawns after termination ─────
+QList<TestPacketFixture> createRespawnWorkerFixture();
+
 // ─── Convenience: run all fixtures ──────────────────────────────────────────
 // Returns a map of scenario -> (pass/fail count, details).
 struct FixtureResult
