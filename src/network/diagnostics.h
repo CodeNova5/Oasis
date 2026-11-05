@@ -1,1 +1,126 @@
-/**\n * @file   diagnostics.h\n * @brief  Diagnostics for capture gaps (dropped packets, unresolved PIDs, unknown direction, stale mappings, unavailable adapters) - NG-003.\n * @author Codebuff\n */\n\n#pragma once\n\n#include <QAbstractListModel>\n#include <QObject>\n#include <QList>\n#include <QVariant>\n#include <QDateTime>\n\n// ─── Diagnostic reason enums ────────────────────────────────────────────────\n\nenum class PacketDropReason : int {\n    None = 0,\n    BufferOverflow,\n    SocketError,\n    InvalidChecksum,\n    TooLarge,\n    PromiscuousModeDisabled,\n    NotPromiscuous,\n    OutOfMemory,\n    Other\n};\n\nenum class PidResolutionStatus : int {\n    Resolved = 0,\n    Unresolved,\n    ServiceHost,\n    KernelMode,\n    PermissionDenied,\n    ProcessNotFound,\n    Other\n};\n\nenum class DirectionStatus : int {\n    DirectionKnown = 0,\n    UnknownDirection,\n    LocalOnly,\n    ExternalOnly,\n    Loopback,\n    Other\n};\n\nenum class AdapterStatus : int {\n    AdapterAvailable = 0,\n    AdapterUnavailable,\n    AdapterMissingDriver,\n    AdministratorRequired,\n    NoSuitableAdapter,\n    Other\n};\n\n// ─── Diagnostic record ──────────────────────────────────────────────────────\nstruct DiagnosticRecord\n{\n    QDateTime timestamp;     // When the diagnostic event occurred\n    PacketDropReason dropReason = PacketDropReason::None;  // 0 if not a drop\n    PidResolutionStatus pidStatus = PidResolutionStatus::Resolved;\n    DirectionStatus directionStatus = DirectionStatus::DirectionKnown;\n    AdapterStatus adapterStatus = AdapterStatus::AdapterAvailable;\n    QString details;         // Human-readable description\n    QString context;         // Where/what was happening (e.g. \"capture loop\", \"policy apply\")\n    quint32 affectedPid = 0; // PID involved, if any\n    QString affectedProcess; // Process name, if known\n};\n\n// ─── Roles for DiagnosticsModel ────────────────────────────────────────────\nenum DiagnosticsRole : int {\n    RoleTimestamp = Qt::UserRole,     // QDateTime\n    RoleDropReason,                    // PacketDropReason (int)\n    RolePidStatus,                     // PidResolutionStatus (int)\n    RoleDirectionStatus,               // DirectionStatus (int)\n    RoleAdapterStatus,                 // AdapterStatus (int)\n    RoleDetails,                       // QString\n    RoleContext,                       // QString\n    RoleAffectedPid,                   // quint32\n    RoleAffectedProcess,               // QString\n    RoleRecordCount                    // Internal: total records\n};\n\n// ─── DiagnosticsModel ───────────────────────────────────────────────────────\n// A QAbstractListModel that holds DiagnosticRecord objects and reports gap statistics.\n// The UI can subscribe to model signals to show a support/diagnostics view.\nclass DiagnosticsModel : public QAbstractListModel\n{\n    Q_OBJECT\npublic:\n    explicit DiagnosticsModel(QObject *parent = nullptr);\n    ~DiagnosticsModel() override = default;\n\n    // QAbstractListModel interface\n    int rowCount(const QModelIndex &parent = QModelIndex()) const override;\n    QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;\n    QHash<int, QByteArray> roleNames() const override;\n\n    // Public API: add a diagnostic record (emits layoutChanged)\n    void addRecord(const DiagnosticRecord &record);\n\n    // Convenience reporters\n    void reportDroppedPackets(int count, const QString &adapter, const QString &context);\n    void reportUnresolvedPid(quint32 pid, const QString &processName, const QString &context);\n    void reportUnknownDirection(const QString &packetSummary, const QString &context);\n    void reportStaleMapping(quint32 pid, const QString &expected, const QString &actual, const QString &context);\n    void reportAdapterUnavailable(const QString &adapterName, const QString &reason);\n\n    // Utilities\n    int droppedPacketsCount() const;\n    int unresolvedPidsCount() const;\n    int unknownDirectionCount() const;\n    QList<DiagnosticRecord> records() const;\n\nsignals:\n    // Emitted when a new record is added; the UI can react or filter\n    void recordAdded(const DiagnosticRecord &record);\n    // Emitted when the model changes (e.g. after batch reporting)\n    void modelUpdated();\n\nprivate:\n    QList<DiagnosticRecord> m_records;\n};\n
+/**
+ * @file   diagnostics.h
+ * @brief  Diagnostics for capture gaps (dropped packets, unresolved PIDs, unknown direction, stale mappings, unavailable adapters) - NG-003.
+ * @author Codebuff
+ */
+
+#pragma once
+
+#include <QAbstractListModel>
+#include <QObject>
+#include <QList>
+#include <QVariant>
+#include <QDateTime>
+
+// ─── Diagnostic reason enums ────────────────────────────────────────────────
+
+enum class PacketDropReason : int {
+    None = 0,
+    BufferOverflow,
+    SocketError,
+    InvalidChecksum,
+    TooLarge,
+    PromiscuousModeDisabled,
+    NotPromiscuous,
+    OutOfMemory,
+    Other
+};
+
+enum class PidResolutionStatus : int {
+    Resolved = 0,
+    Unresolved,
+    ServiceHost,
+    KernelMode,
+    PermissionDenied,
+    ProcessNotFound,
+    Other
+};
+
+enum class DirectionStatus : int {
+    DirectionKnown = 0,
+    UnknownDirection,
+    LocalOnly,
+    ExternalOnly,
+    Loopback,
+    Other
+};
+
+enum class AdapterStatus : int {
+    AdapterAvailable = 0,
+    AdapterUnavailable,
+    AdapterMissingDriver,
+    AdministratorRequired,
+    NoSuitableAdapter,
+    Other
+};
+
+// ─── Diagnostic record ──────────────────────────────────────────────────────
+struct DiagnosticRecord
+{
+    QDateTime timestamp;     // When the diagnostic event occurred
+    PacketDropReason dropReason = PacketDropReason::None;  // 0 if not a drop
+    PidResolutionStatus pidStatus = PidResolutionStatus::Resolved;
+    DirectionStatus directionStatus = DirectionStatus::DirectionKnown;
+    AdapterStatus adapterStatus = AdapterStatus::AdapterAvailable;
+    QString details;         // Human-readable description
+    QString context;         // Where/what was happening (e.g. "capture loop", "policy apply")
+    quint32 affectedPid = 0; // PID involved, if any
+    QString affectedProcess; // Process name, if known
+};
+
+// ─── Roles for DiagnosticsModel ────────────────────────────────────────────
+enum DiagnosticsRole : int {
+    RoleTimestamp = Qt::UserRole,     // QDateTime
+    RoleDropReason,                    // PacketDropReason (int)
+    RolePidStatus,                     // PidResolutionStatus (int)
+    RoleDirectionStatus,               // DirectionStatus (int)
+    RoleAdapterStatus,                 // AdapterStatus (int)
+    RoleDetails,                       // QString
+    RoleContext,                       // QString
+    RoleAffectedPid,                   // quint32
+    RoleAffectedProcess                // QString
+};
+
+// ─── DiagnosticsModel ───────────────────────────────────────────────────────
+// A QAbstractListModel that holds DiagnosticRecord objects and reports gap statistics.
+// The UI can subscribe to model signals to show a support/diagnostics view.
+class DiagnosticsModel : public QAbstractListModel
+{
+    Q_OBJECT
+public:
+    explicit DiagnosticsModel(QObject *parent = nullptr);
+    ~DiagnosticsModel() override = default;
+
+    // QAbstractListModel interface
+    int rowCount(const QModelIndex &parent = QModelIndex()) const override;
+    QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
+    // Public API: add a diagnostic record (emits layoutChanged)
+    void addRecord(const DiagnosticRecord &record);
+
+    // Remove every record (reset / export).
+    void clear();
+
+    // Convenience reporters
+    void reportDroppedPackets(int count, const QString &adapter, const QString &context);
+    void reportUnresolvedPid(quint32 pid, const QString &processName, const QString &context);
+    void reportUnknownDirection(const QString &packetSummary, const QString &context);
+    void reportStaleMapping(quint32 pid, const QString &expected, const QString &actual, const QString &context);
+    void reportAdapterUnavailable(const QString &adapterName, const QString &reason);
+
+    // Utilities
+    int droppedPacketsCount() const;
+    int unresolvedPidsCount() const;
+    int unknownDirectionCount() const;
+    QList<DiagnosticRecord> records() const;
+
+signals:
+    // Emitted when a new record is added; the UI can react or filter
+    void recordAdded(const DiagnosticRecord &record);
+    // Emitted when the model changes (e.g. after batch reporting)
+    void modelUpdated();
+
+private:
+    QList<DiagnosticRecord> m_records;
+};

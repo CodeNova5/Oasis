@@ -44,7 +44,10 @@ SOURCES += \
     src/network/networkwidget.cpp \
     src/network/packetparser.cpp \
     src/network/testfixtures.cpp \
-    src/network/policy.cpp \\\n    src/network/diagnostics.cpp \\\n    src/firewall/firewallmanager.cpp \
+    src/network/policy.cpp \
+    src/network/diagnostics.cpp \
+    src/identity/applicationidentity.cpp \
+    src/firewall/firewallmanager.cpp \
     src/firewall/firewallmodel.cpp \
     src/firewall/firewallwidget.cpp \
     src/hardware/hardwaremonitor.cpp \
@@ -71,6 +74,10 @@ HEADERS += \
     src/network/networkmodel.h \
     src/network/networkwidget.h \
     src/network/packetparser.h \
+    src/network/testfixtures.h \
+    src/network/policy.h \
+    src/network/diagnostics.h \
+    src/identity/applicationidentity.h \
     src/firewall/firewallmanager.h \
     src/firewall/firewallmodel.h \
     src/firewall/firewallwidget.h \
@@ -118,7 +125,8 @@ win32: LIBS += \
     -lgdi32 \
     -luuid \
     -lshlwapi \
-    -ldxgi
+    -ldxgi \
+    -lversion
 
 # ─── Compiler / preprocessor flags ──────────────────────────────────────────
 mingw {

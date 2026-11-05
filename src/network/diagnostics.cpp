@@ -1,1 +1,156 @@
-/**\n * @file   diagnostics.cpp\n * @brief  Diagnostics for capture gaps (dropped packets, unresolved PIDs, unknown direction, stale mappings, unavailable adapters) - NG-003.\n * @author Codebuff\n */\n\n#include \"diagnostics.h\"\n\n#include <QDebug>\n\nDiagnosticsModel::DiagnosticsModel(QObject *parent) : QAbstractListModel(parent)\n{\n}\n\nDiagnosticsModel::~DiagnosticsModel()\n{\n    clear();\n}\n\nint DiagnosticsModel::rowCount(const QModelIndex &parent) const\n{\n    Q_UNUSED(parent);\n    return m_records.size();\n}\n\nQVariant DiagnosticsModel::data(const QModelIndex &index, int role) const\n{\n    if (!index.isValid() || index.row() < 0 || index.row() >= m_records.size())\n        return QVariant();\n\n    const DiagnosticRecord &rec = m_records[index.row()];\n\n    switch (role) {\n    case RoleTimestamp:      return rec.timestamp;\n    case RoleDropReason:     return rec.dropReason;\n    case RolePidStatus:      return rec.pidStatus;\n    case RoleDirectionStatus: return rec.directionStatus;\n    case RoleAdapterStatus:  return rec.adapterStatus;\n    case RoleDetails:        return rec.details;\n    case RoleContext:        return rec.context;\n    case RoleAffectedPid:    return rec.affectedPid;\n    case RoleAffectedProcess:return rec.affectedProcess;\n    default:                 return QVariant();\n    }\n}\n\nQHash<int, QByteArray> DiagnosticsModel::roleNames() const\n{\n    QHash<int, QByteArray> roles;\n    roles[RoleTimestamp]       = \"timestamp\";\n    roles[RoleDropReason]    = \"dropReason\";\n    roles[RolePidStatus]     = \"pidStatus\";\n    roles[RoleDirectionStatus] = \"directionStatus\";\n    roles[RoleAdapterStatus] = \"adapterStatus\";\n    roles[RoleDetails]       = \"details\";\n    roles[RoleContext]       = \"context\";\n    roles[RoleAffectedPid]   = \"affectedPid\";\n    roles[RoleAffectedProcess] = \"affectedProcess\";\n    return roles;\n}\n\nvoid DiagnosticsModel::addRecord(const DiagnosticRecord &record)\n{\n    const int row = m_records.size();\n    beginInsertRows(QModelIndex(), row, row);\n    m_records.append(record);\n    endInsertRows();\n    emit recordAdded(record);\n    emit modelUpdated();\n}\n\nvoid DiagnosticsModel::clear()\n{\n    beginResetModel();\n    m_records.clear();\n    endResetModel();\n}\n\nvoid DiagnosticsModel::reportDroppedPackets(int count, const QString &adapter, const QString &context)\n{\n    DiagnosticRecord rec;\n    rec.timestamp = QDateTime::currentDateTime();\n    rec.dropReason = PacketDropReason::BufferOverflow;  // generic, could be enhanced\n    rec.pidStatus = PidResolutionStatus::Resolved;\n    rec.directionStatus = DirectionStatus::DirectionKnown;\n    rec.adapterStatus = AdapterStatus::AdapterAvailable;\n    rec.details = QString(\"%1 packets dropped\").arg(count);\n    rec.context = context;\n    rec.affectedPid = 0;\n    rec.affectedProcess = QString();\n    addRecord(rec);\n}\n\nvoid DiagnosticsModel::reportUnresolvedPid(quint32 pid, const QString &processName, const QString &context)\n{\n    DiagnosticRecord rec;\n    rec.timestamp = QDateTime::currentDateTime();\n    rec.dropReason = PacketDropReason::None;\n    rec.pidStatus = PidResolutionStatus::Unresolved;\n    rec.directionStatus = DirectionStatus::DirectionKnown;\n    rec.adapterStatus = AdapterStatus::AdapterAvailable;\n    rec.details = QString(\"PID %1 resolution failed\").arg(pid);\n    rec.context = context;\n    rec.affectedPid = pid;\n    rec.affectedProcess = processName;\n    addRecord(rec);\n}\n\nvoid DiagnosticsModel::reportUnknownDirection(const QString &packetSummary, const QString &context)\n{\n    DiagnosticRecord rec;\n    rec.timestamp = QDateTime::currentDateTime();\n    rec.dropReason = PacketDropReason::None;\n    rec.pidStatus = PidResolutionStatus::Resolved;\n    rec.directionStatus = DirectionStatus::UnknownDirection;\n    rec.adapterStatus = AdapterStatus::AdapterAvailable;\n    rec.details = packetSummary;\n    rec.context = context;\n    rec.affectedPid = 0;\n    rec.affectedProcess = QString();\n    addRecord(rec);\n}\n\nvoid DiagnosticsModel::reportStaleMapping(quint32 pid, const QString &expected, const QString &actual, const QString &context)\n{\n    DiagnosticRecord rec;\n    rec.timestamp = QDateTime::currentDateTime();\n    rec.dropReason = PacketDropReason::None;\n    rec.pidStatus = PidResolutionStatus::Resolved;\n    rec.directionStatus = DirectionStatus::DirectionKnown;\n    rec.adapterStatus = AdapterStatus::AdapterAvailable;\n    rec.details = QString(\"Stale PID mapping: expected %1, got %2\").arg(expected, actual);\n    rec.context = context;\n    rec.affectedPid = pid;\n    rec.affectedProcess = QString();\n    addRecord(rec);\n}\n\nvoid DiagnosticsModel::reportAdapterUnavailable(const QString &adapterName, const QString &reason)\n{\n    DiagnosticRecord rec;\n    rec.timestamp = QDateTime::currentDateTime();\n    rec.dropReason = PacketDropReason::None;\n    rec.pidStatus = PidResolutionStatus::Resolved;\n    rec.directionStatus = DirectionStatus::DirectionKnown;\n    rec.adapterStatus = AdapterStatus::AdapterUnavailable;\n    rec.details = reason;\n    rec.context = QString(\"adapter: %1\").arg(adapterName);\n    rec.affectedPid = 0;\n    rec.affectedProcess = QString();\n    addRecord(rec);\n}\n\nint DiagnosticsModel::droppedPacketsCount() const\n{\n    int count = 0;\n    for (const auto &rec : m_records)\n        if (rec.dropReason != PacketDropReason::None)\n            ++count;\n    return count;\n}\n\nint DiagnosticsModel::unresolvedPidsCount() const\n{\n    int count = 0;\n    for (const auto &rec : m_records)\n        if (rec.pidStatus == PidResolutionStatus::Unresolved)\n            ++count;\n    return count;\n}\n\nint DiagnosticsModel::unknownDirectionCount() const\n{\n    int count = 0;\n    for (const auto &rec : m_records)\n        if (rec.directionStatus == DirectionStatus::UnknownDirection)\n            ++count;\n    return count;\n}\n\nQList<DiagnosticRecord> DiagnosticsModel::records() const\n{\n    return m_records;\n}\n
+/**
+ * @file   diagnostics.cpp
+ * @brief  Diagnostics for capture gaps (dropped packets, unresolved PIDs, unknown direction, stale mappings, unavailable adapters) - NG-003.
+ * @author Codebuff
+ */
+
+#include "diagnostics.h"
+
+#include <QDebug>
+
+DiagnosticsModel::DiagnosticsModel(QObject *parent) : QAbstractListModel(parent)
+{
+}
+
+int DiagnosticsModel::rowCount(const QModelIndex &parent) const
+{
+    Q_UNUSED(parent);
+    return m_records.size();
+}
+
+QVariant DiagnosticsModel::data(const QModelIndex &index, int role) const
+{
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_records.size())
+        return QVariant();
+
+    const DiagnosticRecord &rec = m_records[index.row()];
+
+    switch (role) {
+    case RoleTimestamp:       return rec.timestamp;
+    case RoleDropReason:      return static_cast<int>(rec.dropReason);
+    case RolePidStatus:       return static_cast<int>(rec.pidStatus);
+    case RoleDirectionStatus: return static_cast<int>(rec.directionStatus);
+    case RoleAdapterStatus:   return static_cast<int>(rec.adapterStatus);
+    case RoleDetails:         return rec.details;
+    case RoleContext:         return rec.context;
+    case RoleAffectedPid:     return rec.affectedPid;
+    case RoleAffectedProcess: return rec.affectedProcess;
+    default:                  return QVariant();
+    }
+}
+
+QHash<int, QByteArray> DiagnosticsModel::roleNames() const
+{
+    QHash<int, QByteArray> roles;
+    roles[RoleTimestamp]         = "timestamp";
+    roles[RoleDropReason]        = "dropReason";
+    roles[RolePidStatus]         = "pidStatus";
+    roles[RoleDirectionStatus]   = "directionStatus";
+    roles[RoleAdapterStatus]     = "adapterStatus";
+    roles[RoleDetails]           = "details";
+    roles[RoleContext]           = "context";
+    roles[RoleAffectedPid]       = "affectedPid";
+    roles[RoleAffectedProcess]   = "affectedProcess";
+    return roles;
+}
+
+void DiagnosticsModel::addRecord(const DiagnosticRecord &record)
+{
+    const int row = m_records.size();
+    beginInsertRows(QModelIndex(), row, row);
+    m_records.append(record);
+    endInsertRows();
+    emit recordAdded(record);
+    emit modelUpdated();
+}
+
+void DiagnosticsModel::clear()
+{
+    beginResetModel();
+    m_records.clear();
+    endResetModel();
+}
+
+void DiagnosticsModel::reportDroppedPackets(int count, const QString &adapter, const QString &context)
+{
+    DiagnosticRecord rec;
+    rec.timestamp = QDateTime::currentDateTime();
+    rec.dropReason = PacketDropReason::BufferOverflow;  // generic, could be enhanced
+    rec.details = QString("%1 packets dropped from %2").arg(count).arg(adapter);
+    rec.context = context;
+    addRecord(rec);
+}
+
+void DiagnosticsModel::reportUnresolvedPid(quint32 pid, const QString &processName, const QString &context)
+{
+    DiagnosticRecord rec;
+    rec.timestamp = QDateTime::currentDateTime();
+    rec.pidStatus = PidResolutionStatus::Unresolved;
+    rec.details = QString("PID %1 resolution failed").arg(pid);
+    rec.context = context;
+    rec.affectedPid = pid;
+    rec.affectedProcess = processName;
+    addRecord(rec);
+}
+
+void DiagnosticsModel::reportUnknownDirection(const QString &packetSummary, const QString &context)
+{
+    DiagnosticRecord rec;
+    rec.timestamp = QDateTime::currentDateTime();
+    rec.directionStatus = DirectionStatus::UnknownDirection;
+    rec.details = packetSummary;
+    rec.context = context;
+    addRecord(rec);
+}
+
+void DiagnosticsModel::reportStaleMapping(quint32 pid, const QString &expected, const QString &actual, const QString &context)
+{
+    DiagnosticRecord rec;
+    rec.timestamp = QDateTime::currentDateTime();
+    rec.details = QString("Stale PID mapping: expected %1, got %2").arg(expected, actual);
+    rec.context = context;
+    rec.affectedPid = pid;
+    addRecord(rec);
+}
+
+void DiagnosticsModel::reportAdapterUnavailable(const QString &adapterName, const QString &reason)
+{
+    DiagnosticRecord rec;
+    rec.timestamp = QDateTime::currentDateTime();
+    rec.adapterStatus = AdapterStatus::AdapterUnavailable;
+    rec.details = reason;
+    rec.context = QString("adapter: %1").arg(adapterName);
+    addRecord(rec);
+}
+
+int DiagnosticsModel::droppedPacketsCount() const
+{
+    int count = 0;
+    for (const auto &rec : m_records)
+        if (rec.dropReason != PacketDropReason::None)
+            ++count;
+    return count;
+}
+
+int DiagnosticsModel::unresolvedPidsCount() const
+{
+    int count = 0;
+    for (const auto &rec : m_records)
+        if (rec.pidStatus == PidResolutionStatus::Unresolved)
+            ++count;
+    return count;
+}
+
+int DiagnosticsModel::unknownDirectionCount() const
+{
+    int count = 0;
+    for (const auto &rec : m_records)
+        if (rec.directionStatus == DirectionStatus::UnknownDirection)
+            ++count;
+    return count;
+}
+
+QList<DiagnosticRecord> DiagnosticsModel::records() const
+{
+    return m_records;
+}
