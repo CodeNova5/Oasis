@@ -593,7 +593,7 @@ void NetworkMonitor::updateCaches()
     for (quint32 pid : tListenCache) if (pid) activePids.insert(pid);
     for (quint32 pid : uAnyCache)  if (pid) activePids.insert(pid);
 
-    QHash<quint32, NetGuard::ApplicationIdentity> idCache;
+    QHash<quint32, ApplicationIdentity> idCache;
     QHash<quint32, quint32> failureCache;
     {
         QMutexLocker lk(&m_cacheMutex);

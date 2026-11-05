@@ -104,7 +104,7 @@ private:
     // the cache thread; failures are remembered so protected processes are not
     // re-opened on every refresh.
     NetGuard::ApplicationIdentityResolver m_identityResolver;
-    QHash<quint32, NetGuard::ApplicationIdentity> m_identityCache;
+    QHash<quint32, ApplicationIdentity> m_identityCache;
     QHash<quint32, quint32> m_identityFailurePids; // pid -> IdentityResolutionStatus
 
     // Throttles stale-mapping diagnostics emitted from the cache thread.
