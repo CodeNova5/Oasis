@@ -12,6 +12,7 @@
 #include <QIcon>
 #include "packetparser.h"
 #include "network/policy.h"
+#include "identity/serviceresolver.h"
 
 struct CapturedPacketInfo;
 
@@ -34,6 +35,9 @@ struct ProcessNode
     QString  identityName; // display name derived from version metadata
     QString  publisher;    // NG-011 Authenticode signer (CN), when signed
     ApplicationIdentity::SignerStatus signerStatus = ApplicationIdentity::SignerStatus::Unknown;
+    // NG-012: services this process hosts. Drawn as their own child rows so
+    // several services sharing one svchost.exe stay individually visible.
+    QVector<NetGuard::ServiceEntry> services;
     quint64  totalRxSpeed = 0;
     quint64  totalTxSpeed = 0;
     quint64  totalRxBytes = 0;
@@ -72,6 +76,8 @@ public:
 
     void addPackets(const QList<CapturedPacketInfo> &batch);
     void setProcessIcon(const QString &procName, const QIcon &icon);
+    // NG-012: replace the PID -> services map and refresh the affected rows.
+    void applyServiceSnapshot(const NetGuard::ServicePidMap &services);
     void clear();
 
     static QString formatSpeed(quint64 bps);
@@ -86,5 +92,6 @@ private:
 
     QVector<ProcessNode> m_procs;
     QHash<QString, int>  m_procIdx;
+    NetGuard::ServicePidMap m_servicesByPid; // NG-012 services per live PID
     QTimer              *m_ticker = nullptr;
 };

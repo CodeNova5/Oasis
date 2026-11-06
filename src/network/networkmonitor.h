@@ -15,6 +15,7 @@
 #include <chrono>
 #include "packetparser.h"
 #include "identity/applicationidentity.h"
+#include "identity/serviceresolver.h"
 
 struct AdapterInfo {
     QString ip;
@@ -72,6 +73,12 @@ signals:
     // NG-010: emitted once per PID whose executable identity could not be
     // resolved (typed failure); traffic is still attributed by process name.
     void identityResolutionFailed(quint32 pid, const QString &status, const QString &message);
+    // NG-012: services hosted by the PIDs that currently own connections, sent
+    // only when the mapping or a service state changes.
+    void serviceSnapshotReady(const NetGuard::ServicePidMap &services);
+    // NG-012: the service manager could not be queried; traffic keeps flowing
+    // and is attributed to the process instead of a service.
+    void serviceLookupFailed(const QString &reason);
 
 protected:
     void run() override;
@@ -79,7 +86,6 @@ protected:
 private:
     void refreshLocalIPs();
     void updateCaches();
-    QString getServiceNameFromPid(quint32 pid) const;
 
     QString m_adapterIP;
     QString m_adapterIPv6;
@@ -109,6 +115,12 @@ private:
     NetGuard::ApplicationIdentityResolver m_identityResolver;
     QHash<quint32, ApplicationIdentity> m_identityCache;
     QHash<quint32, quint32> m_identityFailurePids; // pid -> IdentityResolutionStatus
+
+    // NG-012: one cached SCM snapshot backs every service lookup, so a machine
+    // with dozens of svchost processes costs one enumeration per refresh window.
+    NetGuard::ServiceResolver m_serviceResolver;
+    NetGuard::ServicePidMap m_serviceCache; // last snapshot sent to the UI
+    QString m_lastServiceError;
 
     // Throttles stale-mapping diagnostics emitted from the cache thread.
     qint64 m_lastStaleReportMs = 0;

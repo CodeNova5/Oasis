@@ -208,6 +208,7 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     QProcess::execute("netsh", {"advfirewall", "firewall", "add", "rule", "name=NetGuardAIO", "dir=in", "action=allow", "program=" + appPath, "enable=yes"});
 
     qRegisterMetaType<QList<CapturedPacketInfo>>("QList<CapturedPacketInfo>");
+    qRegisterMetaType<NetGuard::ServicePidMap>("NetGuard::ServicePidMap");
 
     m_model = new NetworkTreeModel(this);
     m_proxy = new QSortFilterProxyModel(this);
@@ -310,6 +311,15 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     connect(m_monitor, &NetworkMonitor::identityResolutionFailed, this,
             [this](quint32 pid, const QString &status, const QString &message) {
         m_diagnostics->reportUnresolvedPid(pid, status, message);
+    }, Qt::QueuedConnection);
+
+    // NG-012: service rows come from a separate snapshot; without it the tree
+    // still shows service-hosted traffic under the host process.
+    connect(m_monitor, &NetworkMonitor::serviceSnapshotReady, m_model,
+            &NetworkTreeModel::applyServiceSnapshot, Qt::QueuedConnection);
+    connect(m_monitor, &NetworkMonitor::serviceLookupFailed, this,
+            [this](const QString &reason) {
+        m_diagnostics->reportServiceLookupFailed(0, QString(), reason);
     }, Qt::QueuedConnection);
 
     connect(ui->cmbAdapter, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &NetworkWidget::onAdapterChanged);

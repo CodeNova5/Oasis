@@ -241,6 +241,20 @@ void DiagnosticsModel::reportStaleMapping(quint32 pid, const QString &expected, 
     addRecord(rec);
 }
 
+void DiagnosticsModel::reportServiceLookupFailed(quint32 pid, const QString &serviceName,
+                                                 const QString &reason)
+{
+    DiagnosticRecord rec;
+    rec.timestamp = QDateTime::currentDateTime();
+    rec.pidStatus = PidResolutionStatus::ServiceHost;
+    rec.details = reason;
+    rec.context = serviceName.isEmpty()
+        ? QStringLiteral("service resolution")
+        : QStringLiteral("service: %1").arg(serviceName);
+    rec.affectedPid = pid;
+    addRecord(rec);
+}
+
 void DiagnosticsModel::reportAdapterUnavailable(const QString &adapterName, const QString &reason)
 {
     DiagnosticRecord rec;

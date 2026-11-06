@@ -139,40 +139,6 @@ int NetworkMonitor::recommendedAdapterIndex(const QList<AdapterInfo> &list)
     return 0;
 }
 
-QString NetworkMonitor::getServiceNameFromPid(quint32 pid) const
-{
-    SC_HANDLE scm = OpenSCManager(nullptr, nullptr, SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE);
-    if (!scm) return QString();
-
-    DWORD bytesNeeded = 0, servicesReturned = 0, resumeHandle = 0;
-    EnumServicesStatusExW(scm, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_STATE_ALL,
-                          nullptr, 0, &bytesNeeded, &servicesReturned, &resumeHandle, nullptr);
-
-    if (bytesNeeded == 0) { CloseServiceHandle(scm); return QString(); }
-
-    QByteArray buffer(bytesNeeded, 0);
-    LPENUM_SERVICE_STATUS_PROCESSW services = reinterpret_cast<LPENUM_SERVICE_STATUS_PROCESSW>(buffer.data());
-
-    QStringList svcList;
-    if (EnumServicesStatusExW(scm, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_STATE_ALL,
-                              reinterpret_cast<LPBYTE>(services), bytesNeeded, &bytesNeeded,
-                              &servicesReturned, &resumeHandle, nullptr)) {
-        for (DWORD i = 0; i < servicesReturned; ++i) {
-            if (services[i].ServiceStatusProcess.dwProcessId == pid) {
-                QString displayName = QString::fromWCharArray(services[i].lpDisplayName);
-                if (!displayName.isEmpty() && !svcList.contains(displayName)) {
-                    svcList << displayName;
-                }
-            }
-        }
-    }
-    CloseServiceHandle(scm);
-    if (!svcList.isEmpty()) {
-        return svcList.join(" + ");
-    }
-    return QString();
-}
-
 NetworkMonitor::NetworkMonitor(QObject *parent) : QThread(parent)
 {
     m_speedTimer = new QTimer(this);
@@ -561,6 +527,18 @@ void NetworkMonitor::updateCaches()
         }
     }
 
+    // ── 3. Resolve Service Hosting (NG-012) ──
+    // One SCM snapshot per refresh window, shared by every PID below. The old
+    // path enumerated all services once per svchost PID per loop.
+    m_serviceResolver.refresh(2000);
+    const NetGuard::ServicePidMap servicesByPid = m_serviceResolver.servicesByPid();
+    const QString serviceError = m_serviceResolver.lastError();
+    if (serviceError != m_lastServiceError) {
+        m_lastServiceError = serviceError;
+        // A failure is recorded once per distinct reason; packets keep flowing.
+        if (!serviceError.isEmpty()) emit serviceLookupFailed(serviceError);
+    }
+
     // ── 3. Resolve Process Names ──
     DWORD aProcs[1024], cbNeeded, cProcs;
     if (EnumProcesses(aProcs, sizeof(aProcs), &cbNeeded)) {
@@ -576,9 +554,19 @@ void NetworkMonitor::updateCaches()
                         int idx = fullPath.lastIndexOf(QLatin1Char('\\'));
                         QString procName = (idx >= 0) ? fullPath.mid(idx + 1) : fullPath;
 
-                        if (procName.compare("svchost.exe", Qt::CaseInsensitive) == 0) {
-                            QString svcDisplayName = getServiceNameFromPid(aProcs[i]);
-                            if (!svcDisplayName.isEmpty()) procName = "Service: " + svcDisplayName;
+                        // Any service host (not just svchost.exe) is named after
+                        // the service it runs; the full list travels in the
+                        // service snapshot so shared hosts stay separable.
+                        const auto hosted = servicesByPid.constFind(aProcs[i]);
+                        if (hosted != servicesByPid.constEnd() && !hosted->isEmpty()) {
+                            QString primary = hosted->first().displayName;
+                            for (const auto &svc : hosted.value()) {
+                                if (svc.state == NetGuard::ServiceState::Running) {
+                                    primary = svc.displayName;
+                                    break;
+                                }
+                            }
+                            if (!primary.isEmpty()) procName = "Service: " + primary;
                         }
                         pCache.insert(aProcs[i], procName);
                     }
@@ -628,6 +616,23 @@ void NetworkMonitor::updateCaches()
                 resolution.message);
     }
 
+    // ── 3c. Publish the service mapping for PIDs that own traffic ──
+    // Only changed snapshots are sent, so a state poll does not repaint the
+    // tree; the GUI keeps per-service rows for shared hosts.
+    NetGuard::ServicePidMap servicesForActive;
+    for (quint32 pid : activePids) {
+        const auto hosted = servicesByPid.constFind(pid);
+        if (hosted != servicesByPid.constEnd() && !hosted->isEmpty())
+            servicesForActive.insert(pid, hosted.value());
+    }
+    bool servicesChanged = false;
+    {
+        QMutexLocker lk(&m_cacheMutex);
+        servicesChanged = (servicesForActive != m_serviceCache);
+    }
+    if (servicesChanged)
+        emit serviceSnapshotReady(servicesForActive);
+
     // ── 4. Detect stale mappings: a connection key changed owner ──
     // Rate-limited to once per 5 seconds so a churning table cannot flood
     // the diagnostics model.
@@ -665,6 +670,7 @@ void NetworkMonitor::updateCaches()
     m_procCache = pCache;
     m_identityCache = idCache;
     m_identityFailurePids = failureCache;
+    m_serviceCache = servicesForActive;
 }
 
 void NetworkMonitor::refreshLocalIPs()

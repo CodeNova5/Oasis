@@ -49,15 +49,23 @@ QModelIndex NetworkTreeModel::index(int row, int col, const QModelIndex &parent)
     if (parent.internalPointer() != nullptr) return {};
     int pRow = parent.row();
     if (pRow < 0 || pRow >= m_procs.size()) return {};
-    if (row < 0 || row >= m_procs[pRow].conns.size()) return {};
-    return createIndex(row, col, reinterpret_cast<void*>(static_cast<uintptr_t>(pRow + 1)));
+    const ProcessNode &p = m_procs[pRow];
+    const int serviceRows = p.services.size();
+    if (row < 0 || row >= serviceRows + p.conns.size()) return {};
+    // NG-012: children are the hosted services first, then connections. The low
+    // bit of the internal pointer marks a service row so both kinds can share
+    // one child index space without a second model.
+    const qintptr tag = qintptr(pRow + 1) * 2 + (row < serviceRows ? 1 : 0);
+    return createIndex(row, col, reinterpret_cast<void*>(tag));
 }
 
 QModelIndex NetworkTreeModel::parent(const QModelIndex &child) const
 {
     if (!child.isValid()) return {};
     if (child.internalPointer() == nullptr) return {};
-    int pRow = static_cast<int>(reinterpret_cast<uintptr_t>(child.internalPointer())) - 1;
+    const qintptr tag = static_cast<qintptr>(reinterpret_cast<uintptr_t>(child.internalPointer()));
+    const int pRow = static_cast<int>(tag / 2) - 1;
+    if (pRow < 0 || pRow >= m_procs.size()) return {};
     return createIndex(pRow, 0, nullptr);
 }
 
@@ -67,7 +75,8 @@ int NetworkTreeModel::rowCount(const QModelIndex &parent) const
     if (parent.internalPointer() != nullptr) return 0;
     int pRow = parent.row();
     if (pRow < 0 || pRow >= m_procs.size()) return 0;
-    return m_procs[pRow].conns.size();
+    const ProcessNode &p = m_procs[pRow];
+    return p.services.size() + p.conns.size();
 }
 
 int NetworkTreeModel::columnCount(const QModelIndex &) const { return COL_COUNT; }
@@ -125,6 +134,10 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                 // signed, unsigned, invalid, and unavailable stay distinct.
                 if (!p.identityId.isEmpty())
                     label += "  •  " + signerRowText(p);
+                // NG-012: a shared host keeps its services in child rows; the
+                // count makes that visible without expanding.
+                if (p.services.size() > 1)
+                    label += QStringLiteral("  •  %1 services").arg(p.services.size());
                 return QString("%1  (PID %2)  •  %3 conn%4").arg(label).arg(p.pid).arg(p.conns.size()).arg(p.conns.size() == 1 ? "" : "s");
             }
             case COL_SRC:    return {};
@@ -146,6 +159,8 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                 lines << "Publisher: " + p.publisher;
             if (!p.identityId.isEmpty())
                 lines << "Identity ID: " + p.identityId;
+            if (p.services.size() > 1)
+                lines << QStringLiteral("%1 services (expand to list)").arg(p.services.size());
             return lines.join('\n');
         }
         if (role == Qt::ForegroundRole) {
@@ -157,11 +172,54 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         return {};
     }
 
-    int pRow = static_cast<int>(reinterpret_cast<uintptr_t>(idx.internalPointer())) - 1;
+    const qintptr tag = static_cast<qintptr>(reinterpret_cast<uintptr_t>(idx.internalPointer()));
+    const int pRow = static_cast<int>(tag / 2) - 1;
     if (pRow < 0 || pRow >= m_procs.size()) return {};
-    const ProcessNode    &p  = m_procs[pRow];
-    if (idx.row() >= p.conns.size()) return {};
-    const ConnectionStat &c  = p.conns[idx.row()];
+    const ProcessNode &p = m_procs[pRow];
+    const int serviceRows = p.services.size();
+    if (idx.row() >= serviceRows + p.conns.size()) return {};
+
+    // ── NG-012: service rows ──
+    // A shared host shows every service it runs; each row carries the service
+    // key, its state, and the SCM image path. No traffic is duplicated here:
+    // the packets stay on the hosting process row.
+    if ((tag & 1) != 0) {
+        const NetGuard::ServiceEntry &s = p.services[idx.row()];
+        if (role == Qt::UserRole + 1) return s.displayName;
+        if (role == Qt::UserRole + 2) return false; // not a process node
+        if (role == Qt::UserRole + 5) {
+            switch (col) {
+            case COL_NAME:   return QStringLiteral("\x01") + s.displayName; // services sort first
+            case COL_RX: case COL_TX: case COL_BYTES: case COL_PKTS:
+                return static_cast<qulonglong>(0);
+            default:         return QVariant();
+            }
+        }
+        if (role == Qt::ToolTipRole) {
+            QStringList lines;
+            lines << s.displayName + " (" + s.serviceName + ")";
+            lines << "State: " + NetGuard::serviceStateName(s.state);
+            if (!s.executablePath.isEmpty())
+                lines << "Image: " + s.executablePath;
+            if (p.pid) lines << QStringLiteral("Hosted by PID %1").arg(p.pid);
+            lines << (s.acceptsStop ? "Can be stopped from Services"
+                                    : "Protected service (not user-stoppable)");
+            return lines.join('\n');
+        }
+        if (role == Qt::DisplayRole) {
+            switch (col) {
+            case COL_NAME:    return s.displayName;
+            case COL_SERVICE: return s.serviceName + "  —  " + NetGuard::serviceStateName(s.state);
+            default:          return {};
+            }
+        }
+        if (role == Qt::ForegroundRole && col == COL_NAME
+            && s.state != NetGuard::ServiceState::Running)
+            return QColor("#8B949E"); // stopped / pending services are dimmed
+        return {};
+    }
+
+    const ConnectionStat &c = p.conns[idx.row() - serviceRows];
 
     // ── Custom Roles for Connection child rows ──
     if (role == Qt::UserRole) return p.pid;
@@ -297,9 +355,11 @@ void NetworkTreeModel::onTick()
 
         // ── FIX: Emit dataChanged starting from COL_NAME to update parent UI correctly ──
         // ── FIX: Include Qt::UserRole + 5 to keep sorting updated dynamically ──
-        if (!p.conns.isEmpty()) {
+        if (!p.conns.isEmpty() || !p.services.isEmpty()) {
             const QModelIndex pIdx = createIndex(pRow, 0, nullptr);
-            emit dataChanged(index(0, COL_NAME, pIdx), index(p.conns.size()-1, COL_PKTS, pIdx), {Qt::DisplayRole, Qt::UserRole + 5});
+            emit dataChanged(index(0, COL_NAME, pIdx),
+                             index(p.services.size() + p.conns.size() - 1, COL_PKTS, pIdx),
+                             {Qt::DisplayRole, Qt::UserRole + 5});
         }
         emit dataChanged(createIndex(pRow, COL_NAME, nullptr), createIndex(pRow, COL_PKTS, nullptr), {Qt::DisplayRole, Qt::UserRole + 5});
     }
@@ -321,7 +381,46 @@ void NetworkTreeModel::clear()
     beginResetModel();
     m_procs.clear();
     m_procIdx.clear();
+    m_servicesByPid.clear();
     endResetModel();
+}
+
+void NetworkTreeModel::applyServiceSnapshot(const NetGuard::ServicePidMap &services)
+{
+    m_servicesByPid = services;
+
+    for (int pRow = 0; pRow < m_procs.size(); ++pRow) {
+        ProcessNode &p = m_procs[pRow];
+        if (!p.pid) continue;
+        const auto hosted = m_servicesByPid.constFind(p.pid);
+        const QVector<NetGuard::ServiceEntry> entries =
+            (hosted == m_servicesByPid.constEnd()) ? QVector<NetGuard::ServiceEntry>()
+                                                   : hosted.value();
+        if (p.services == entries) continue;
+
+        const int oldCount = p.services.size();
+        const int newCount = entries.size();
+        const QModelIndex pIdx = createIndex(pRow, 0, nullptr);
+        if (newCount > oldCount) {
+            beginInsertRows(pIdx, oldCount, newCount - 1);
+            p.services = entries;
+            endInsertRows();
+        } else if (newCount < oldCount) {
+            beginRemoveRows(pIdx, newCount, oldCount - 1);
+            p.services = entries;
+            endRemoveRows();
+        } else {
+            p.services = entries;
+        }
+
+        // The host row shows the service count, and service rows carry the
+        // fields that changed (state, image path).
+        emit dataChanged(index(pRow, COL_NAME), index(pRow, COL_PKTS),
+                         {Qt::DisplayRole, Qt::ToolTipRole});
+        if (newCount > 0)
+            emit dataChanged(index(0, COL_NAME, pIdx), index(newCount - 1, COL_PKTS, pIdx),
+                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::ForegroundRole});
+    }
 }
 
 int NetworkTreeModel::findOrAddProcess(const QString &name, quint32 pid)
@@ -334,6 +433,10 @@ int NetworkTreeModel::findOrAddProcess(const QString &name, quint32 pid)
     const int pRow = m_procs.size();
     beginInsertRows(QModelIndex(), pRow, pRow);
     ProcessNode p; p.name = name; p.pid = pid;
+    // NG-012: a service snapshot may have arrived before the first packet of
+    // this process; attach what is already known so the rows appear at once.
+    const auto hosted = m_servicesByPid.constFind(pid);
+    if (hosted != m_servicesByPid.constEnd()) p.services = hosted.value();
     m_procs.append(p);
     m_procIdx.insert(name, pRow);
     endInsertRows();

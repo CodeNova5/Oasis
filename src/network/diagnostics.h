@@ -122,6 +122,8 @@ public:
     void reportUnknownDirection(const QString &packetSummary, const QString &context);
     void reportStaleMapping(quint32 pid, const QString &expected, const QString &actual, const QString &context);
     void reportAdapterUnavailable(const QString &adapterName, const QString &reason);
+    // NG-012: service identity could not be resolved; traffic keeps flowing.
+    void reportServiceLookupFailed(quint32 pid, const QString &serviceName, const QString &reason);
 
     // Utilities
     int droppedPacketsCount() const;

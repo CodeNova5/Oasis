@@ -48,6 +48,7 @@ SOURCES += \
     src/network/diagnostics.cpp \
     src/identity/applicationidentity.cpp \
     src/identity/publisherresolver.cpp \
+    src/identity/serviceresolver.cpp \
     src/firewall/firewallmanager.cpp \
     src/firewall/firewallmodel.cpp \
     src/firewall/firewallwidget.cpp \
@@ -80,6 +81,7 @@ HEADERS += \
     src/network/diagnostics.h \
     src/identity/applicationidentity.h \
     src/identity/publisherresolver.h \
+    src/identity/serviceresolver.h \
     src/firewall/firewallmanager.h \
     src/firewall/firewallmodel.h \
     src/firewall/firewallwidget.h \
