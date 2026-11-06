@@ -11,18 +11,19 @@ This backlog implements [PRD.md](PRD.md). Tickets are ordered by dependency insi
 
 ## Current status
 
-Last updated: 2026-11-05. Status values: **Done** (acceptance criteria met and verified), **Partial** (code exists but acceptance criteria are unmet or unverified), **Not started** (proposed, no code).
+Last updated: 2026-11-06. Status values: **Done** (acceptance criteria met and verified), **Partial** (code exists but acceptance criteria are unmet or unverified), **Not started** (proposed, no code).
 
-The application builds with Qt 6.11.1 / MinGW 13.1 (`qmake UltimateNetGuard.pro`, then `mingw32-make -j4`). One warning remains: unused `buildIpv6TcpPacket()` in `testfixtures.cpp`. Nothing below has been validated at runtime yet.
+The application builds with Qt 6.11.1 / MinGW 13.1 (`qmake UltimateNetGuard.pro`, then `mingw32-make -j4`). Two warnings remain: unused `buildIpv6TcpPacket()` in `testfixtures.cpp` and unused `EnableDebugPrivilege()` in `networkwidget.cpp`. Only NG-011 has been validated at runtime so far (standalone harness on Windows 10 19045); no part of the GUI has been exercised.
 
 | Ticket | Status | Implemented | Remaining |
 | --- | --- | --- | --- |
 | NG-001 | Partial | `src/network/testfixtures.*`: builders for browser download, updater, Windows service, DNS, TLS, VPN, unknown, game launcher, and IDE update, plus `runAllFixtures()` with identity assertions | Respawn-worker fixture added (`createRespawnWorkerFixture()`); `runAllFixtures()` now iterates all fixtures including respawn; identity/category assertions are recorded but not fully validated without `classifyProcess` integration; no Windows 10/11 run |
 | NG-002 | Partial | `src/network/policy.*`: identity, observation, policy, throttle-result, and audit-event structs with Qt metatypes and JSON helpers | Contract schema version added; `ThrottleResult` renamed to `NetworkPolicyThrottleResult` to avoid collision with `throttlebackend.h`; no round-trip test; no production consumer yet |
 | NG-003 | Partial | `src/network/diagnostics.*`: bounded `DiagnosticsModel` (500 records) with typed reasons, table columns, summary counts, and versioned JSON export; `NetworkMonitor` emits aggregated gap signals (drops, unresolved PIDs, unknown direction, stale mappings, adapter failures); `NetworkWidget` feeds the model; Settings tab has a Diagnostics support view with export and clear | Not exercised at runtime; no automated coverage for the export schema or the gap signals |
-| NG-010 | Partial | `src/identity/applicationidentity.*`: canonical-path resolution, version metadata, SHA-1 identity IDs, typed failures, and `QSettings` `IdentityStore` (schema 1); live monitoring now resolves identities for PIDs that own connections (cached per PID, pruned when the PID disappears), attaches them to captured packets, shows the resolver display name in the process tree, and records typed resolution failures as diagnostics | Path equivalence, typed failures, and restart persistence untested at runtime; no publisher evidence (NG-011) or process start-time reuse detection (NG-013) |
+| NG-010 | Partial | `src/identity/applicationidentity.*`: canonical-path resolution, version metadata, SHA-1 identity IDs, typed failures, and `QSettings` `IdentityStore` (schema 1); live monitoring now resolves identities for PIDs that own connections (cached per PID, pruned when the PID disappears), attaches them to captured packets, shows the resolver display name in the process tree, and records typed resolution failures as diagnostics. Publisher and signer evidence now come from NG-011 | Path equivalence, typed failures, and restart persistence untested at runtime; no process start-time reuse detection (NG-013) |
+| NG-011 | Partial | `src/identity/publisherresolver.*`: WinVerifyTrust with local-only trust data, catalog fallback (`CryptCATAdmin*`) so inbox binaries resolve, signer CN/organization, SHA-1 certificate thumbprint, countersignature timestamp; `ApplicationIdentityResolver` fills `signerStatus`, `publisher`, and `fingerprints` and never blocks on failure; process rows carry `signed`/`unsigned`/`invalid signature`/`signature unavailable` plus a hover detail | Resolver and identity integration verified on Windows 10 19045 with a standalone harness (embedded, catalog, unsigned, tampered, missing cases); name-column and tooltip rendering not exercised in the running GUI; the per-session cache is not persisted |
 
-NG-011 through NG-016 and all of Phases 2–6 are **not started**. NG-011 and NG-012 can build on the NG-010 resolver; NG-014 also needs NG-013.
+NG-012 through NG-016 and all of Phases 2–6 are **not started**. NG-012 and NG-013 can build on the NG-010 resolver; NG-014 also needs NG-013. NG-011 now provides the publisher evidence NG-012, NG-014, NG-015, and NG-034 expect.
 
 ## Phase 0: Baseline and instrumentation
 
@@ -66,11 +67,13 @@ NG-011 through NG-016 and all of Phases 2–6 are **not started**. NG-011 and NG
 
 ### NG-011 Add Authenticode publisher resolution
 
+- **Status:** Partial — `PublisherResolver` in `src/identity/publisherresolver.*` verifies the embedded Authenticode signature through `WinVerifyTrust`, and falls back to the Windows catalog (`CryptCATAdminAcquireContext`/`CalcHashFromFileHandle`/`EnumCatalogFromHash` + `WTD_CHOICE_CATALOG`) because inbox binaries such as `notepad.exe` are catalog-signed only. Evidence covers signer CN, organization, SHA-1 certificate thumbprint, and the countersignature timestamp (`CRYPT_PROVIDER_SGNR::sftVerifyAsOf`). `ApplicationIdentityResolver::resolveExecutablePath` records `signerStatus`, sets `publisher` and `fingerprints` only for verified signatures, and returns a resolved identity even when verification fails. Process rows append `signed: <publisher>`, `unsigned`, `invalid signature`, or `signature unavailable`, with publisher/timestamp detail in the row tooltip. Trust is evaluated from local data only (`WTD_CACHE_ONLY_URL_RETRIEVAL`, no revocation fetch) so a refresh can never block on a certificate server; a chain that only needs remote data is reported as unavailable rather than invalid. Verified against `node.exe` (embedded), `notepad.exe` (catalog), an unsigned build, a byte-flipped copy (invalid), and a missing path (unavailable) on Windows 10 19045. GUI rendering and explicit-distrust/expired-without-timestamp cases are still unverified.
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** NG-010
 - **Goal:** Resolve signer, publisher, signature state, and certificate timestamp using Windows trust APIs.
 - **Acceptance criteria:** The UI distinguishes signed, unsigned, invalid, and unavailable states; signature failures do not block observation.
+- **Validation:** `Get-AuthenticodeSignature` on the same paths should agree on state and publisher (`node.exe` signed/embedded, `notepad.exe` signed/catalog, a local build unsigned, a modified copy invalid); the app's process row and tooltip must show the matching state.
 
 ### NG-012 Add Windows service identity resolution
 

@@ -47,6 +47,7 @@ SOURCES += \
     src/network/policy.cpp \
     src/network/diagnostics.cpp \
     src/identity/applicationidentity.cpp \
+    src/identity/publisherresolver.cpp \
     src/firewall/firewallmanager.cpp \
     src/firewall/firewallmodel.cpp \
     src/firewall/firewallwidget.cpp \
@@ -78,6 +79,7 @@ HEADERS += \
     src/network/policy.h \
     src/network/diagnostics.h \
     src/identity/applicationidentity.h \
+    src/identity/publisherresolver.h \
     src/firewall/firewallmanager.h \
     src/firewall/firewallmodel.h \
     src/firewall/firewallwidget.h \
@@ -126,7 +128,9 @@ win32: LIBS += \
     -luuid \
     -lshlwapi \
     -ldxgi \
-    -lversion
+    -lversion \
+    -lwintrust \
+    -lcrypt32
 
 # ─── Compiler / preprocessor flags ──────────────────────────────────────────
 mingw {

@@ -8,6 +8,29 @@
 #include <QFont>
 #include <QColor>
 #include <QBrush>
+#include <QStringList>
+
+namespace {
+
+// NG-011: one short, unambiguous phrase per Authenticode state.
+QString signerRowText(const ProcessNode &p)
+{
+    switch (p.signerStatus) {
+    case ApplicationIdentity::SignerStatus::Signed:
+        return p.publisher.isEmpty()
+            ? QStringLiteral("signed")
+            : QStringLiteral("signed: %1").arg(p.publisher);
+    case ApplicationIdentity::SignerStatus::Unsigned:
+        return QStringLiteral("unsigned");
+    case ApplicationIdentity::SignerStatus::Invalid:
+        return QStringLiteral("invalid signature");
+    case ApplicationIdentity::SignerStatus::Unknown:
+        break;
+    }
+    return QStringLiteral("signature unavailable");
+}
+
+} // namespace
 
 NetworkTreeModel::NetworkTreeModel(QObject *parent) : QAbstractItemModel(parent)
 {
@@ -98,6 +121,10 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                     && p.identityName.compare(p.name, Qt::CaseInsensitive) != 0) {
                     label += " — " + p.identityName;
                 }
+                // NG-011: keep the Authenticode state visible on the row so
+                // signed, unsigned, invalid, and unavailable stay distinct.
+                if (!p.identityId.isEmpty())
+                    label += "  •  " + signerRowText(p);
                 return QString("%1  (PID %2)  •  %3 conn%4").arg(label).arg(p.pid).arg(p.conns.size()).arg(p.conns.size() == 1 ? "" : "s");
             }
             case COL_SRC:    return {};
@@ -108,6 +135,18 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             case COL_BYTES:  return formatBytes(p.totalRxBytes + p.totalTxBytes);
             case COL_PKTS:   return static_cast<qulonglong>(p.totalPackets);
             }
+        }
+        if (role == Qt::ToolTipRole && col == COL_NAME) {
+            QStringList lines;
+            lines << p.name;
+            if (!p.identityName.isEmpty() && p.identityName != p.name)
+                lines << "Identity: " + p.identityName;
+            lines << "Signature: " + signerRowText(p);
+            if (!p.publisher.isEmpty())
+                lines << "Publisher: " + p.publisher;
+            if (!p.identityId.isEmpty())
+                lines << "Identity ID: " + p.identityId;
+            return lines.join('\n');
         }
         if (role == Qt::ForegroundRole) {
             if (col == COL_RX) return QColor("#3B82F6");
@@ -190,11 +229,15 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
         // NG-010: identities resolve asynchronously; attach them when they
         // arrive and refresh the label without touching grouping or icons.
         if (!info.identityId.isEmpty()
-            && (p.identityId != info.identityId || p.identityName != info.identityName)) {
+            && (p.identityId != info.identityId || p.identityName != info.identityName
+                || p.publisher != info.identityPublisher
+                || p.signerStatus != info.signerStatus)) {
             p.identityId = info.identityId;
             p.identityName = info.identityName;
+            p.publisher = info.identityPublisher;
+            p.signerStatus = info.signerStatus;
             const QModelIndex nameIdx = index(pRow, COL_NAME);
-            emit dataChanged(nameIdx, nameIdx, {Qt::DisplayRole, Qt::UserRole + 6});
+            emit dataChanged(nameIdx, nameIdx, {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole + 6});
         }
 
         const quint64 bytes  = pkt.wireLen ? pkt.wireLen : pkt.captureLen;

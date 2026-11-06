@@ -11,6 +11,7 @@
 #include <QTimer>
 #include <QIcon>
 #include "packetparser.h"
+#include "network/policy.h"
 
 struct CapturedPacketInfo;
 
@@ -31,6 +32,8 @@ struct ProcessNode
     quint32  pid    = 0;
     QString  identityId;   // NG-010 durable executable identity, when resolved
     QString  identityName; // display name derived from version metadata
+    QString  publisher;    // NG-011 Authenticode signer (CN), when signed
+    ApplicationIdentity::SignerStatus signerStatus = ApplicationIdentity::SignerStatus::Unknown;
     quint64  totalRxSpeed = 0;
     quint64  totalTxSpeed = 0;
     quint64  totalRxBytes = 0;

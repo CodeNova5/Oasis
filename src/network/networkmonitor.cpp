@@ -392,7 +392,8 @@ void NetworkMonitor::run()
             quint32 pid  = 0;
             QString proc = "Unknown";
             bool isSvc = false;
-            QString identityId, identityName;
+            QString identityId, identityName, identityPublisher;
+            ApplicationIdentity::SignerStatus signerStatus = ApplicationIdentity::SignerStatus::Unknown;
 
             if (pkt.protocol.startsWith("TCP") || pkt.protocol.startsWith("UDP")) {
                 QString sPortStr = QString::number(pkt.srcPort);
@@ -443,10 +444,13 @@ void NetworkMonitor::run()
                 if (identityIt != m_identityCache.constEnd()) {
                     identityId = identityIt->id;
                     identityName = identityIt->displayName;
+                    identityPublisher = identityIt->publisher;
+                    signerStatus = identityIt->signerStatus;
                 }
             }
 
-            batch.append({pkt, pid, proc, isSvc, identityId, identityName});
+            batch.append({pkt, pid, proc, isSvc, identityId, identityName,
+                          identityPublisher, signerStatus});
 
             qint64 now = QDateTime::currentMSecsSinceEpoch();
             if (now - lastBatchTime >= 250 || batch.size() >= 3000) {

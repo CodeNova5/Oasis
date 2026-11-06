@@ -32,6 +32,9 @@ struct CapturedPacketInfo {
     // NG-010: durable identity of the owning executable, when resolved.
     QString identityId;
     QString identityName;
+    // NG-011: Authenticode evidence carried with the identity.
+    QString identityPublisher;
+    ApplicationIdentity::SignerStatus signerStatus = ApplicationIdentity::SignerStatus::Unknown;
 };
 Q_DECLARE_METATYPE(QList<CapturedPacketInfo>)
 

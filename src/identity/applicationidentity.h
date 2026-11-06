@@ -18,6 +18,7 @@
 #include <QMetaType>
 
 #include "network/policy.h"
+#include "identity/publisherresolver.h"
 
 namespace NetGuard {
 
@@ -104,6 +105,7 @@ public:
 private:
     IdentityStore m_ownedStore;
     IdentityStore *m_store = nullptr;
+    PublisherResolver m_publisherResolver;
 };
 
 } // namespace NetGuard

@@ -346,8 +346,18 @@ IdentityResolution ApplicationIdentityResolver::resolveExecutablePath(const QStr
     else
         identity.confidence = ApplicationIdentity::Confidence::WeakInference;
 
-    // signerStatus stays as persisted until the publisher resolver (NG-011)
-    // contributes certificate evidence.
+    // NG-011: Authenticode evidence. A failed or unavailable check is recorded
+    // as a signer state and never stops the identity from resolving.
+    const PublisherEvidence signature = m_publisherResolver.resolve(canonical);
+    identity.signerStatus = signature.status;
+    if (signature.status == ApplicationIdentity::SignerStatus::Signed) {
+        if (!signature.publisher.isEmpty()) identity.publisher = signature.publisher;
+    } else {
+        // Never attribute a publisher when the signature is absent, invalid, or
+        // unverifiable; a persisted publisher would be misleading.
+        identity.publisher.clear();
+    }
+    identity.fingerprints = signature.certificateThumbprint;
 
     resolution.status = IdentityResolutionStatus::Resolved;
     resolution.identity = identity;
