@@ -5,6 +5,7 @@
  */
 #include "networkmodel.h"
 #include "networkmonitor.h"
+#include "identity/processlineage.h"
 #include <QFont>
 #include <QColor>
 #include <QBrush>
@@ -161,6 +162,15 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                 lines << "Identity ID: " + p.identityId;
             if (p.services.size() > 1)
                 lines << QStringLiteral("%1 services (expand to list)").arg(p.services.size());
+            // NG-013: which instance of this PID is talking, and who started it.
+            const QString started = NetGuard::ProcessLineage::formatStartTime(p.processStartMs);
+            if (!started.isEmpty())
+                lines << "Started: " + started;
+            if (p.parentPid != 0) {
+                lines << (p.parentName.isEmpty()
+                              ? QStringLiteral("Parent: PID %1").arg(p.parentPid)
+                              : QStringLiteral("Parent: %1 (PID %2)").arg(p.parentName).arg(p.parentPid));
+            }
             return lines.join('\n');
         }
         if (role == Qt::ForegroundRole) {
@@ -296,6 +306,18 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
             p.signerStatus = info.signerStatus;
             const QModelIndex nameIdx = index(pRow, COL_NAME);
             emit dataChanged(nameIdx, nameIdx, {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole + 6});
+        }
+
+        // NG-013: lineage resolves on the cache thread; refresh it when it
+        // arrives. A changed start time means the PID was recycled.
+        if (info.processStartMs != 0
+            && (p.processStartMs != info.processStartMs || p.parentPid != info.parentPid
+                || p.parentName != info.parentName)) {
+            p.processStartMs = info.processStartMs;
+            p.parentPid = info.parentPid;
+            p.parentName = info.parentName;
+            const QModelIndex nameIdx = index(pRow, COL_NAME);
+            emit dataChanged(nameIdx, nameIdx, {Qt::ToolTipRole});
         }
 
         const quint64 bytes  = pkt.wireLen ? pkt.wireLen : pkt.captureLen;

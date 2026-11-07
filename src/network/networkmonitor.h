@@ -16,6 +16,7 @@
 #include "packetparser.h"
 #include "identity/applicationidentity.h"
 #include "identity/serviceresolver.h"
+#include "identity/processlineage.h"
 
 struct AdapterInfo {
     QString ip;
@@ -36,6 +37,10 @@ struct CapturedPacketInfo {
     // NG-011: Authenticode evidence carried with the identity.
     QString identityPublisher;
     ApplicationIdentity::SignerStatus signerStatus = ApplicationIdentity::SignerStatus::Unknown;
+    // NG-013: lineage of the owning process instance.
+    qint64  processStartMs = 0;   // 0 when the start time could not be read
+    quint32 parentPid = 0;
+    QString parentName;
 };
 Q_DECLARE_METATYPE(QList<CapturedPacketInfo>)
 
@@ -79,6 +84,12 @@ signals:
     // NG-012: the service manager could not be queried; traffic keeps flowing
     // and is attributed to the process instead of a service.
     void serviceLookupFailed(const QString &reason);
+    // NG-013: a PID now belongs to a different process than the one tracked
+    // (creation time changed). Cached attributions were discarded before this
+    // was emitted, so the new process is resolved from scratch.
+    void pidReuseDetected(quint32 pid, const QString &previousExecutable,
+                          const QString &currentExecutable,
+                          qint64 previousStartMs, qint64 currentStartMs);
 
 protected:
     void run() override;
@@ -121,6 +132,11 @@ private:
     NetGuard::ServiceResolver m_serviceResolver;
     NetGuard::ServicePidMap m_serviceCache; // last snapshot sent to the UI
     QString m_lastServiceError;
+
+    // NG-013: parent/child graph with creation times. Owned by the cache thread;
+    // the records for PIDs that own traffic are published for the packet loop.
+    NetGuard::ProcessLineage m_lineage;
+    QHash<quint32, NetGuard::ProcessLineageRecord> m_lineageCache;
 
     // Throttles stale-mapping diagnostics emitted from the cache thread.
     qint64 m_lastStaleReportMs = 0;

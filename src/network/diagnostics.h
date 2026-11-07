@@ -33,6 +33,7 @@ enum class PidResolutionStatus : int {
     KernelMode,
     PermissionDenied,
     ProcessNotFound,
+    PidReuse,     // NG-013: the PID now belongs to a different process instance
     Other
 };
 
@@ -124,6 +125,10 @@ public:
     void reportAdapterUnavailable(const QString &adapterName, const QString &reason);
     // NG-012: service identity could not be resolved; traffic keeps flowing.
     void reportServiceLookupFailed(quint32 pid, const QString &serviceName, const QString &reason);
+    // NG-013: a PID was recycled; the previous attribution was discarded.
+    void reportPidReuse(quint32 pid, const QString &previousProcess,
+                        const QString &currentProcess, qint64 previousStartMs,
+                        qint64 currentStartMs);
 
     // Utilities
     int droppedPacketsCount() const;
@@ -131,6 +136,7 @@ public:
     int unknownDirectionCount() const;
     int staleMappingsCount() const;
     int adapterUnavailableCount() const;
+    int pidReusesCount() const;
     QList<DiagnosticRecord> records() const;
 
     // Export the current diagnostics as versioned JSON (no packet payloads).

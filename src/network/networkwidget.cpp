@@ -322,6 +322,15 @@ NetworkWidget::NetworkWidget(QWidget *parent)
         m_diagnostics->reportServiceLookupFailed(0, QString(), reason);
     }, Qt::QueuedConnection);
 
+    // NG-013: a recycled PID is a security-relevant event; cached attributions
+    // were already dropped by the monitor before this arrives.
+    connect(m_monitor, &NetworkMonitor::pidReuseDetected, this,
+            [this](quint32 pid, const QString &previousExe, const QString &currentExe,
+                   qint64 previousStartMs, qint64 currentStartMs) {
+        m_diagnostics->reportPidReuse(pid, previousExe, currentExe,
+                                     previousStartMs, currentStartMs);
+    }, Qt::QueuedConnection);
+
     connect(ui->cmbAdapter, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &NetworkWidget::onAdapterChanged);
     connect(ui->btnStartStop, &QPushButton::clicked, this, &NetworkWidget::onStartStop);
     connect(ui->btnClear, &QPushButton::clicked, this, &NetworkWidget::onClearTable);

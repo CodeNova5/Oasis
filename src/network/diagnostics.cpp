@@ -38,6 +38,7 @@ QString pidStatusName(PidResolutionStatus status)
     case PidResolutionStatus::KernelMode:      return QStringLiteral("KernelMode");
     case PidResolutionStatus::PermissionDenied:return QStringLiteral("PermissionDenied");
     case PidResolutionStatus::ProcessNotFound: return QStringLiteral("ProcessNotFound");
+    case PidResolutionStatus::PidReuse:        return QStringLiteral("PidReuse");
     case PidResolutionStatus::Other:           return QStringLiteral("Other");
     }
     return QStringLiteral("Other");
@@ -83,6 +84,7 @@ QString mappingStatusName(MappingStatus status)
 QString categoryName(const DiagnosticRecord &rec)
 {
     if (rec.dropReason != PacketDropReason::None)                     return QStringLiteral("Dropped packets");
+    if (rec.pidStatus == PidResolutionStatus::PidReuse)               return QStringLiteral("PID reuse");
     if (rec.pidStatus != PidResolutionStatus::Resolved)               return QStringLiteral("Unresolved PID");
     if (rec.directionStatus != DirectionStatus::DirectionKnown)       return QStringLiteral("Unknown direction");
     if (rec.mappingStatus != MappingStatus::Fresh)                    return QStringLiteral("Stale mapping");
@@ -255,6 +257,30 @@ void DiagnosticsModel::reportServiceLookupFailed(quint32 pid, const QString &ser
     addRecord(rec);
 }
 
+void DiagnosticsModel::reportPidReuse(quint32 pid, const QString &previousProcess,
+                                      const QString &currentProcess, qint64 previousStartMs,
+                                      qint64 currentStartMs)
+{
+    const auto describe = [](const QString &name, qint64 startMs) {
+        const QString label = name.isEmpty() ? QStringLiteral("(unknown)") : name;
+        if (startMs <= 0) return label;
+        return label + QStringLiteral(" (started ")
+            + QDateTime::fromMSecsSinceEpoch(startMs).toString(Qt::ISODate) + QLatin1Char(')');
+    };
+
+    DiagnosticRecord rec;
+    rec.timestamp = QDateTime::currentDateTime();
+    rec.pidStatus = PidResolutionStatus::PidReuse;
+    rec.details = QStringLiteral("PID %1 was reused: %2 replaced by %3; cached attribution discarded")
+                      .arg(pid)
+                      .arg(describe(previousProcess, previousStartMs),
+                           describe(currentProcess, currentStartMs));
+    rec.context = QStringLiteral("process lineage");
+    rec.affectedPid = pid;
+    rec.affectedProcess = currentProcess;
+    addRecord(rec);
+}
+
 void DiagnosticsModel::reportAdapterUnavailable(const QString &adapterName, const QString &reason)
 {
     DiagnosticRecord rec;
@@ -279,6 +305,15 @@ int DiagnosticsModel::unresolvedPidsCount() const
     int count = 0;
     for (const auto &rec : m_records)
         if (rec.pidStatus == PidResolutionStatus::Unresolved)
+            ++count;
+    return count;
+}
+
+int DiagnosticsModel::pidReusesCount() const
+{
+    int count = 0;
+    for (const auto &rec : m_records)
+        if (rec.pidStatus == PidResolutionStatus::PidReuse)
             ++count;
     return count;
 }
@@ -323,6 +358,7 @@ QString DiagnosticsModel::toJson() const
     summary[QStringLiteral("unresolvedPids")]      = unresolvedPidsCount();
     summary[QStringLiteral("unknownDirections")]   = unknownDirectionCount();
     summary[QStringLiteral("staleMappings")]       = staleMappingsCount();
+    summary[QStringLiteral("pidReuses")]           = pidReusesCount();
     summary[QStringLiteral("adapterUnavailable")]  = adapterUnavailableCount();
 
     QJsonArray records;

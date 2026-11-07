@@ -21,6 +21,21 @@
 #include <mstcpip.h>
 #include <netioapi.h>
 #include <psapi.h>
+#include <tlhelp32.h>
+
+namespace {
+
+// Process creation time as UTC milliseconds since the epoch (0 when unknown).
+qint64 fileTimeToMs(const FILETIME &fileTime)
+{
+    ULARGE_INTEGER value;
+    value.LowPart  = fileTime.dwLowDateTime;
+    value.HighPart = fileTime.dwHighDateTime;
+    if (value.QuadPart == 0) return 0;
+    return static_cast<qint64>(value.QuadPart / 10000ULL) - 11644473600000LL;
+}
+
+} // namespace
 
 QList<AdapterInfo> NetworkMonitor::enumerateAdapters()
 {
@@ -360,6 +375,9 @@ void NetworkMonitor::run()
             bool isSvc = false;
             QString identityId, identityName, identityPublisher;
             ApplicationIdentity::SignerStatus signerStatus = ApplicationIdentity::SignerStatus::Unknown;
+            qint64 processStartMs = 0;
+            quint32 parentPid = 0;
+            QString parentName;
 
             if (pkt.protocol.startsWith("TCP") || pkt.protocol.startsWith("UDP")) {
                 QString sPortStr = QString::number(pkt.srcPort);
@@ -413,10 +431,19 @@ void NetworkMonitor::run()
                     identityPublisher = identityIt->publisher;
                     signerStatus = identityIt->signerStatus;
                 }
+
+                // NG-013: start time and parent of the owning instance.
+                const auto lineageIt = m_lineageCache.constFind(pid);
+                if (lineageIt != m_lineageCache.constEnd()) {
+                    processStartMs = lineageIt->startTimeMs;
+                    parentPid = lineageIt->parentPid;
+                    if (parentPid != 0) parentName = m_procCache.value(parentPid);
+                }
             }
 
             batch.append({pkt, pid, proc, isSvc, identityId, identityName,
-                          identityPublisher, signerStatus});
+                          identityPublisher, signerStatus, processStartMs,
+                          parentPid, parentName});
 
             qint64 now = QDateTime::currentMSecsSinceEpoch();
             if (now - lastBatchTime >= 250 || batch.size() >= 3000) {
@@ -539,7 +566,38 @@ void NetworkMonitor::updateCaches()
         if (!serviceError.isEmpty()) emit serviceLookupFailed(serviceError);
     }
 
-    // ── 3. Resolve Process Names ──
+    // ── 3. Resolve Process Names and Lineage (NG-013) ──
+    // Parent PIDs come from a single toolhelp snapshot; creation times are what
+    // tell a recycled PID apart from the process it replaced.
+    QHash<quint32, quint32> parentByPid;
+    {
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snap != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32W entry;
+            entry.dwSize = sizeof(entry);
+            if (Process32FirstW(snap, &entry)) {
+                do {
+                    parentByPid.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+                } while (Process32NextW(snap, &entry));
+            }
+            CloseHandle(snap);
+        }
+    }
+
+    // Identities already resolved, attached so lineage records can be related
+    // to a durable identity instead of a bare PID.
+    QHash<quint32, QString> knownIdentities;
+    {
+        QMutexLocker lk(&m_cacheMutex);
+        for (auto it = m_identityCache.constBegin(); it != m_identityCache.constEnd(); ++it)
+            knownIdentities.insert(it.key(), it->id);
+    }
+
+    // Processes are observed every 200 ms, so anything unseen for 30 s is gone;
+    // its record is kept for 5 minutes so helpers can still be related by PID.
+    m_lineage.expire(QDateTime::currentMSecsSinceEpoch());
+    QVector<NetGuard::LineageTransition> reusedPids;
+
     DWORD aProcs[1024], cbNeeded, cProcs;
     if (EnumProcesses(aProcs, sizeof(aProcs), &cbNeeded)) {
         cProcs = cbNeeded / sizeof(DWORD);
@@ -569,11 +627,43 @@ void NetworkMonitor::updateCaches()
                             if (!primary.isEmpty()) procName = "Service: " + primary;
                         }
                         pCache.insert(aProcs[i], procName);
+
+                        NetGuard::LineageObservation observation;
+                        observation.pid            = aProcs[i];
+                        observation.parentPid      = parentByPid.value(aProcs[i], 0);
+                        observation.processName    = procName;
+                        observation.executablePath = fullPath;
+                        observation.identityId     = knownIdentities.value(aProcs[i]);
+                        FILETIME created{}, exitedTime{}, kernelTime{}, userTime{};
+                        if (GetProcessTimes(hProc, &created, &exitedTime, &kernelTime, &userTime))
+                            observation.startTimeMs = fileTimeToMs(created);
+
+                        for (const auto &transition : m_lineage.observe(observation))
+                            if (transition.change == NetGuard::LineageChange::Reused)
+                                reusedPids.append(transition);
                     }
                     CloseHandle(hProc);
                 }
             }
         }
+    }
+
+    // A recycled PID must never inherit the previous process's attribution:
+    // drop the cached identity before the identity pass below runs.
+    if (!reusedPids.isEmpty()) {
+        {
+            QMutexLocker lk(&m_cacheMutex);
+            for (const auto &transition : reusedPids) {
+                m_identityCache.remove(transition.record.pid);
+                m_identityFailurePids.remove(transition.record.pid);
+            }
+        }
+        for (const auto &transition : reusedPids)
+            emit pidReuseDetected(transition.record.pid,
+                                  transition.previous.executablePath,
+                                  transition.record.executablePath,
+                                  transition.previous.startTimeMs,
+                                  transition.record.startTimeMs);
     }
 
     // ── 3b. Resolve durable identities for PIDs that own live connections ──
@@ -633,6 +723,15 @@ void NetworkMonitor::updateCaches()
     if (servicesChanged)
         emit serviceSnapshotReady(servicesForActive);
 
+    // ── 3d. Publish lineage for PIDs that own traffic ──
+    // Records are copied under the cache lock in step 4 below; the packet loop
+    // only reads this snapshot.
+    QHash<quint32, NetGuard::ProcessLineageRecord> lineageForActive;
+    for (quint32 pid : activePids) {
+        const NetGuard::ProcessLineageRecord record = m_lineage.record(pid);
+        if (record.isValid()) lineageForActive.insert(pid, record);
+    }
+
     // ── 4. Detect stale mappings: a connection key changed owner ──
     // Rate-limited to once per 5 seconds so a churning table cannot flood
     // the diagnostics model.
@@ -671,6 +770,7 @@ void NetworkMonitor::updateCaches()
     m_identityCache = idCache;
     m_identityFailurePids = failureCache;
     m_serviceCache = servicesForActive;
+    m_lineageCache = lineageForActive;
 }
 
 void NetworkMonitor::refreshLocalIPs()

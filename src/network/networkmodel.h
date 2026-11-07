@@ -38,6 +38,11 @@ struct ProcessNode
     // NG-012: services this process hosts. Drawn as their own child rows so
     // several services sharing one svchost.exe stay individually visible.
     QVector<NetGuard::ServiceEntry> services;
+    // NG-013: lineage of this process instance. Start time pins the instance so
+    // a recycled PID is visible instead of silently merging two processes.
+    qint64   processStartMs = 0;
+    quint32  parentPid = 0;
+    QString  parentName;
     quint64  totalRxSpeed = 0;
     quint64  totalTxSpeed = 0;
     quint64  totalRxBytes = 0;
