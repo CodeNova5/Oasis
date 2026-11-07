@@ -17,6 +17,7 @@
 #include "identity/applicationidentity.h"
 #include "identity/serviceresolver.h"
 #include "identity/processlineage.h"
+#include "identity/processgroupmanager.h"
 
 struct AdapterInfo {
     QString ip;
@@ -41,6 +42,10 @@ struct CapturedPacketInfo {
     qint64  processStartMs = 0;   // 0 when the start time could not be read
     quint32 parentPid = 0;
     QString parentName;
+    // NG-014: durable activity group of the owning process, when grouped.
+    QString groupId;
+    QString groupName;
+    ApplicationIdentity::Confidence groupConfidence = ApplicationIdentity::Confidence::Unknown;
 };
 Q_DECLARE_METATYPE(QList<CapturedPacketInfo>)
 
@@ -137,6 +142,12 @@ private:
     // the records for PIDs that own traffic are published for the packet loop.
     NetGuard::ProcessLineage m_lineage;
     QHash<quint32, NetGuard::ProcessLineageRecord> m_lineageCache;
+
+    // NG-014: activity groups rebuilt from the identity, publisher, service, and
+    // lineage evidence of the PIDs that own traffic. Manual edits persist
+    // through QSettings; derived groups are rebuilt on every refresh.
+    NetGuard::ProcessGroupManager m_groupManager;
+    QHash<quint32, NetGuard::GroupBinding> m_groupCache;
 
     // Throttles stale-mapping diagnostics emitted from the cache thread.
     qint64 m_lastStaleReportMs = 0;

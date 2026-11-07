@@ -378,6 +378,9 @@ void NetworkMonitor::run()
             qint64 processStartMs = 0;
             quint32 parentPid = 0;
             QString parentName;
+            QString groupId, groupName;
+            ApplicationIdentity::Confidence groupConfidence =
+                ApplicationIdentity::Confidence::Unknown;
 
             if (pkt.protocol.startsWith("TCP") || pkt.protocol.startsWith("UDP")) {
                 QString sPortStr = QString::number(pkt.srcPort);
@@ -439,11 +442,19 @@ void NetworkMonitor::run()
                     parentPid = lineageIt->parentPid;
                     if (parentPid != 0) parentName = m_procCache.value(parentPid);
                 }
+
+                // NG-014: durable activity group of the owning process.
+                const auto groupIt = m_groupCache.constFind(pid);
+                if (groupIt != m_groupCache.constEnd() && groupIt->isValid()) {
+                    groupId = groupIt->groupId;
+                    groupName = groupIt->groupName;
+                    groupConfidence = groupIt->confidence;
+                }
             }
 
             batch.append({pkt, pid, proc, isSvc, identityId, identityName,
                           identityPublisher, signerStatus, processStartMs,
-                          parentPid, parentName});
+                          parentPid, parentName, groupId, groupName, groupConfidence});
 
             qint64 now = QDateTime::currentMSecsSinceEpoch();
             if (now - lastBatchTime >= 250 || batch.size() >= 3000) {
@@ -732,6 +743,49 @@ void NetworkMonitor::updateCaches()
         if (record.isValid()) lineageForActive.insert(pid, record);
     }
 
+    // ── 3e. Group the PIDs that own traffic (NG-014) ──
+    // Each observation carries the identity, publisher, service, and lineage
+    // evidence gathered above, so one pass decides the membership of every
+    // active process and records why. Groups are rebuilt each refresh; only
+    // user edits are persisted.
+    QList<NetGuard::GroupEvidence> groupEvidence;
+    groupEvidence.reserve(activePids.size());
+    for (quint32 pid : activePids) {
+        const NetGuard::ProcessLineageRecord record = m_lineage.record(pid);
+        if (!record.isValid() || record.executablePath.isEmpty()) continue;
+
+        NetGuard::GroupEvidence evidence;
+        evidence.pid            = pid;
+        evidence.parentPid      = record.parentPid;
+        evidence.generation     = record.generation;
+        evidence.executablePath = record.executablePath;
+        evidence.processName    = record.processName;
+        evidence.displayName    = record.processName;
+
+        const auto identity = idCache.constFind(pid);
+        if (identity != idCache.constEnd()) {
+            evidence.identityId        = identity->id;
+            evidence.productName       = identity->productName;
+            evidence.companyName       = identity->companyName;
+            evidence.publisher         = identity->publisher;
+            evidence.packageFamilyName = identity->packageFamilyName;
+            evidence.signerStatus      = identity->signerStatus;
+            if (!identity->displayName.isEmpty()) evidence.displayName = identity->displayName;
+        }
+
+        const auto hosted = servicesByPid.constFind(pid);
+        if (hosted != servicesByPid.constEnd()) {
+            for (const NetGuard::ServiceEntry &service : hosted.value()) {
+                evidence.serviceNames.append(service.serviceName);
+                evidence.serviceDisplayNames.append(service.displayName);
+            }
+        }
+
+        groupEvidence.append(evidence);
+    }
+    const QHash<quint32, NetGuard::GroupBinding> groupBindings =
+        m_groupManager.assign(groupEvidence);
+
     // ── 4. Detect stale mappings: a connection key changed owner ──
     // Rate-limited to once per 5 seconds so a churning table cannot flood
     // the diagnostics model.
@@ -771,6 +825,7 @@ void NetworkMonitor::updateCaches()
     m_identityFailurePids = failureCache;
     m_serviceCache = servicesForActive;
     m_lineageCache = lineageForActive;
+    m_groupCache = groupBindings;
 }
 
 void NetworkMonitor::refreshLocalIPs()

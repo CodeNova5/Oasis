@@ -43,6 +43,10 @@ struct ProcessNode
     qint64   processStartMs = 0;
     quint32  parentPid = 0;
     QString  parentName;
+    // NG-014: durable activity group this process belongs to.
+    QString  groupId;
+    QString  groupName;
+    ApplicationIdentity::Confidence groupConfidence = ApplicationIdentity::Confidence::Unknown;
     quint64  totalRxSpeed = 0;
     quint64  totalTxSpeed = 0;
     quint64  totalRxBytes = 0;

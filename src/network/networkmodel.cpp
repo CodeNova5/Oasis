@@ -6,6 +6,7 @@
 #include "networkmodel.h"
 #include "networkmonitor.h"
 #include "identity/processlineage.h"
+#include "identity/processgroupmanager.h"
 #include <QFont>
 #include <QColor>
 #include <QBrush>
@@ -171,6 +172,12 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                               ? QStringLiteral("Parent: PID %1").arg(p.parentPid)
                               : QStringLiteral("Parent: %1 (PID %2)").arg(p.parentName).arg(p.parentPid));
             }
+            // NG-014: the activity group this process was grouped into.
+            if (!p.groupName.isEmpty()) {
+                lines << QStringLiteral("Group: %1 (%2)")
+                             .arg(p.groupName,
+                                  NetGuard::groupConfidenceName(p.groupConfidence));
+            }
             return lines.join('\n');
         }
         if (role == Qt::ForegroundRole) {
@@ -316,6 +323,16 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
             p.processStartMs = info.processStartMs;
             p.parentPid = info.parentPid;
             p.parentName = info.parentName;
+            const QModelIndex nameIdx = index(pRow, COL_NAME);
+            emit dataChanged(nameIdx, nameIdx, {Qt::ToolTipRole});
+        }
+
+        // NG-014: group membership resolves on the cache thread too.
+        if (p.groupName != info.groupName || p.groupId != info.groupId
+            || p.groupConfidence != info.groupConfidence) {
+            p.groupId = info.groupId;
+            p.groupName = info.groupName;
+            p.groupConfidence = info.groupConfidence;
             const QModelIndex nameIdx = index(pRow, COL_NAME);
             emit dataChanged(nameIdx, nameIdx, {Qt::ToolTipRole});
         }
