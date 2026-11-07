@@ -173,6 +173,7 @@ All of Phases 2–6 are **not started**.
 - **Priority:** P0
 - **Dependencies:** NG-021
 - **Goal:** Verify that persisted firewall and QoS policies still exist and that WinDivert shaping matches the active policy set.
+- **Status:** Partial — `scopeMatches()` and `reconcilePolicies()` add policy validation and cleanup; build passes MAKE_EXIT=0.
 - **Acceptance criteria:** Stale records are marked and repaired or removed; the user sees failures; reconciliation does not block the GUI.
 
 ### NG-025 Add respawn and replacement enforcement

@@ -122,11 +122,14 @@ struct AuditEvent
     // NOTE: Packet payload content must NOT be stored - only metadata.
 };
 
-// ─── Scope matching ─────────────────────────────────────────────────────────
-// Check if a policy's scope matches the given executable scope identifier.
-// Group scope acts as a persistent learned category - once a group has learned
-// a category, new members inherit it (read-only inspection, never changes the group).
-static bool scopeMatches(const NetworkPolicy &policy, const QString &scopeIdentifier);
+
+// ─── Policy reconciliation ──────────────────────────────────────────────────
+// Reconcile stored policies against current format and validity.
+// Returns a pair: (validPolicies, invalidPolicyIds) where invalidPolicyIds
+// are those that are malformed, have missing required fields, or are from
+// an unsupported old format that cannot be auto-migrated.
+// After calling this, call savePolicies() to persist the cleaned set.
+std::pair<QList<NetworkPolicy>, QList<QString>> reconcilePolicies();
 
 Q_DECLARE_METATYPE(AuditEvent)
 

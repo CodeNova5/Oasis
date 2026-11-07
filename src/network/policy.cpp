@@ -207,6 +207,87 @@ bool scopeMatches(const NetworkPolicy &policy, const QString &scopeIdentifier)
     return false;
 }
 
+// ─── Policy reconciliation ─────────────────────────────────────────────────────
+// Reconcile stored policies against current format and validity.
+// Returns a pair: (validPolicies, invalidPolicyIds) where invalidPolicyIds
+// are those that are malformed, have missing required fields, or are from
+// an unsupported old format that cannot be auto-migrated.
+// After calling this, call savePolicies() to persist the cleaned set.
+std::pair<QList<NetworkPolicy>, QList<QString>> reconcilePolicies()
+{
+    QList<NetworkPolicy> valid;
+    QList<QString> invalid;
+    QSettings settings;
+    // Read format version first (outside any group to avoid QSettings::value() no-arg issues)
+    int version = settings.value("NetGuard/Policies/formatVersion", 1).toInt();
+    settings.beginGroup("NetGuard/Policies");
+    // Read policies sub-group
+    if (version == PolicyStore::kLegacyStoreVersion)
+    {
+        // Legacy format: QVariantMap where each value is a QVariantMap of policy fields,
+        // keyed by policy id under the "policies" group.
+        const QVariantMap store = settings.value("policies").toMap();
+        for (auto it = store.constBegin(); it != store.constEnd(); ++it)
+        {
+            const QString policyId = it.key();
+            const QVariantMap fields = it.value().toMap();
+            NetworkPolicy p;
+            p.id = fields.value("id").toString();
+            p.scope = fields.value("scope").toString();
+            p.targetId = fields.value("targetId").toString();
+            p.direction = static_cast<NetworkDirection>(
+                fields.value("direction").toInt());
+            p.action = static_cast<NetworkPolicy::Action>(
+                fields.value("action").toInt());
+            p.rateBitsPerSecond = static_cast<quint64>(
+                fields.value("rateBitsPerSecond").toLongLong());
+            p.schedule = fields.value("schedule").toString();
+            p.expiration = QDateTime::fromString(fields.value("expiration").toString(), Qt::ISODate);
+            p.source = fields.value("source").toString();
+            p.enabled = fields.value("enabled").toBool();
+            p.description = fields.value("description").toString();
+            // Validate required fields
+            if (!p.id.isEmpty() && !p.scope.isEmpty())
+            {
+                valid.append(p);
+            }
+            else
+            {
+                invalid.append(policyId);
+            }
+        }
+    }
+    else
+    {
+        // Version 2: JSON array under "policies" key
+        const QString json = settings.value("policies").toString();
+        QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+        if (doc.isArray())
+        {
+            const QJsonArray arr = doc.array();
+            for (const QJsonValue &val : arr)
+            {
+                if (!val.isObject()) continue;
+                NetworkPolicy p = fromJsonNetworkPolicy(QJsonDocument(val.toObject()).toJson(QJsonDocument::Compact));
+                // Validate required fields
+                if (!p.id.isEmpty() && !p.scope.isEmpty())
+                {
+                    // Preserve the id from the stored data if the JSON one is empty
+                    if (p.id.isEmpty()) p.id = val.toObject().value("id").toString();
+                    valid.append(p);
+                }
+                else
+                {
+                    invalid.append(val.toObject().value("id").toString());
+                }
+            }
+        }
+    }
+    settings.endGroup();
+    settings.endGroup();
+    return {valid, invalid};
+}
+
 // ─── Throttle Result serialization ──────────────────────────────────────────
 
 QString toJson(const NetworkPolicyThrottleResult &result)
