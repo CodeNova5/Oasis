@@ -470,3 +470,17 @@ int GroupDetailDialog::selectedRow() const
 {
     return m_table->currentRow();
 }
+
+void GroupDetailDialog::showEvent(QShowEvent *event)
+{
+    QDialog::showEvent(event);
+    // Center the dialog on its parent widget so it is always visible.
+    if (parentWidget()) {
+        QRect parentGeo = parentWidget()->geometry();
+        int w = qMin(width(), parentGeo.width() * 3 / 4);
+        int h = qMin(height(), parentGeo.height() * 3 / 4);
+        resize(w, h);
+        move(parentGeo.center() - rect().center());
+    }
+}
+

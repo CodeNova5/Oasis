@@ -45,6 +45,9 @@ private slots:
     void onRename();
     void onMemberSelectionChanged();
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
     void applyGroup(const NetGuard::ProcessGroup &group);
     void refreshTable();
