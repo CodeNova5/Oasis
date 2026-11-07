@@ -1,7 +1,19 @@
+/**
+ * @file    bandwidthguard.h
+ * @brief   Data Saver classification and sustained-bandwidth detection.
+ *
+ * Classification reads the evidence the capture loop already carries with
+ * every packet (NG-010 identity, NG-011 publisher, NG-012 service role, NG-014
+ * activity group), so a rule matches an application rather than the PID it
+ * happens to run as. An updated executable, or a helper that has no rule of its
+ * own, classifies like the rest of its activity group.
+ */
 #pragma once
 
 #include <QObject>
 #include <QHash>
+
+#include "network/policy.h"
 
 struct CapturedPacketInfo;
 
@@ -10,6 +22,25 @@ enum class ProcessCategory {
     AskFirst,
     AutoCandidate,
     Unknown
+};
+
+// Everything the classifier may look at for one observed process. The name and
+// service flag preserve the rules the product shipped with; identity, publisher,
+// and group are what let a rule survive an update, a rename, or a respawn under a
+// new PID.
+struct ClassificationEvidence
+{
+    quint32 pid = 0;
+    QString processName;
+    QString executablePath;
+    QString identityId;      // NG-010 durable identity
+    QString displayName;     // NG-010 display name, version metadata when readable
+    QString publisher;       // NG-011 Authenticode publisher, empty when unsigned
+    ApplicationIdentity::SignerStatus signerStatus =
+        ApplicationIdentity::SignerStatus::Unknown;
+    QString groupId;         // NG-014 activity group, empty when ungrouped
+    QString groupName;
+    bool isService = false;
 };
 
 struct BandwidthEvent
@@ -41,9 +72,15 @@ public:
     void exemptProcess(const QString &processName, int durationSeconds);
     void setCategoryOverride(const QString &processName, ProcessCategory category);
 
+    // Name-only form: keeps the historical contract for callers that have no
+    // identity evidence (and for NG-001 fixtures).
     static ProcessCategory classifyProcess(const QString &processName,
                                            bool isService,
                                            quint32 pid);
+    // Evidence form: executable name first, then publisher and product metadata.
+    // Group evidence is applied by the guard itself, because it needs the
+    // categories of the group's other members.
+    static ProcessCategory classifyProcess(const ClassificationEvidence &evidence);
 
 signals:
     void sustainedBandwidthExceeded(const BandwidthEvent &event);
@@ -55,12 +92,23 @@ private:
         quint64 totalBytes = 0;
         bool isService = false;
         bool alerted = false;
+        // NG-015: evidence attached to the packets of this PID. Filled lazily,
+        // because identity and group resolution can arrive after the first
+        // packet of a connection.
+        QString identityId;
+        QString displayName;
+        QString publisher;
+        ApplicationIdentity::SignerStatus signerStatus =
+            ApplicationIdentity::SignerStatus::Unknown;
+        QString groupId;
+        QString groupName;
     };
 
     static QString normalizeProcessName(const QString &processName);
     static QString resolveExecutablePath(quint32 pid);
+    static int categoryRank(ProcessCategory category);
     bool isExempt(const QString &processName);
-    ProcessCategory categoryFor(const ProcessWindow &window, quint32 pid) const;
+    ProcessCategory resolveCategory(const ProcessWindow &window, quint32 pid);
     void loadPersistentState();
     void savePersistentState() const;
 
@@ -69,6 +117,9 @@ private:
     QHash<quint32, ProcessWindow> m_processes;
     QHash<QString, qint64> m_exemptions;
     QHash<QString, ProcessCategory> m_categoryOverrides;
+    // NG-015: category learned from the members of each activity group. Keyed by
+    // group id, so it survives the processes it was learned from.
+    QHash<QString, ProcessCategory> m_groupCategories;
 };
 
 Q_DECLARE_METATYPE(BandwidthEvent)
