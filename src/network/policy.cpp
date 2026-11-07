@@ -141,6 +141,7 @@ QString toJson(const NetworkPolicy &policy)
     obj[QStringLiteral("action")] = static_cast<int>(policy.action);
     obj[QStringLiteral("rateBitsPerSecond")] = static_cast<qint64>(policy.rateBitsPerSecond);
     obj[QStringLiteral("schedule")] = policy.schedule;
+    obj[QStringLiteral("scheduleType")] = static_cast<int>(policy.scheduleType);
     obj[QStringLiteral("expiration")] = policy.expiration.toString(Qt::ISODate);
     obj[QStringLiteral("source")] = policy.source;
     obj[QStringLiteral("enabled")] = policy.enabled;
@@ -168,6 +169,7 @@ NetworkPolicy fromJsonNetworkPolicy(const QString &json)
     policy.rateBitsPerSecond = static_cast<quint64>(
         obj.value("rateBitsPerSecond").toDouble());
     policy.schedule = obj.value("schedule").toString();
+    policy.scheduleType = static_cast<NetworkPolicy::ScheduleType>(obj.value("scheduleType").toInt());
     policy.expiration = QDateTime::fromString(
         obj.value("expiration").toString(), Qt::ISODate);
     policy.source = obj.value("source").toString();

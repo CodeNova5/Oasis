@@ -73,6 +73,8 @@ struct NetworkPolicy
     QString targetId;        // The path/publisher/service/target this policy applies to
     NetworkDirection direction = NetworkDirection::Download;
     enum class Action { Allow, Notify, Ask, Throttle, Block, Schedule, NoAction };
+    enum class ScheduleType { None, Recurring, Expiration, Both };
+    ScheduleType scheduleType = ScheduleType::None;
     Action action = Action::Allow;
     quint64 rateBitsPerSecond = 0;  // Rate limit in bits/sec (0 = unlimited)
     QString schedule;        // e.g. "work-hours", "metered-hours", "overnight", or cron-like

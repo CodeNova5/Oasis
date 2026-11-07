@@ -167,7 +167,7 @@ All of Phases 2–6 are **not started**.
 - **Goal:** Support expiration, recurring schedules, and network-profile conditions.
 - **Acceptance criteria:** Policies activate and deactivate at expected boundaries; a missed transition is recovered on startup.
 
-### NG-024 Add startup and periodic policy reconciliation
+- **Status:** Partial — `scheduleType` and `expiration` fields added to NetworkPolicy; `toJson`/`fromJson` handle new fields; build passes MAKE_EXIT=0. Implement recurring schedule activation logic
 
 - **Type:** feature
 - **Priority:** P0
