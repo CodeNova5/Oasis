@@ -11,6 +11,7 @@
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -23,6 +24,10 @@
 #include <QVBoxLayout>
 
 namespace {
+
+// At most this many member rows are shown without scrolling; the rest scroll so
+// the evidence pane keeps the room it needs.
+const int kMaxVisibleMemberRows = 5;
 
 enum MemberColumn : int {
     ColMember = 0,
@@ -37,6 +42,21 @@ QString pidText(const NetGuard::GroupMember &member)
 {
     return member.observedPid != 0 ? QString::number(member.observedPid)
                                    : QStringLiteral("—");
+}
+
+// The member is named after the application it belongs to, with the executable
+// file or service key next to it: "Google Chrome (chrome.exe)" is recognisable
+// while two binaries shipped by the same product stay distinguishable.
+QString memberLabel(const NetGuard::GroupMember &member)
+{
+    const QString fileName = member.type == NetGuard::GroupMemberType::ExecutablePath
+                                 ? QFileInfo(member.value).fileName()
+                                 : member.value;
+    const QString appName = member.displayName.trimmed();
+    if (appName.isEmpty()) return fileName.isEmpty() ? member.value : fileName;
+    if (fileName.isEmpty() || appName.compare(fileName, Qt::CaseInsensitive) == 0)
+        return appName;
+    return QStringLiteral("%1 (%2)").arg(appName, fileName);
 }
 
 } // namespace
@@ -120,7 +140,11 @@ GroupDetailDialog::GroupDetailDialog(NetworkMonitor *monitor, const QString &gro
     m_table->horizontalHeader()->setSectionResizeMode(ColEvidence, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(ColConfidence, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(ColPid, QHeaderView::ResizeToContents);
-    root->addWidget(m_table, 1);
+    // The member list is as tall as its rows (up to a cap) so the evidence pane
+    // below gets the remaining room instead of staring at empty table space.
+    m_table->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_table->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    root->addWidget(m_table);
 
     // ── Selected member: the identity evidence behind the membership ──
     QGroupBox *detailBox = new QGroupBox(QStringLiteral("Why this member belongs"), this);
@@ -129,9 +153,10 @@ GroupDetailDialog::GroupDetailDialog(NetworkMonitor *monitor, const QString &gro
     m_detail->setObjectName(QStringLiteral("lblGroupMemberDetail"));
     m_detail->setWordWrap(true);
     m_detail->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_detail->setMinimumHeight(84);
+    m_detail->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    m_detail->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     detailLayout->addWidget(m_detail);
-    root->addWidget(detailBox);
+    root->addWidget(detailBox, 1);
 
     m_status = new QLabel(this);
     m_status->setObjectName(QStringLiteral("lblGroupStatus"));
@@ -178,15 +203,15 @@ GroupDetailDialog::GroupDetailDialog(NetworkMonitor *monitor, const QString &gro
         }
     }
     if (!m_group.isValid()) {
+        // The group id is not in the published set (traffic stopped, or the
+        // group was removed): keep the window informative but read-only.
         m_active = false;
-        m_summary->setText(QStringLiteral("This group has no active member right now. "
-                                          "Membership returns when one of its processes owns traffic."));
-        m_nameEdit->setText(m_groupId);
+        m_nameEdit->setText(QString());
+        m_nameEdit->setPlaceholderText(QStringLiteral("Group not active"));
         m_btnRename->setEnabled(false);
         m_btnAdd->setEnabled(false);
-        refreshTable();
-        refreshSummary();
     }
+    refreshTable();
 }
 
 void GroupDetailDialog::onSnapshot(const QList<NetGuard::ProcessGroup> &groups)
@@ -230,9 +255,7 @@ void GroupDetailDialog::refreshTable()
         const int row = m_table->rowCount();
         m_table->insertRow(row);
 
-        auto *nameItem = new QTableWidgetItem(member.displayName.isEmpty()
-                                                  ? member.value
-                                                  : member.displayName);
+        auto *nameItem = new QTableWidgetItem(memberLabel(member));
         nameItem->setData(Qt::UserRole, NetGuard::groupMemberKey(member.type, member.value));
         nameItem->setToolTip(member.value);
 
@@ -255,8 +278,21 @@ void GroupDetailDialog::refreshTable()
     }
 
     m_table->blockSignals(false);
+    sizeTableToMembers();
     refreshSummary();
     showMemberDetail();
+}
+
+void GroupDetailDialog::sizeTableToMembers()
+{
+    // A short membership list must not leave a cavern of empty grid behind it,
+    // and a long one must not push the evidence pane out of the window: the
+    // table shows whole rows up to a cap and scrolls beyond that.
+    const int headerHeight = m_table->horizontalHeader()->sizeHint().height();
+    const int rowHeight    = qMax(m_table->verticalHeader()->defaultSectionSize(), 20);
+    const int rows         = qBound(1, m_table->rowCount(), kMaxVisibleMemberRows);
+    const int height       = headerHeight + rows * rowHeight + 2 * m_table->frameWidth();
+    m_table->setFixedHeight(height);
 }
 
 void GroupDetailDialog::refreshSummary()
@@ -298,9 +334,11 @@ void GroupDetailDialog::showMemberDetail()
     m_btnRemove->setEnabled(true);
 
     QStringList lines;
+    if (!member.displayName.trimmed().isEmpty())
+        lines << QStringLiteral("Application: ") + member.displayName.trimmed();
     lines << (member.type == NetGuard::GroupMemberType::ExecutablePath
                   ? QStringLiteral("Executable: ") + member.value
-                  : QStringLiteral("Service: ") + member.value);
+                  : QStringLiteral("Service key: ") + member.value);
     lines << QStringLiteral("Evidence: %1 (%2)")
                  .arg(NetGuard::groupEvidenceName(member.evidence),
                       NetGuard::groupConfidenceName(member.confidence));

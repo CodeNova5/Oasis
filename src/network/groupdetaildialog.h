@@ -44,6 +44,7 @@ private slots:
 private:
     void applyGroup(const NetGuard::ProcessGroup &group);
     void refreshTable();
+    void sizeTableToMembers();
     void refreshSummary();
     void showMemberDetail();
     void setStatus(const QString &message);

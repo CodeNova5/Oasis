@@ -49,8 +49,11 @@ QString readVersionString(const QByteArray &block, const QString &subBlock)
         return QString();
     }
 
-    const int chars = static_cast<int>(valueBytes / sizeof(wchar_t));
-    QString text = QString::fromWCharArray(static_cast<const wchar_t *>(value), chars);
+    // Version strings are NUL-terminated. The reported byte count is not a
+    // reliable character count (some resources report it in characters), so it
+    // must not be used to size the string: doing so cut every name in half and
+    // turned "Google Chrome" into "Google".
+    QString text = QString::fromWCharArray(static_cast<const wchar_t *>(value));
     const int terminator = text.indexOf(QChar('\0'));
     if (terminator >= 0) text.truncate(terminator);
     return text.trimmed();
