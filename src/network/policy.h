@@ -1,8 +1,9 @@
 /**
- * @file   policy.h
- * @brief  Telemetry contracts and Qt metatypes for observations, identities, attribution, policies, and audit events (NG-002).
- * @author Codebuff
- */
+
+  * @file   policy.h
+  * @brief  Telemetry contracts and Qt metatypes for observations, identities, attribution, policies, and audit events (NG-002).
+  * @author Codebuff
+  */
 
 #pragma once
 
@@ -11,6 +12,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QMetaType>
+#include <QSettings>
 
 // ─── Application identity ───────────────────────────────────────────────────
 struct ApplicationIdentity
@@ -94,7 +96,7 @@ struct NetworkPolicyThrottleResult
     bool  uploadLimited = false;
     bool  downloadLimited = false;
     QString uploadReason;    // Why upload shaping succeeded/fails
-    QString downloadReason;  // Why download shaping succeeded/fails
+    QString downloadReason;  // Why download shaping succeeds/fails
 };
 
 Q_DECLARE_METATYPE(NetworkPolicyThrottleResult)
@@ -133,6 +135,48 @@ NetworkPolicy fromJsonNetworkPolicy(const QString &json);
 
 QString toJson(const NetworkPolicyThrottleResult &result);
 NetworkPolicyThrottleResult fromJsonNetworkPolicyThrottleResult(const QString &json);
+
+QString toJson(const AuditEvent &event);
+AuditEvent fromJsonAuditEvent(const QString &json);
+
+// ─── Policy store ──────────────────────────────────────────────────────────────
+// Persistent policy store with versioned persistence, migration, and JSON import/export.
+// Policies are stored under QSettings group "NetGuard/Policies".
+// Version 1 format: QSettings map with key "policies" containing a QVariantMap per policy.
+// Version 2 format: JSON array under "policies" key (introduced for NG-020).
+// Malformed entries are rejected with a warning and omitted; the store never throws.
+struct PolicyStore
+{
+    static constexpr int kLegacyStoreVersion = 1; // QSettings map format
+    static constexpr int kCurrentStoreVersion = 2; // JSON array format
+
+    // Load all policies from QSettings, migrating old formats gracefully.
+    // Returns the list of valid policies; invalid entries are logged and skipped.
+    static QList<NetworkPolicy> loadPolicies();
+
+    // Save the given policies back to QSettings, overwriting the stored list.
+    static void savePolicies(const QList<NetworkPolicy> &policies);
+
+    // Export all policies as a JSON array string (for backup / external editing).
+    // Each policy is serialized with toJson(NetworkPolicy).
+    static QString exportPoliciesJson();
+
+    // Import policies from a JSON array string, merging with existing policies.
+    // Policies whose "id" already exists replace the old one; new ids are appended.
+    // Invalid JSON entries are skipped with a warning; the store never throws.
+    static bool importPoliciesJson(const QString &json);
+
+    // Internal: migration entry from old QSettings format to the new versioned format.
+    static bool migrateOldFormat(QSettings &settings);
+};
+
+Q_DECLARE_METATYPE(PolicyStore)
+
+// ─── Throttle Result serialization ──────────────────────────────────────────
+QString toJson(const NetworkPolicyThrottleResult &result);
+NetworkPolicyThrottleResult fromJsonNetworkPolicyThrottleResult(const QString &json);
+
+// ─── Audit Event serialization ──────────────────────────────────────────────
 
 QString toJson(const AuditEvent &event);
 AuditEvent fromJsonAuditEvent(const QString &json);

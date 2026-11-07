@@ -1,8 +1,9 @@
 /**
- * @file   policy.cpp
- * @brief  Telemetry contracts and Qt metatypes implementation for observations, identities, attribution, policies, and audit events (NG-002).
- * @author Codebuff
- */
+
+  * @file   policy.cpp
+  * @brief  Telemetry contracts and Qt metatypes implementation for observations, identities, attribution, policies, and audit events (NG-002).
+  * @author Codebuff
+  */
 
 #include "policy.h"
 
@@ -10,6 +11,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDebug>
+#include <QSettings>
 
 // ─── Application Identity serialization ─────────────────────────────────────
 
@@ -52,29 +54,29 @@ ApplicationIdentity fromJsonApplicationIdentity(const QString &json)
         return id;
     }
     QJsonObject obj = doc.object();
-    id.id = obj.value(QStringLiteral("id")).toString();
-    id.displayName = obj.value(QStringLiteral("displayName")).toString();
-    QJsonArray paths = obj.value(QStringLiteral("executablePaths")).toArray();
+    id.id = obj.value("id").toString();
+    id.displayName = obj.value("displayName").toString();
+    QJsonArray paths = obj.value("executablePaths").toArray();
     for (const QJsonValue &v : paths)
         id.executablePaths.append(v.toString());
-    id.publisher = obj.value(QStringLiteral("publisher")).toString();
+    id.publisher = obj.value("publisher").toString();
     id.signerStatus = static_cast<ApplicationIdentity::SignerStatus>(
-        obj.value(QStringLiteral("signerStatus")).toInt());
-    id.productName = obj.value(QStringLiteral("productName")).toString();
-    id.originalFileName = obj.value(QStringLiteral("originalFileName")).toString();
-    id.fileVersion = obj.value(QStringLiteral("fileVersion")).toString();
-    id.companyName = obj.value(QStringLiteral("companyName")).toString();
-    id.packageFamilyName = obj.value(QStringLiteral("packageFamilyName")).toString();
-    QJsonArray svcs = obj.value(QStringLiteral("services")).toArray();
+        obj.value("signerStatus").toInt());
+    id.productName = obj.value("productName").toString();
+    id.originalFileName = obj.value("originalFileName").toString();
+    id.fileVersion = obj.value("fileVersion").toString();
+    id.companyName = obj.value("companyName").toString();
+    id.packageFamilyName = obj.value("packageFamilyName").toString();
+    QJsonArray svcs = obj.value("services").toArray();
     for (const QJsonValue &v : svcs)
         id.services.append(v.toString());
-    QJsonArray pnames = obj.value(QStringLiteral("processNames")).toArray();
+    QJsonArray pnames = obj.value("processNames").toArray();
     for (const QJsonValue &v : pnames)
         id.processNames.append(v.toString());
     id.fingerprints = QByteArray::fromBase64(
-        obj.value(QStringLiteral("fingerprints")).toString().toLatin1());
+        obj.value("fingerprints").toString().toLatin1());
     id.confidence = static_cast<ApplicationIdentity::Confidence>(
-        obj.value(QStringLiteral("confidence")).toInt());
+        obj.value("confidence").toInt());
     return id;
 }
 
@@ -109,21 +111,21 @@ ActivityObservation fromJsonActivityObservation(const QString &json)
     }
     QJsonObject obj = doc.object();
     obs.timestamp = QDateTime::fromString(
-        obj.value(QStringLiteral("timestamp")).toString(), Qt::ISODate);
-    obs.identityId = obj.value(QStringLiteral("identityId")).toString();
-    obs.pid = static_cast<quint32>(obj.value(QStringLiteral("pid")).toDouble());
+        obj.value("timestamp").toString(), Qt::ISODate);
+    obs.identityId = obj.value("identityId").toString();
+    obs.pid = static_cast<quint32>(obj.value("pid").toDouble());
     obs.direction = static_cast<NetworkDirection>(
-        obj.value(QStringLiteral("direction")).toInt());
-    obs.bytes = static_cast<quint64>(obj.value(QStringLiteral("bytes")).toDouble());
-    obs.protocol = obj.value(QStringLiteral("protocol")).toString();
-    obs.localEndpoint = obj.value(QStringLiteral("localEndpoint")).toString();
-    obs.remoteEndpoint = obj.value(QStringLiteral("remoteEndpoint")).toString();
-    obs.domain = obj.value(QStringLiteral("domain")).toString();
+        obj.value("direction").toInt());
+    obs.bytes = static_cast<quint64>(obj.value("bytes").toDouble());
+    obs.protocol = obj.value("protocol").toString();
+    obs.localEndpoint = obj.value("localEndpoint").toString();
+    obs.remoteEndpoint = obj.value("remoteEndpoint").toString();
+    obs.domain = obj.value("domain").toString();
     obs.attributionSource = static_cast<ActivityObservation::AttributionSource>(
-        obj.value(QStringLiteral("attributionSource")).toInt());
+        obj.value("attributionSource").toInt());
     obs.classification = static_cast<ActivityObservation::Classification>(
-        obj.value(QStringLiteral("classification")).toInt());
-    obs.details = obj.value(QStringLiteral("details")).toString();
+        obj.value("classification").toInt());
+    obs.details = obj.value("details").toString();
     return obs;
 }
 
@@ -156,21 +158,21 @@ NetworkPolicy fromJsonNetworkPolicy(const QString &json)
         return policy;
     }
     QJsonObject obj = doc.object();
-    policy.id = obj.value(QStringLiteral("id")).toString();
-    policy.scope = obj.value(QStringLiteral("scope")).toString();
-    policy.targetId = obj.value(QStringLiteral("targetId")).toString();
+    policy.id = obj.value("id").toString();
+    policy.scope = obj.value("scope").toString();
+    policy.targetId = obj.value("targetId").toString();
     policy.direction = static_cast<NetworkDirection>(
-        obj.value(QStringLiteral("direction")).toInt());
+        obj.value("direction").toInt());
     policy.action = static_cast<NetworkPolicy::Action>(
-        obj.value(QStringLiteral("action")).toInt());
+        obj.value("action").toInt());
     policy.rateBitsPerSecond = static_cast<quint64>(
-        obj.value(QStringLiteral("rateBitsPerSecond")).toDouble());
-    policy.schedule = obj.value(QStringLiteral("schedule")).toString();
+        obj.value("rateBitsPerSecond").toDouble());
+    policy.schedule = obj.value("schedule").toString();
     policy.expiration = QDateTime::fromString(
-        obj.value(QStringLiteral("expiration")).toString(), Qt::ISODate);
-    policy.source = obj.value(QStringLiteral("source")).toString();
-    policy.enabled = obj.value(QStringLiteral("enabled")).toBool();
-    policy.description = obj.value(QStringLiteral("description")).toString();
+        obj.value("expiration").toString(), Qt::ISODate);
+    policy.source = obj.value("source").toString();
+    policy.enabled = obj.value("enabled").toBool();
+    policy.description = obj.value("description").toString();
     return policy;
 }
 
@@ -201,14 +203,15 @@ NetworkPolicyThrottleResult fromJsonThrottleResult(const QString &json)
     }
     QJsonObject obj = doc.object();
     result.status = static_cast<NetworkPolicyThrottleResult::Status>(
-        obj.value(QStringLiteral("status")).toInt());
-    result.message = obj.value(QStringLiteral("message")).toString();
-    result.policyId = obj.value(QStringLiteral("policyId")).toString();
-    result.executablePath = obj.value(QStringLiteral("executablePath")).toString();
-    result.uploadLimited = obj.value(QStringLiteral("uploadLimited")).toBool();
-    result.downloadLimited = obj.value(QStringLiteral("downloadLimited")).toBool();
-    result.uploadReason = obj.value(QStringLiteral("uploadReason")).toString();
-    result.downloadReason = obj.value(QStringLiteral("downloadReason")).toString();
+        obj.value("status").toInt());
+    result.message = obj.value("message").toString();
+    result.policyId = obj.value("policyId").toString();
+    result.executablePath = obj.value("executablePath").toString();
+    result.uploadLimited = obj.value("uploadLimited").toBool();
+    result.downloadLimited = obj.value("downloadLimited").toBool();
+    result.uploadReason = obj.value("uploadReason").toString();
+
+    result.downloadReason = obj.value("downloadReason").toString();
     return result;
 }
 
@@ -240,15 +243,230 @@ AuditEvent fromJsonAuditEvent(const QString &json)
     }
     QJsonObject obj = doc.object();
     event.timestamp = QDateTime::fromString(
-        obj.value(QStringLiteral("timestamp")).toString(), Qt::ISODate);
+        obj.value("timestamp").toString(), Qt::ISODate);
     event.type = static_cast<AuditEvent::EventType>(
-        obj.value(QStringLiteral("type")).toInt());
-    event.scope = obj.value(QStringLiteral("scope")).toString();
-    event.reason = obj.value(QStringLiteral("reason")).toString();
-    event.result = obj.value(QStringLiteral("result")).toString();
-    event.errorInfo = obj.value(QStringLiteral("errorInfo")).toString();
-    event.relatedIdentityId = obj.value(QStringLiteral("relatedIdentityId")).toString();
-    event.relatedPolicyId = obj.value(QStringLiteral("relatedPolicyId")).toString();
-    event.details = obj.value(QStringLiteral("details")).toString();
+        obj.value("type").toInt());
+    event.scope = obj.value("scope").toString();
+    event.reason = obj.value("reason").toString();
+    event.result = obj.value("result").toString();
+    event.errorInfo = obj.value("errorInfo").toString();
+    event.relatedIdentityId = obj.value("relatedIdentityId").toString();
+    event.relatedPolicyId = obj.value("relatedPolicyId").toString();
+    event.details = obj.value("details").toString();
     return event;
+}
+
+// ─── Policy store ──────────────────────────────────────────────────────────────
+// Persistent policy store with versioned persistence, migration, and JSON import/export.
+// Policies are stored under QSettings group "NetGuard/Policies".
+// Version 1 format: QSettings map with key "policies" containing a QVariantMap per policy.
+// Version 2 format: JSON array under "policies" key (introduced for NG-020).
+// Malformed entries are rejected with a warning and omitted; the store never throws.
+
+
+QList<NetworkPolicy> PolicyStore::loadPolicies()
+{
+    QList<NetworkPolicy> result;
+    QSettings settings;
+    // Read format version first (outside any group to avoid QSettings::value() no-arg issues)
+    int version = settings.value("NetGuard/Policies/formatVersion", 1).toInt();
+    settings.beginGroup("NetGuard/Policies");
+
+    if (version == PolicyStore::kLegacyStoreVersion)
+    {
+        // Legacy format: QVariantMap where each value is a QVariantMap of policy fields,
+        // keyed by policy id under the "policies" group.
+        const QVariantMap store = settings.value("policies").toMap();
+        for (auto it = store.constBegin(); it != store.constEnd(); ++it)
+        {
+            const QString policyId = it.key();
+            const QVariantMap fields = it.value().toMap();
+            NetworkPolicy p;
+            p.id = fields.value("id").toString();
+            p.scope = fields.value("scope").toString();
+            p.targetId = fields.value("targetId").toString();
+            p.direction = static_cast<NetworkDirection>(
+                fields.value("direction").toInt());
+            p.action = static_cast<NetworkPolicy::Action>(
+                fields.value("action").toInt());
+            p.rateBitsPerSecond = static_cast<quint64>(
+                fields.value("rateBitsPerSecond").toLongLong());
+            p.schedule = fields.value("schedule").toString();
+            p.expiration = QDateTime::fromString(
+                fields.value("expiration").toString(), Qt::ISODate);
+            p.source = fields.value("source").toString();
+            p.enabled = fields.value("enabled").toBool();
+            p.description = fields.value("description").toString();
+            // Validate required fields
+            if (!p.id.isEmpty() && !p.scope.isEmpty())
+            {
+                result.append(p);
+            }
+            else
+            {
+                qWarning() << "PolicyStore: skipping malformed policy id" << policyId;
+            }
+        }
+    }
+    else
+    {
+        // Version 2: JSON array under "policies" key
+        const QString json = settings.value("policies").toString();
+        QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+        if (doc.isArray())
+        {
+            const QJsonArray arr = doc.array();
+            for (const QJsonValue &val : arr)
+            {
+                if (!val.isObject()) continue;
+                NetworkPolicy p = fromJsonNetworkPolicy(QJsonDocument(val.toObject()).toJson(QJsonDocument::Compact));
+                // Validate required fields
+                if (!p.id.isEmpty() && !p.scope.isEmpty())
+                {
+                    // Preserve the id from the stored data if the JSON one is empty
+                    if (p.id.isEmpty()) p.id = val.toObject().value("id").toString();
+                    result.append(p);
+                }
+                else
+                {
+                    qWarning() << "PolicyStore: skipping malformed policy from JSON";
+                }
+            }
+        }
+    }
+    settings.endGroup();
+    return result;
+}
+
+void PolicyStore::savePolicies(const QList<NetworkPolicy> &policies)
+{
+    QSettings settings;
+    settings.beginGroup("NetGuard/Policies");
+    settings.setValue("formatVersion", PolicyStore::kCurrentStoreVersion);
+    QVariantMap store;
+    for (const NetworkPolicy &p : policies)
+    {
+        QVariantMap fields;
+        fields["id"] = p.id;
+        fields["scope"] = p.scope;
+        fields["targetId"] = p.targetId;
+        fields["direction"] = static_cast<int>(p.direction);
+        fields["action"] = static_cast<int>(p.action);
+        fields["rateBitsPerSecond"] = p.rateBitsPerSecond;
+        fields["schedule"] = p.schedule;
+        fields["expiration"] = p.expiration.toString(Qt::ISODate);
+        fields["source"] = p.source;
+        fields["enabled"] = p.enabled;
+        fields["description"] = p.description;
+        store[p.id] = fields;
+    }
+    settings.setValue("policies", store);
+    settings.endGroup();
+}
+
+QString PolicyStore::exportPoliciesJson()
+{
+    QSettings settings;
+    settings.beginGroup("NetGuard/Policies");
+    const QString json = settings.value("policies").toString();
+    settings.endGroup();
+    return json; // return empty string if none stored
+}
+
+bool PolicyStore::importPoliciesJson(const QString &json)
+{
+    bool changed = false;
+    QSettings settings;
+    settings.beginGroup("NetGuard/Policies");
+
+    // Read existing policies to merge into
+    QList<NetworkPolicy> existing = loadPolicies();
+    QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+    if (doc.isArray())
+    {
+        const QJsonArray arr = doc.array();
+        for (const QJsonValue &val : arr)
+        {
+            if (!val.isObject()) continue;
+            NetworkPolicy p = fromJsonNetworkPolicy(QJsonDocument(val.toObject()).toJson(QJsonDocument::Compact));
+            if (p.id.isEmpty())
+            {
+                qWarning() << "PolicyStore: cannot import policy without id";
+                continue;
+            }
+            // Find existing policy with same id, or append
+            bool found = false;
+            for (NetworkPolicy &ep : existing)
+            {
+                if (ep.id == p.id)
+                {
+                    ep = p; // replace
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                existing.append(p);
+            }
+            changed = true;
+        }
+    }
+
+    // Write back the merged list
+    savePolicies(existing);
+    settings.endGroup();
+    return changed;
+}
+
+bool PolicyStore::migrateOldFormat(QSettings &settings)
+{
+    // Check if we already migrated
+    if (settings.value("NetGuard/Policies/migrated").toBool()) return false;
+    settings.beginGroup("NetGuard/Policies");
+    int version = settings.value("formatVersion", 1).toInt();
+    if (version >= PolicyStore::kCurrentStoreVersion)
+    {
+        settings.endGroup();
+        return false;
+    }
+    // Legacy format: QVariantMap under "policies" key, keyed by policy id
+    settings.beginGroup("policies");
+    const QVariantMap legacy = settings.value(QString()).toMap();
+    QList<NetworkPolicy> result;
+    for (auto it = legacy.constBegin(); it != legacy.constEnd(); ++it)
+    {
+        const QString policyId = it.key();
+        const QVariantMap fields = it.value().toMap();
+        NetworkPolicy p;
+        p.id = fields.value("id").toString();
+        p.scope = fields.value("scope").toString();
+        p.targetId = fields.value("targetId").toString();
+        p.direction = static_cast<NetworkDirection>(
+            fields.value("direction").toInt());
+        p.action = static_cast<NetworkPolicy::Action>(
+            fields.value("action").toInt());
+        p.rateBitsPerSecond = static_cast<quint64>(
+            fields.value("rateBitsPerSecond").toLongLong());
+        p.schedule = fields.value("schedule").toString();
+        p.expiration = QDateTime::fromString(
+            fields.value("expiration").toString(), Qt::ISODate);
+        p.source = fields.value("source").toString();
+        p.enabled = fields.value("enabled").toBool();
+        p.description = fields.value("description").toString();
+        if (!p.id.isEmpty() && !p.scope.isEmpty())
+        {
+            result.append(p);
+        }
+        else
+        {
+            qWarning() << "PolicyStore: skipping malformed policy during migration id" << policyId;
+        }
+    }
+    settings.endGroup();
+    settings.endGroup();
+    // Now save in new format
+    savePolicies(result);
+    settings.setValue("NetGuard/Policies/migrated", true);
+    return true;
 }
