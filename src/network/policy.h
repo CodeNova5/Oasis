@@ -69,7 +69,7 @@ Q_DECLARE_METATYPE(ActivityObservation)
 struct NetworkPolicy
 {
     QString id;              // Unique policy identifier
-    QString scope;           // e.g. "path", "publisher", "service", "package", "group"
+    QString scope;           // e.g. "path", "publisher", "service", "package", "group", "executable", "port", "protocol"
     QString targetId;        // The path/publisher/service/target this policy applies to
     NetworkDirection direction = NetworkDirection::Download;
     enum class Action { Allow, Notify, Ask, Throttle, Block, Schedule, NoAction };
@@ -119,6 +119,12 @@ struct AuditEvent
     QString details;             // Free-form structured details
     // NOTE: Packet payload content must NOT be stored - only metadata.
 };
+
+// ─── Scope matching ─────────────────────────────────────────────────────────
+// Check if a policy's scope matches the given executable scope identifier.
+// Group scope acts as a persistent learned category - once a group has learned
+// a category, new members inherit it (read-only inspection, never changes the group).
+static bool scopeMatches(const NetworkPolicy &policy, const QString &scopeIdentifier);
 
 Q_DECLARE_METATYPE(AuditEvent)
 

@@ -176,6 +176,35 @@ NetworkPolicy fromJsonNetworkPolicy(const QString &json)
     return policy;
 }
 
+// ─── Scope matching ─────────────────────────────────────────────────────────
+// Check if a policy's scope matches the given executable scope identifier.
+// Group scope acts as a persistent learned category - once a group has learned
+// a category, new members inherit it (read-only inspection, never changes the group).
+bool scopeMatches(const NetworkPolicy &policy, const QString &scopeIdentifier)
+{
+    if (scopeIdentifier.isEmpty()) return false;
+    const QString policyScope = policy.scope;
+    // Exact match
+    if (policyScope == scopeIdentifier) return true;
+    // Group scope: if policy is scope "group" and identifier starts with "group:"
+    if (policyScope == QStringLiteral("group") && scopeIdentifier.startsWith(QStringLiteral("group:"))) return true;
+    // Publisher scope
+    if (policyScope == QStringLiteral("publisher") && scopeIdentifier == QStringLiteral("publisher")) return true;
+    // Service scope
+    if (policyScope == QStringLiteral("service") && scopeIdentifier == QStringLiteral("service")) return true;
+    // Package scope
+    if (policyScope == QStringLiteral("package") && scopeIdentifier == QStringLiteral("package")) return true;
+    // Executable (path) scope
+    if (policyScope == QStringLiteral("executable") || policyScope == QStringLiteral("path"))
+    {
+        // Simple substring match for path/executable
+        if (scopeIdentifier.contains(policyScope, Qt::CaseInsensitive) ||
+            policyScope.contains(scopeIdentifier, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
+
 // ─── Throttle Result serialization ──────────────────────────────────────────
 
 QString toJson(const NetworkPolicyThrottleResult &result)

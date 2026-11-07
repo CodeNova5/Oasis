@@ -157,6 +157,8 @@ All of Phases 2–6 are **not started**.
 - **Goal:** Support PID, executable path, publisher, service, package, and application-group scopes.
 - **Acceptance criteria:** The UI explains scope breadth and risk before applying a policy; group scope controls future matching processes.
 
+- **Status:** Partial — `scopeMatches()` added to PolicyStore; scope strings documented in NetworkPolicy; build passes MAKE_EXIT=0. Add policy scope selection UI
+
 ### NG-023 Add temporary and scheduled policies
 
 - **Type:** feature
