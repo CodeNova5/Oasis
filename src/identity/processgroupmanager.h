@@ -62,12 +62,23 @@ struct GroupMember
     ApplicationIdentity::Confidence confidence = ApplicationIdentity::Confidence::Unknown;
     QString explanation;       // human-readable reason for the membership
     QString identityId;        // NG-010 identity, for executable members
+    QString publisher;         // NG-011 Authenticode publisher, when signed
     quint32 observedPid  = 0;  // instance running now, 0 when not running
     qint64  addedAtMs    = 0;
     bool    manual       = false; // survives automatic re-derivation
 
     bool isValid() const { return !value.trimmed().isEmpty(); }
 };
+
+inline bool operator==(const GroupMember &a, const GroupMember &b)
+{
+    return a.type == b.type && a.value == b.value
+        && a.displayName == b.displayName && a.evidence == b.evidence
+        && a.confidence == b.confidence && a.explanation == b.explanation
+        && a.identityId == b.identityId && a.publisher == b.publisher
+        && a.observedPid == b.observedPid && a.manual == b.manual;
+}
+inline bool operator!=(const GroupMember &a, const GroupMember &b) { return !(a == b); }
 
 // Stable key for de-duplicating members: "<type>:<lowercased value>".
 QString groupMemberKey(GroupMemberType type, const QString &value);
@@ -88,6 +99,16 @@ struct ProcessGroup
     bool contains(GroupMemberType type, const QString &value) const;
     GroupMember member(GroupMemberType type, const QString &value) const;
 };
+
+// Snapshot equality: updatedAtMs is deliberately ignored so a refresh that
+// changes nothing does not repaint the group detail view.
+inline bool operator==(const ProcessGroup &a, const ProcessGroup &b)
+{
+    return a.id == b.id && a.name == b.name && a.anchor == b.anchor
+        && a.manual == b.manual && a.confidence == b.confidence
+        && a.members == b.members;
+}
+inline bool operator!=(const ProcessGroup &a, const ProcessGroup &b) { return !(a == b); }
 
 // ─── One observed process, assembled by the caller ──────────────────────────
 struct GroupEvidence

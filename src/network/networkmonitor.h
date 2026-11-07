@@ -63,6 +63,18 @@ public:
     void startCapture();
     void stopCapture();
 
+    // ── NG-016 group inspection and editing, called from the GUI thread ──
+    // Edits are serialized with the cache thread through m_groupMutex and are
+    // persisted by ProcessGroupManager, so a rename or a removal survives a
+    // restart without the user touching configuration files.
+    QList<NetGuard::ProcessGroup> processGroups() const;
+    QString createProcessGroup(const QString &name);
+    bool renameProcessGroup(const QString &groupId, const QString &name);
+    bool addProcessGroupMember(const QString &groupId, NetGuard::GroupMemberType type,
+                               const QString &value, QString *error = nullptr);
+    bool removeProcessGroupMember(const QString &groupId, NetGuard::GroupMemberType type,
+                                  const QString &value);
+
     bool    isCapturing()  const { return m_captureRunning.load(); }
 
 signals:
@@ -95,6 +107,9 @@ signals:
     void pidReuseDetected(quint32 pid, const QString &previousExecutable,
                           const QString &currentExecutable,
                           qint64 previousStartMs, qint64 currentStartMs);
+    // NG-016: the activity group set changed (membership, name, confidence, or
+    // a live PID). Sent only when something visible actually changed.
+    void groupSnapshotReady(const QList<NetGuard::ProcessGroup> &groups);
 
 protected:
     void run() override;
@@ -102,6 +117,8 @@ protected:
 private:
     void refreshLocalIPs();
     void updateCaches();
+    // Re-read the manager and emit groupSnapshotReady when the visible set moved.
+    void syncGroupSnapshot();
 
     QString m_adapterIP;
     QString m_adapterIPv6;
@@ -148,6 +165,9 @@ private:
     // through QSettings; derived groups are rebuilt on every refresh.
     NetGuard::ProcessGroupManager m_groupManager;
     QHash<quint32, NetGuard::GroupBinding> m_groupCache;
+    // Guards m_groupManager for GUI edits and holds the last published set.
+    mutable QMutex m_groupMutex;
+    QList<NetGuard::ProcessGroup> m_publishedGroups;
 
     // Throttles stale-mapping diagnostics emitted from the cache thread.
     qint64 m_lastStaleReportMs = 0;

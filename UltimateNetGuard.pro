@@ -51,6 +51,7 @@ SOURCES += \
     src/identity/serviceresolver.cpp \
     src/identity/processlineage.cpp \
     src/identity/processgroupmanager.cpp \
+    src/network/groupdetaildialog.cpp \
     src/firewall/firewallmanager.cpp \
     src/firewall/firewallmodel.cpp \
     src/firewall/firewallwidget.cpp \
@@ -86,6 +87,7 @@ HEADERS += \
     src/identity/serviceresolver.h \
     src/identity/processlineage.h \
     src/identity/processgroupmanager.h \
+    src/network/groupdetaildialog.h \
     src/firewall/firewallmanager.h \
     src/firewall/firewallmodel.h \
     src/firewall/firewallwidget.h \

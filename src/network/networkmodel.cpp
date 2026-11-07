@@ -105,6 +105,8 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         if (role == Qt::UserRole + 1) return p.name;
         if (role == Qt::UserRole + 2) return true; // isProcess flag
         if (role == Qt::UserRole + 6) return p.identityId;
+        // NG-016: which activity group the row belongs to, for the detail UI.
+        if (role == Qt::UserRole + 7) return p.groupId;
 
         // ── FIX: Custom Role for Numeric Sorting ──
         if (role == Qt::UserRole + 5) {
@@ -219,6 +221,10 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             if (!s.executablePath.isEmpty())
                 lines << "Image: " + s.executablePath;
             if (p.pid) lines << QStringLiteral("Hosted by PID %1").arg(p.pid);
+            if (!p.groupName.isEmpty())
+                lines << QStringLiteral("Group: %1 (%2)")
+                             .arg(p.groupName,
+                                  NetGuard::groupConfidenceName(p.groupConfidence));
             lines << (s.acceptsStop ? "Can be stopped from Services"
                                     : "Protected service (not user-stoppable)");
             return lines.join('\n');
@@ -334,7 +340,7 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
             p.groupName = info.groupName;
             p.groupConfidence = info.groupConfidence;
             const QModelIndex nameIdx = index(pRow, COL_NAME);
-            emit dataChanged(nameIdx, nameIdx, {Qt::ToolTipRole});
+            emit dataChanged(nameIdx, nameIdx, {Qt::ToolTipRole, Qt::UserRole + 7});
         }
 
         const quint64 bytes  = pkt.wireLen ? pkt.wireLen : pkt.captureLen;

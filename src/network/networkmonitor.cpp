@@ -209,6 +209,75 @@ void NetworkMonitor::setAdapterIP(const QString &ip)
     }
 }
 
+// ─── NG-016 group inspection and editing ───────────────────────────────────
+QList<NetGuard::ProcessGroup> NetworkMonitor::processGroups() const
+{
+    QMutexLocker lk(&m_groupMutex);
+    return m_publishedGroups;
+}
+
+void NetworkMonitor::syncGroupSnapshot()
+{
+    QList<NetGuard::ProcessGroup> groups;
+    bool changed = false;
+    {
+        QMutexLocker lk(&m_groupMutex);
+        groups = m_groupManager.groups();
+        changed = (groups != m_publishedGroups);
+        if (changed) m_publishedGroups = groups;
+    }
+    // Emitted outside the lock: receivers live on the GUI thread.
+    if (changed) emit groupSnapshotReady(groups);
+}
+
+QString NetworkMonitor::createProcessGroup(const QString &name)
+{
+    QString id;
+    {
+        QMutexLocker lk(&m_groupMutex);
+        id = m_groupManager.createGroup(name).id;
+    }
+    if (!id.isEmpty()) syncGroupSnapshot();
+    return id;
+}
+
+bool NetworkMonitor::renameProcessGroup(const QString &groupId, const QString &name)
+{
+    bool renamed = false;
+    {
+        QMutexLocker lk(&m_groupMutex);
+        renamed = m_groupManager.renameGroup(groupId, name);
+    }
+    if (renamed) syncGroupSnapshot();
+    return renamed;
+}
+
+bool NetworkMonitor::addProcessGroupMember(const QString &groupId,
+                                           NetGuard::GroupMemberType type,
+                                           const QString &value, QString *error)
+{
+    bool added = false;
+    {
+        QMutexLocker lk(&m_groupMutex);
+        added = m_groupManager.addMember(groupId, type, value, error);
+    }
+    if (added) syncGroupSnapshot();
+    return added;
+}
+
+bool NetworkMonitor::removeProcessGroupMember(const QString &groupId,
+                                              NetGuard::GroupMemberType type,
+                                              const QString &value)
+{
+    bool removed = false;
+    {
+        QMutexLocker lk(&m_groupMutex);
+        removed = m_groupManager.removeMember(groupId, type, value);
+    }
+    if (removed) syncGroupSnapshot();
+    return removed;
+}
+
 void NetworkMonitor::startCapture()
 {
     if (isRunning()) return;
@@ -783,8 +852,13 @@ void NetworkMonitor::updateCaches()
 
         groupEvidence.append(evidence);
     }
-    const QHash<quint32, NetGuard::GroupBinding> groupBindings =
-        m_groupManager.assign(groupEvidence);
+    QHash<quint32, NetGuard::GroupBinding> groupBindings;
+    {
+        // Serialized with GUI edits (rename, add/remove member).
+        QMutexLocker lk(&m_groupMutex);
+        groupBindings = m_groupManager.assign(groupEvidence);
+    }
+    syncGroupSnapshot();
 
     // ── 4. Detect stale mappings: a connection key changed owner ──
     // Rate-limited to once per 5 seconds so a churning table cannot flood

@@ -133,6 +133,7 @@ QString toPayload(const QString &id, const QString &name, const QString &anchor,
         entry.insert(QStringLiteral("value"), member.value);
         entry.insert(QStringLiteral("displayName"), member.displayName);
         entry.insert(QStringLiteral("identityId"), member.identityId);
+        entry.insert(QStringLiteral("publisher"), member.publisher);
         entry.insert(QStringLiteral("explanation"), member.explanation);
         entry.insert(QStringLiteral("confidence"), confidenceKey(member.confidence));
         entry.insert(QStringLiteral("addedAt"), static_cast<double>(member.addedAtMs));
@@ -367,6 +368,7 @@ QHash<quint32, GroupBinding> ProcessGroupManager::assign(const QList<GroupEviden
                                      : ApplicationIdentity::Confidence::StrongInference;
         executable.explanation = reason;
         executable.identityId  = evidence.identityId;
+        executable.publisher   = publisher;
         executable.observedPid = evidence.pid;
         executable.addedAtMs   = now;
         if (!isExcluded(id, groupMemberKey(executable.type, executable.value)))
@@ -501,6 +503,7 @@ QHash<quint32, GroupBinding> ProcessGroupManager::assign(const QList<GroupEviden
                                         .arg(directoryKey(evidence.executablePath),
                                              evidence.publisher.trimmed());
             companion.identityId  = evidence.identityId;
+            companion.publisher   = evidence.publisher.trimmed();
             companion.observedPid = evidence.pid;
             companion.addedAtMs   = now;
             addMember(destination, companion);
@@ -568,6 +571,7 @@ QHash<quint32, GroupBinding> ProcessGroupManager::assign(const QList<GroupEviden
                                           ? QStringLiteral("Added manually by the user.")
                                           : member.explanation;
                 member.identityId   = evidence.identityId;
+                if (member.publisher.isEmpty()) member.publisher = evidence.publisher.trimmed();
                 member.observedPid  = evidence.pid;
                 if (member.addedAtMs == 0) member.addedAtMs = now;
                 if (member.displayName.isEmpty())
@@ -679,6 +683,7 @@ QHash<quint32, GroupBinding> ProcessGroupManager::assign(const QList<GroupEviden
             helper.explanation += QStringLiteral(" Instance %1 of that PID.")
                                       .arg(evidence.generation);
         helper.identityId  = evidence.identityId;
+        helper.publisher   = evidence.publisher.trimmed();
         helper.observedPid = evidence.pid;
         helper.addedAtMs   = now;
         addMember(group, helper);
@@ -868,6 +873,12 @@ bool ProcessGroupManager::addMember(const QString &groupId, GroupMemberType type
                              ? leafName(normalisedValue)
                              : normalisedValue;
     member.manual      = true;
+    // A path the user adds may already be resolved elsewhere in the group.
+    for (const GroupMember &existing : existing.members) {
+        if (existing.type != type || groupMemberKey(type, existing.value) != key) continue;
+        member.publisher = existing.publisher;
+        break;
+    }
     member.evidence    = GroupEvidenceKind::Manual;
     member.confidence  = ApplicationIdentity::Confidence::Confirmed;
     member.explanation = QStringLiteral("Added manually by the user.");
@@ -998,6 +1009,7 @@ void ProcessGroupManager::ensureLoaded() const
             if (member.value.isEmpty()) continue;
             member.displayName = entry.value(QStringLiteral("displayName")).toString();
             member.identityId  = entry.value(QStringLiteral("identityId")).toString();
+            member.publisher   = entry.value(QStringLiteral("publisher")).toString();
             member.explanation = entry.value(QStringLiteral("explanation")).toString();
             member.confidence  = confidenceFromKey(
                 entry.value(QStringLiteral("confidence")).toString());

@@ -4,6 +4,7 @@
  */
 #include "networkwidget.h"
 #include "ui_networkwidget.h"
+#include "groupdetaildialog.h"
 
 // ── Theme Manager ──
 #include "stylemanager.h"
@@ -209,6 +210,7 @@ NetworkWidget::NetworkWidget(QWidget *parent)
 
     qRegisterMetaType<QList<CapturedPacketInfo>>("QList<CapturedPacketInfo>");
     qRegisterMetaType<NetGuard::ServicePidMap>("NetGuard::ServicePidMap");
+    qRegisterMetaType<QList<NetGuard::ProcessGroup>>("QList<NetGuard::ProcessGroup>");
 
     m_model = new NetworkTreeModel(this);
     m_proxy = new QSortFilterProxyModel(this);
@@ -415,6 +417,17 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
             ProcessInfoDialog dlg(name, pid, path, rx, tx, total, pkts, icon, this);
             dlg.exec();
         });
+
+        // NG-016: inspect the activity group this process was grouped into and
+        // edit its members without touching any configuration file.
+        const QString groupId = idx.data(Qt::UserRole + 7).toString();
+        if (!groupId.isEmpty()) {
+            QAction *actGroup = menu.addAction("🔗 Activity group...");
+            connect(actGroup, &QAction::triggered, this, [this, groupId]() {
+                GroupDetailDialog dlg(m_monitor, groupId, this);
+                dlg.exec();
+            });
+        }
 
         menu.addSeparator();
         QAction *actExempt = menu.addAction("Ignore bandwidth alerts for 2 hours");
