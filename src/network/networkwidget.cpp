@@ -424,7 +424,7 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
         if (!groupId.isEmpty()) {
             QAction *actGroup = menu.addAction("🔗 Activity group...");
             connect(actGroup, &QAction::triggered, this, [this, groupId]() {
-                GroupDetailDialog dlg(m_monitor, groupId, this);
+                GroupDetailDialog dlg(m_monitor, groupId, m_bandwidthGuard, this);
                 dlg.exec();
             });
         }

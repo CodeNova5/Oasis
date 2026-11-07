@@ -13,6 +13,7 @@
 #include "appinstaller.h"
 #include "windowsicon.h"
 #include "network/networkwidget.h"
+#include "network/bandwidthguard.h"
 #include "network/diagnostics.h"
 #include "firewall/firewallwidget.h"
 #include "hardware/hardwarewidget.h"
@@ -802,11 +803,15 @@ void MainWindow::onNetworkSpeed(quint64 rxBps, quint64 txBps)
 
 void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
 {
-    const QString category = event.category == ProcessCategory::AskFirst
-        ? "Possible active download"
-        : event.category == ProcessCategory::AutoCandidate
-            ? "Background updater candidate"
-            : "Background data activity";
+    const QString category = BandwidthGuard::categoryDisplayName(event.category);
+    // NG-015: the category may be the one the process's activity group learned
+    // rather than one a rule names, and the alert says so.
+    const QString classifiedAs = event.categoryFromGroup
+        ? (event.groupName.isEmpty()
+               ? QStringLiteral("Classified as: %1 (learned from its activity group).").arg(category)
+               : QStringLiteral("Classified as: %1 (learned from activity group \"%2\").")
+                     .arg(category, event.groupName))
+        : QStringLiteral("Classified as: %1.").arg(category);
 
     QString title = category;
     QString action;
@@ -845,11 +850,12 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
     const QString pathText = event.executablePath.isEmpty()
         ? QString()
         : QString("\nPath: %1").arg(event.executablePath);
-    const QString message = QString("%1 used %2 in this capture session (PID %3).%4\n%5")
+    const QString message = QString("%1 used %2 in this capture session (PID %3).%4\n%5\n%6")
         .arg(event.processName)
         .arg(fmtBytes(event.totalBytes))
         .arg(event.pid)
         .arg(pathText)
+        .arg(classifiedAs)
         .arg(action);
 
     if (ui->tableDataSaverDetections) {
@@ -858,7 +864,9 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         ui->tableDataSaverDetections->setItem(row, 0, new QTableWidgetItem(event.processName));
         ui->tableDataSaverDetections->setItem(row, 1, new QTableWidgetItem(event.executablePath));
         ui->tableDataSaverDetections->setItem(row, 2, new QTableWidgetItem(fmtBytes(event.totalBytes)));
-        ui->tableDataSaverDetections->setItem(row, 3, new QTableWidgetItem(category));
+        auto *categoryItem = new QTableWidgetItem(category);
+        categoryItem->setToolTip(classifiedAs);
+        ui->tableDataSaverDetections->setItem(row, 3, categoryItem);
         ui->tableDataSaverDetections->setItem(row, 4, new QTableWidgetItem(action));
         ui->tableDataSaverDetections->item(row, 0)->setData(Qt::UserRole, event.processName);
         ui->tableDataSaverDetections->item(row, 0)->setData(Qt::UserRole + 1, event.executablePath);

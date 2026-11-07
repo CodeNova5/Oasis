@@ -3,6 +3,7 @@
  * @brief   Identity and activity group detail view (NG-016).
  */
 #include "groupdetaildialog.h"
+#include "bandwidthguard.h"
 #include "networkmonitor.h"
 
 #include "stylemanager.h"
@@ -62,8 +63,9 @@ QString memberLabel(const NetGuard::GroupMember &member)
 } // namespace
 
 GroupDetailDialog::GroupDetailDialog(NetworkMonitor *monitor, const QString &groupId,
-                                     QWidget *parent)
-    : QDialog(parent), m_monitor(monitor), m_groupId(groupId)
+                                     BandwidthGuard *bandwidthGuard, QWidget *parent)
+    : QDialog(parent), m_monitor(monitor), m_bandwidthGuard(bandwidthGuard),
+      m_groupId(groupId)
 {
     setWindowTitle(QStringLiteral("Activity Group"));
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
@@ -309,13 +311,21 @@ void GroupDetailDialog::refreshSummary()
 
     const QString origin = m_group.manual ? QStringLiteral("created by you")
                                           : QStringLiteral("derived from process evidence");
-    m_summary->setText(QStringLiteral("%1 %2 · %3 running now · %4 · %5")
+    // NG-015: what the group's traffic is classified as, so the Data Saver
+    // decision behind these members is visible where the members are explained.
+    const ProcessCategory category = m_bandwidthGuard
+        ? m_bandwidthGuard->groupCategory(m_groupId)
+        : ProcessCategory::Unknown;
+    m_summary->setText(QStringLiteral("%1 %2 · %3 running now · %4 · %5 · Data Saver: %6")
                            .arg(members)
                            .arg(members == 1 ? QStringLiteral("member")
                                              : QStringLiteral("members"))
                            .arg(m_group.liveProcessCount())
                            .arg(NetGuard::groupConfidenceName(m_group.confidence))
-                           .arg(origin));
+                           .arg(origin)
+                           .arg(category == ProcessCategory::Unknown
+                                    ? QStringLiteral("not classified yet")
+                                    : BandwidthGuard::categoryDisplayName(category)));
     if (!m_active)
         m_status->setText(QStringLiteral("This group is not active right now; the members below "
                                          "are the last known ones."));
@@ -347,6 +357,7 @@ void GroupDetailDialog::showMemberDetail()
                                                   : member.identityId);
     if (!member.publisher.isEmpty())
         lines << QStringLiteral("Publisher: ") + member.publisher;
+    lines << QStringLiteral("Data Saver: ") + memberCategoryText(member);
     if (member.observedPid != 0)
         lines << QStringLiteral("Running as PID %1").arg(member.observedPid);
     if (member.manual)
@@ -354,6 +365,38 @@ void GroupDetailDialog::showMemberDetail()
     lines << QStringLiteral("Why: ") + member.explanation;
 
     m_detail->setText(lines.join(QLatin1Char('\n')));
+}
+
+// NG-015: the category this member is acted on as — its own name and publisher
+// rules first, otherwise the one its group has learned from the members that
+// have already crossed the bandwidth threshold.
+QString GroupDetailDialog::memberCategoryText(const NetGuard::GroupMember &member) const
+{
+    ClassificationEvidence evidence;
+    evidence.processName = member.type == NetGuard::GroupMemberType::ExecutablePath
+                               ? QFileInfo(member.value).fileName()
+                               : member.value;
+    evidence.executablePath = member.value;
+    evidence.displayName = member.displayName;
+    evidence.publisher = member.publisher;
+    evidence.signerStatus = member.publisher.isEmpty()
+                                ? ApplicationIdentity::SignerStatus::Unknown
+                                : ApplicationIdentity::SignerStatus::Signed;
+    evidence.groupId = m_groupId;
+    evidence.isService = member.type == NetGuard::GroupMemberType::Service;
+
+    const ProcessCategory own = BandwidthGuard::classifyProcess(evidence);
+    const ProcessCategory category = m_bandwidthGuard ? m_bandwidthGuard->memberCategory(evidence)
+                                                      : own;
+    if (category == ProcessCategory::Unknown)
+        return QStringLiteral("no category yet");
+
+    // Say so when the category came from the group rather than from this file,
+    // because that is what makes an unnamed helper actionable.
+    if (own == ProcessCategory::Unknown && category != ProcessCategory::Unknown)
+        return BandwidthGuard::categoryDisplayName(category)
+               + QStringLiteral(" (learned from this group)");
+    return BandwidthGuard::categoryDisplayName(category);
 }
 
 void GroupDetailDialog::onMemberSelectionChanged()

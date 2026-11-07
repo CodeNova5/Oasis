@@ -50,6 +50,11 @@ struct BandwidthEvent
     quint32 pid = 0;
     quint64 totalBytes = 0;
     ProcessCategory category = ProcessCategory::Unknown;
+    // NG-015: where the category came from, so the alert can say that it was
+    // learned from the process's activity group rather than from a rule.
+    QString groupId;
+    QString groupName;
+    bool    categoryFromGroup = false;
 
     // Filled in after the alert has been acted upon, so the user is told
     // what actually happened rather than just that usage was high.
@@ -82,6 +87,20 @@ public:
     // categories of the group's other members.
     static ProcessCategory classifyProcess(const ClassificationEvidence &evidence);
 
+    // Text the UI shows for a category. Kept in one place so the bandwidth alert
+    // and the activity group view describe the same decision the same way.
+    static QString categoryDisplayName(ProcessCategory category);
+
+    // Category an activity group has learned, or Unknown while none of its
+    // members has crossed the bandwidth threshold.
+    ProcessCategory groupCategory(const QString &groupId) const;
+
+    // Category shown for one group member in the activity group view: an
+    // override first, then the member's own name and publisher rules, then what
+    // its group has learned. Read-only — inspecting a member never changes the
+    // group's category.
+    ProcessCategory memberCategory(const ClassificationEvidence &evidence) const;
+
 signals:
     void sustainedBandwidthExceeded(const BandwidthEvent &event);
 
@@ -108,7 +127,8 @@ private:
     static QString resolveExecutablePath(quint32 pid);
     static int categoryRank(ProcessCategory category);
     bool isExempt(const QString &processName);
-    ProcessCategory resolveCategory(const ProcessWindow &window, quint32 pid);
+    ProcessCategory resolveCategory(const ProcessWindow &window, quint32 pid,
+                                   bool *fromGroup = nullptr);
     void loadPersistentState();
     void savePersistentState() const;
 

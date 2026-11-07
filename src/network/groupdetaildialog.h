@@ -2,11 +2,12 @@
  * @file    groupdetaildialog.h
  * @brief   Identity and activity group detail view (NG-016).
  *
- * Shows one activity group: its name and confidence, every executable and
- * service member with the evidence behind it, and the identity evidence of the
- * selected member (path, NG-010 identity id, NG-011 publisher, and the sentence
- * explaining why it belongs). Members can be removed and the group renamed
- * here, so no configuration file has to be edited by hand.
+ * Shows one activity group: its name and confidence, the Data Saver category its
+ * members have earned (NG-015), every executable and service member with the
+ * evidence behind it, and the identity evidence of the selected member (path,
+ * NG-010 identity id, NG-011 publisher, the category it is acted on as, and the
+ * sentence explaining why it belongs). Members can be removed and the group
+ * renamed here, so no configuration file has to be edited by hand.
  *
  * The dialog follows the monitor's published group snapshots, so a live
  * membership change is reflected while it is open.
@@ -19,6 +20,7 @@
 
 #include "identity/processgroupmanager.h"
 
+class BandwidthGuard;
 class NetworkMonitor;
 class QLabel;
 class QLineEdit;
@@ -29,8 +31,10 @@ class GroupDetailDialog : public QDialog
 {
     Q_OBJECT
 public:
+    // bandwidthGuard may be null: the group is then shown without the category
+    // its members have earned.
     GroupDetailDialog(NetworkMonitor *monitor, const QString &groupId,
-                      QWidget *parent = nullptr);
+                      BandwidthGuard *bandwidthGuard, QWidget *parent = nullptr);
 
     QString groupId() const { return m_groupId; }
 
@@ -47,10 +51,12 @@ private:
     void sizeTableToMembers();
     void refreshSummary();
     void showMemberDetail();
+    QString memberCategoryText(const NetGuard::GroupMember &member) const;
     void setStatus(const QString &message);
     int  selectedRow() const;
 
     NetworkMonitor *m_monitor = nullptr;
+    BandwidthGuard *m_bandwidthGuard = nullptr;
     QString         m_groupId;
     NetGuard::ProcessGroup m_group;
     bool            m_active = true;

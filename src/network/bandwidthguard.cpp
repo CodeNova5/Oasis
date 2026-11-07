@@ -49,7 +49,9 @@ void BandwidthGuard::observe(const QList<CapturedPacketInfo> &batch)
             event.executablePath = window.executablePath;
             event.pid = info.pid;
             event.totalBytes = window.totalBytes;
-            event.category = resolveCategory(window, info.pid);
+            event.category = resolveCategory(window, info.pid, &event.categoryFromGroup);
+            event.groupId = window.groupId;
+            event.groupName = window.groupName;
             emit sustainedBandwidthExceeded(event);
         }
     }
@@ -108,8 +110,11 @@ bool BandwidthGuard::isExempt(const QString &processName)
     return false;
 }
 
-ProcessCategory BandwidthGuard::resolveCategory(const ProcessWindow &window, quint32 pid)
+ProcessCategory BandwidthGuard::resolveCategory(const ProcessWindow &window, quint32 pid,
+                                               bool *fromGroup)
 {
+    if (fromGroup) *fromGroup = false;
+
     const QString key = normalizeProcessName(window.name);
     const auto overrideIt = m_categoryOverrides.constFind(key);
     if (overrideIt != m_categoryOverrides.constEnd()) return overrideIt.value();
@@ -134,7 +139,10 @@ ProcessCategory BandwidthGuard::resolveCategory(const ProcessWindow &window, qui
     // without a rule naming it.
     if (category == ProcessCategory::Unknown) {
         const auto groupIt = m_groupCategories.constFind(window.groupId);
-        if (groupIt != m_groupCategories.constEnd()) category = groupIt.value();
+        if (groupIt != m_groupCategories.constEnd()) {
+            category = groupIt.value();
+            if (fromGroup) *fromGroup = true;
+        }
     }
 
     // A group is only as actionable as its most cautious member: one member that
@@ -291,4 +299,36 @@ ProcessCategory BandwidthGuard::classifyProcess(const ClassificationEvidence &ev
     if (byName != ProcessCategory::Unknown) return byName;
 
     return categoryForIdentity(evidence);
+}
+
+QString BandwidthGuard::categoryDisplayName(ProcessCategory category)
+{
+    switch (category) {
+    case ProcessCategory::Protected:     return QStringLiteral("Protected service");
+    case ProcessCategory::AskFirst:      return QStringLiteral("Possible active download");
+    case ProcessCategory::AutoCandidate: return QStringLiteral("Background updater candidate");
+    case ProcessCategory::Unknown:       break;
+    }
+    return QStringLiteral("Background data activity");
+}
+
+ProcessCategory BandwidthGuard::groupCategory(const QString &groupId) const
+{
+    if (groupId.isEmpty()) return ProcessCategory::Unknown;
+    return m_groupCategories.value(groupId, ProcessCategory::Unknown);
+}
+
+ProcessCategory BandwidthGuard::memberCategory(const ClassificationEvidence &evidence) const
+{
+    const auto overrideIt =
+        m_categoryOverrides.constFind(normalizeProcessName(evidence.processName));
+    if (overrideIt != m_categoryOverrides.constEnd()) return overrideIt.value();
+
+    const ProcessCategory category = classifyProcess(evidence);
+    if (category != ProcessCategory::Unknown) return category;
+
+    // A member with no rule of its own is shown with the category its group has
+    // learned, which is what it is acted on as when its traffic crosses the
+    // threshold.
+    return groupCategory(evidence.groupId);
 }
