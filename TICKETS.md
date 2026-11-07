@@ -141,7 +141,7 @@ All of Phases 2–6 are **not started**.
 - **Goal:** Persist policies using explicit scope, action, direction, rate, schedule, expiration, source, and enabled state.
 - **Acceptance criteria:** Old settings migrate safely; malformed policies are rejected with a recoverable error; policies can be exported and imported.
 
-- **Status:** Partial — PolicyStore with versioned QSettings persistence (v1 QVariantMap, v2 JSON), `loadPolicies()`/`savePolicies()`/`exportPoliciesJson()`/`importPoliciesJson()`/`migrateOldFormat()` implemented; build passes `MAKE_EXIT=0` with no new warnings. Implement enforcement coordinator
+- **Status:** Partial — PolicyStore with versioned QSettings persistence (v1 QVariantMap, v2 JSON), `loadPolicies()`/`savePolicies()`/`exportPoliciesJson()`/`importPoliciesJson()`/`migrateOldFormat()` implemented; build passes `MAKE_EXIT=0` with no new warnings. EnforcementCoordinator (NG-021) coordinated Firewall + QoS/WinDivert
 
 - **Type:** feature
 - **Priority:** P0
