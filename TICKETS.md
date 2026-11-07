@@ -184,6 +184,8 @@ All of Phases 2–6 are **not started**.
 - **Goal:** Re-apply group policies when an updater or worker exits and a related process appears.
 - **Acceptance criteria:** A fixture can terminate a worker, start a replacement, and show that the replacement receives the expected control without manual action.
 
+- **Status:** Partial — `processRespawnDetected()` signal added to EnforcementCoordinator; `m_learnedGroups` tracks groups with learned categories for re-application on respawn; build passes MAKE_EXIT=0.
+
 ### NG-026 Add policy emergency restore
 
 - **Type:** feature

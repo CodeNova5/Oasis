@@ -75,6 +75,9 @@ signals:
     // Batch completion — useful for UI refresh.
     void enforcementComplete(const QString &executablePath,
                              const QList<EnforcementResult> &results);
+    // Process respawn detected — re-apply group policies for the new PID
+    void processRespawnDetected(quint32 oldPid, const QString &oldExecutable,
+                              quint32 newPid, const QString &newExecutable);
 
 private:
     // Helper: apply via Windows Firewall (delegates to FirewallManager)
@@ -92,4 +95,7 @@ private:
     // Shared instances — created lazily
     static ThrottlePolicyManager *m_throttleManager;
     static FirewallManager *m_firewallManager;
+
+    // Track groups that have learned categories for re-application on respawn
+    QSet<QString> m_learnedGroups;
 };
