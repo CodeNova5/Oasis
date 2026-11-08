@@ -14,6 +14,28 @@
 #include <QMetaType>
 #include <QSettings>
 
+// ─── Contract schema ────────────────────────────────────────────────────────
+// Every payload below is a JSON object that carries this version under the
+// "schemaVersion" key, so a reader can tell which contract it is looking at.
+//
+// Version 1 is the initial contract. Add an optional field without bumping:
+// older readers ignore keys they do not know. Bump the version when a field is
+// removed, renamed, or changes meaning, and teach fromJson* to migrate the
+// previous version at the same time.
+//
+// Readers accept payloads that predate versioning (no "schemaVersion" key) and
+// any version up to the current one. A payload written by a newer build is
+// rejected as a whole rather than half-parsed, so a forward-compatibility gap
+// shows up as an empty result instead of silently wrong fields.
+//
+// The structs are plain value types with no Qt UI dependency, and each is a
+// registered metatype, so an observation or policy can cross a worker-thread
+// boundary through a queued connection or a queued signal argument.
+namespace PolicyContract {
+constexpr int kSchemaVersion = 1;
+constexpr const char *kSchemaVersionKey = "schemaVersion";
+}
+
 // ─── Application identity ───────────────────────────────────────────────────
 struct ApplicationIdentity
 {
@@ -182,12 +204,3 @@ struct PolicyStore
 };
 
 Q_DECLARE_METATYPE(PolicyStore)
-
-// ─── Throttle Result serialization ──────────────────────────────────────────
-QString toJson(const NetworkPolicyThrottleResult &result);
-NetworkPolicyThrottleResult fromJsonNetworkPolicyThrottleResult(const QString &json);
-
-// ─── Audit Event serialization ──────────────────────────────────────────────
-
-QString toJson(const AuditEvent &event);
-AuditEvent fromJsonAuditEvent(const QString &json);

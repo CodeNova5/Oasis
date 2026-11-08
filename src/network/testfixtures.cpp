@@ -8,152 +8,241 @@
 #include "testfixtures.h"
 
 #include <QHostAddress>
-#include <QDateTime>
+#include <QStringList>
 
-// Defined below; used by the scenario factories above its definition.
-uint32_t qHostAddressToIp32(const QString &addr);
+// ─── Packet builders ────────────────────────────────────────────────────────
+// The capture path hands parseIP() a bare IP packet (no Ethernet header), so the
+// builders below produce exactly that: a 20-byte IPv4 header or a 40-byte IPv6
+// header, followed by the transport header the scenario needs. All multi-byte
+// fields are written in network byte order because parseIP() reads them with
+// ntohs()/ntohl().
+namespace {
 
-// ─── Helper: build a minimal IPv4 TCP packet ────────────────────────────────
-static QByteArray buildTcpPacket(uint32_t srcIp, uint32_t dstIp,
-                                 uint16_t srcPort, uint16_t dstPort,
-                                 const QString &srcIpStr, const QString &dstIpStr,
-                                 bool srcIsLocal = true)
+void writeBe16(uint8_t *p, quint16 value)
 {
-    // IPv4 header (20 bytes minimal)
-    QByteArray pkt(20, Qt::Uninitialized);
-    uint8_t *h = reinterpret_cast<uint8_t*>(pkt.data());
+    p[0] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    p[1] = static_cast<uint8_t>(value & 0xFF);
+}
 
-    // Version + IHL (4 bits version, 4 bits IHL=5*4=20)
+void writeBe32(uint8_t *p, quint32 value)
+{
+    p[0] = static_cast<uint8_t>((value >> 24) & 0xFF);
+    p[1] = static_cast<uint8_t>((value >> 16) & 0xFF);
+    p[2] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    p[3] = static_cast<uint8_t>(value & 0xFF);
+}
+
+// IPv4 address bytes in network order. An address that does not parse falls back
+// to loopback, so a typo in a fixture cannot silently produce a random address.
+void writeIpv4(uint8_t *p, const QString &address)
+{
+    QHostAddress host(address);
+    quint32 value = 0x7F000001u; // 127.0.0.1
+    if (host.protocol() == QAbstractSocket::IPv4Protocol)
+        value = host.toIPv4Address();
+    writeBe32(p, value);
+}
+
+void writeIpv6(uint8_t *p, const QString &address)
+{
+    QHostAddress host(address);
+    if (host.protocol() == QAbstractSocket::IPv6Protocol) {
+        const Q_IPV6ADDR v6 = host.toIPv6Address();
+        memcpy(p, &v6, 16);
+        return;
+    }
+    // ::1 fallback for a fixture typo.
+    memset(p, 0, 16);
+    p[15] = 1;
+}
+
+void fillTcpHeader(uint8_t *tcp, quint16 srcPort, quint16 dstPort)
+{
+    writeBe16(tcp + 0, srcPort);
+    writeBe16(tcp + 2, dstPort);
+    writeBe32(tcp + 4, 0);            // sequence number
+    writeBe32(tcp + 8, 0);            // acknowledgment number
+    tcp[12] = 0x50;                   // data offset 5 * 4 = 20 bytes
+    tcp[13] = 0x10;                   // ACK
+    writeBe16(tcp + 14, 0xFFFF);      // window
+    writeBe16(tcp + 16, 0);           // checksum (not validated by the parser)
+    writeBe16(tcp + 18, 0);           // urgent pointer
+}
+
+QByteArray buildIpv4TcpPacket(const QString &srcAddr, const QString &dstAddr,
+                              quint16 srcPort, quint16 dstPort)
+{
+    const int ipHeaderLen = 20;
+    const int tcpHeaderLen = 20;
+    QByteArray pkt(ipHeaderLen + tcpHeaderLen, Qt::Uninitialized);
+    uint8_t *h = reinterpret_cast<uint8_t *>(pkt.data());
+
+    h[0] = 0x45;                        // version 4, header length 5 * 4 bytes
+    h[1] = 0;                           // DSCP / ECN
+    writeBe16(h + 2, static_cast<quint16>(pkt.size())); // total length
+    writeBe16(h + 4, 0);                // identification
+    writeBe16(h + 6, 0);                // flags / fragment offset
+    h[8] = 64;                          // TTL
+    h[9] = IPPROTO_TCP_;                // protocol
+    writeBe16(h + 10, 0);               // header checksum (not validated)
+    writeIpv4(h + 12, srcAddr);
+    writeIpv4(h + 16, dstAddr);
+
+    fillTcpHeader(h + ipHeaderLen, srcPort, dstPort);
+    return pkt;
+}
+
+QByteArray buildIpv4UdpPacket(const QString &srcAddr, const QString &dstAddr,
+                              quint16 srcPort, quint16 dstPort)
+{
+    const int ipHeaderLen = 20;
+    QByteArray pkt(ipHeaderLen + 8, Qt::Uninitialized);
+    uint8_t *h = reinterpret_cast<uint8_t *>(pkt.data());
+
     h[0] = 0x45;
-    // Type of service
     h[1] = 0;
-    // Total length (IP header + minimal TCP header = 20 + 20 = 40)
-    uint16_t totalLen = 40;
-    h[2] = (totalLen >> 8) & 0xFF;
-    h[3] = totalLen & 0xFF;
-    // ID, flags, fragment offset = 0
-    h[4] = 0; h[5] = 0;
-    // TTL = 64, protocol = TCP = 6
-    h[8] = 64; h[9] = IPPROTO_TCP_;
-    // Header checksum = 0 (we'll leave it 0 for simplicity)
-    h[10] = 0; h[11] = 0;
-    // Source address
-    h[12] = srcIp & 0xFF;
-    h[13] = (srcIp >> 8) & 0xFF;
-    h[14] = (srcIp >> 16) & 0xFF;
-    h[15] = (srcIp >> 24) & 0xFF;
-    // Destination address
-    h[16] = dstIp & 0xFF;
-    h[17] = (dstIp >> 8) & 0xFF;
-    h[18] = (dstIp >> 16) & 0xFF;
-    h[19] = (dstIp >> 24) & 0xFF;
+    writeBe16(h + 2, static_cast<quint16>(pkt.size()));
+    writeBe16(h + 4, 0);
+    writeBe16(h + 6, 0);
+    h[8] = 64;
+    h[9] = IPPROTO_UDP_;
+    writeBe16(h + 10, 0);
+    writeIpv4(h + 12, srcAddr);
+    writeIpv4(h + 16, dstAddr);
 
-    // TCP header (20 bytes)
-    // Source port
-    reinterpret_cast<uint16_t*>(h + 20)[0] = srcPort;
-    // Destination port
-    reinterpret_cast<uint16_t*>(h + 22)[0] = dstPort;
-    // Sequence number = 0
-    reinterpret_cast<uint32_t*>(h + 26)[0] = 0;
-    // Acknowledgment number = 0
-    reinterpret_cast<uint32_t*>(h + 30)[0] = 0;
-    // Data offset = 5 (20 bytes), reserved = 0
-    h[38] = (5 << 4) | 0;
-    // Flags: ACK = 0x10 (minimal valid packet)
-    h[39] = 0x10;
-    // Window size
-    reinterpret_cast<uint16_t*>(h + 40)[0] = 65535;
-    // Checksum = 0 (ignored for minimal test)
-    reinterpret_cast<uint16_t*>(h + 42)[0] = 0;
-    // Urgent pointer = 0
-    reinterpret_cast<uint16_t*>(h + 44)[0] = 0;
-
+    writeBe16(h + ipHeaderLen + 0, srcPort);
+    writeBe16(h + ipHeaderLen + 2, dstPort);
+    writeBe16(h + ipHeaderLen + 4, 8);  // UDP length: header only
+    writeBe16(h + ipHeaderLen + 6, 0);  // checksum (not validated)
     return pkt;
 }
 
-// ─── Helper: build a minimal IPv6 TCP packet ────────────────────────────────
-static QByteArray buildIpv6TcpPacket(uint32_t /*unused*/, uint32_t /*unused*/,
-                                     uint16_t srcPort, uint16_t dstPort,
-                                     bool /*srcIsLocal*/ = true)
+QByteArray buildIpv4IcmpPacket(const QString &srcAddr, const QString &dstAddr)
 {
-    // IPv6 header (40 bytes minimal)
+    const int ipHeaderLen = 20;
+    QByteArray pkt(ipHeaderLen + 8, Qt::Uninitialized);
+    uint8_t *h = reinterpret_cast<uint8_t *>(pkt.data());
+
+    h[0] = 0x45;
+    h[1] = 0;
+    writeBe16(h + 2, static_cast<quint16>(pkt.size()));
+    writeBe16(h + 4, 0);
+    writeBe16(h + 6, 0);
+    h[8] = 64;
+    h[9] = IPPROTO_ICMP_;
+    writeBe16(h + 10, 0);
+    writeIpv4(h + 12, srcAddr);
+    writeIpv4(h + 16, dstAddr);
+
+    h[ipHeaderLen + 0] = 8;             // echo request
+    h[ipHeaderLen + 1] = 0;             // code
+    writeBe16(h + ipHeaderLen + 4, 0);  // identifier
+    writeBe16(h + ipHeaderLen + 6, 1);  // sequence number
+    return pkt;
+}
+
+QByteArray buildIpv6TcpPacket(const QString &srcAddr, const QString &dstAddr,
+                              quint16 srcPort, quint16 dstPort)
+{
+    const int ipHeaderLen = 40;
+    const int tcpHeaderLen = 20;
+    QByteArray pkt(ipHeaderLen + tcpHeaderLen, Qt::Uninitialized);
+    uint8_t *h = reinterpret_cast<uint8_t *>(pkt.data());
+
+    h[0] = 0x60;                        // version 6
+    writeBe16(h + 4, static_cast<quint16>(tcpHeaderLen)); // payload length
+    h[6] = IPPROTO_TCP_;                // next header
+    h[7] = 64;                          // hop limit
+    writeIpv6(h + 8, srcAddr);
+    writeIpv6(h + 24, dstAddr);
+
+    fillTcpHeader(h + ipHeaderLen, srcPort, dstPort);
+    return pkt;
+}
+
+QByteArray buildIpv6Icmpv6Packet(const QString &srcAddr, const QString &dstAddr)
+{
     QByteArray pkt(40, Qt::Uninitialized);
-    uint8_t *h = reinterpret_cast<uint8_t*>(pkt.data());
+    uint8_t *h = reinterpret_cast<uint8_t *>(pkt.data());
 
-    // Version = 6, traffic class = 0, flow label = 0
     h[0] = 0x60;
-    // Payload length (TCP header = 20)
-    h[4] = 0; h[5] = 20;
-    // Next header = TCP = 6
-    h[6] = 6;
-    // Hop limit = 64
-    h[7] = 64;
-    // Source address (16 bytes) - use loopback ::1 for local
-    for (int i = 0; i < 16; i++) h[8 + i] = (i == 0) ? 0x00 : 0;
-    // Actually let's use ::1 = 0:0:0:0:0:0:0:1
-    memset(h + 8, 0, 16);
-    h[8 + 15] = 1;
-    // Destination address
-    memset(h + 24, 0, 16);
-    h[24 + 15] = 1;  // ::1 again, or could use a real destination
-
-    // TCP header (20 bytes)
-    reinterpret_cast<uint16_t*>(h + 40)[0] = srcPort;
-    reinterpret_cast<uint16_t*>(h + 42)[0] = dstPort;
-    reinterpret_cast<uint32_t*>(h + 44)[0] = 0;  // seq num
-    reinterpret_cast<uint32_t*>(h + 48)[0] = 0;  // ack num
-    h[52] = (5 << 4) | 0;  // data offset
-    h[53] = 0x10;  // ACK flag
-    reinterpret_cast<uint16_t*>(h + 54)[0] = 65535;  // window
-    reinterpret_cast<uint16_t*>(h + 56)[0] = 0;  // checksum
-    reinterpret_cast<uint16_t*>(h + 58)[0] = 0;  // urgent pointer
-
+    writeBe16(h + 4, 0);                // no payload
+    h[6] = IPPROTO_ICMPv6_;             // next header
+    h[7] = 255;                         // hop limit
+    writeIpv6(h + 8, srcAddr);
+    writeIpv6(h + 24, dstAddr);
     return pkt;
 }
 
-// ─── Helper: create an ICMP packet ─────────────────────────────────────────
-static QByteArray buildIcmpPacket(uint32_t srcIp, uint32_t dstIp)
+// Builds a fixture around a raw packet: parses it once, records the 5-tuple the
+// builder intended, and attaches the evidence the classifier should receive.
+TestPacketFixture makeFixture(TrafficScenario scenario,
+                              const QByteArray &rawPacket,
+                              const QString &expectedSrcIP,
+                              const QString &expectedDstIP,
+                              quint16 expectedSrcPort,
+                              quint16 expectedDstPort,
+                              const QString &expectedIdentity,
+                              const ClassificationEvidence &evidence,
+                              ProcessCategory expectedCategory)
 {
-    // ICMP echo request: type=8, code=0, checksum, ID, seq
-    QByteArray pkt(8, Qt::Uninitialized);
-    uint8_t *h = reinterpret_cast<uint8_t*>(pkt.data());
-    h[0] = 8;  // type: echo request
-    h[1] = 0;  // code
-    // checksum at h[2], h[3] - leave 0
-    h[4] = 0x00;  // ID high
-    h[5] = 0x00;  // ID low
-    h[6] = 0x00;  // seq num high
-    h[7] = 0x01;  // seq num low
-    return pkt;
+    TestPacketFixture fixture;
+    fixture.rawPacket = rawPacket;
+    fixture.parsed = PacketParser::parseIP(
+        reinterpret_cast<const uint8_t *>(fixture.rawPacket.constData()),
+        static_cast<uint32_t>(fixture.rawPacket.size()));
+    fixture.scenario = scenario;
+    fixture.expectedSrcIP = expectedSrcIP;
+    fixture.expectedDstIP = expectedDstIP;
+    fixture.expectedSrcPort = expectedSrcPort;
+    fixture.expectedDstPort = expectedDstPort;
+    fixture.expectedIdentity = expectedIdentity;
+    fixture.evidence = evidence;
+    fixture.expectedCategory = expectedCategory;
+    return fixture;
 }
+
+QString scenarioName(TrafficScenario scenario)
+{
+    switch (scenario) {
+    case TrafficScenario::BrowserDownload: return QStringLiteral("browser-download");
+    case TrafficScenario::BrowserUpload:   return QStringLiteral("browser-upload");
+    case TrafficScenario::Updater:         return QStringLiteral("updater");
+    case TrafficScenario::RespawnWorker:   return QStringLiteral("respawn-worker");
+    case TrafficScenario::WindowsService:  return QStringLiteral("windows-service");
+    case TrafficScenario::DnsQuery:        return QStringLiteral("dns-query");
+    case TrafficScenario::TlsHandshake:    return QStringLiteral("tls-handshake");
+    case TrafficScenario::VpnEncrypted:    return QStringLiteral("vpn-encrypted");
+    case TrafficScenario::Unknown:         return QStringLiteral("unknown");
+    case TrafficScenario::GameLauncher:    return QStringLiteral("game-launcher");
+    case TrafficScenario::IdeUpdate:       return QStringLiteral("ide-update");
+    case TrafficScenario::Count:           break;
+    }
+    return QStringLiteral("scenario-%1").arg(static_cast<int>(scenario));
+}
+
+} // namespace
 
 // ─── Browser Download: HTTPS request from local to external ──────────────────
 QList<TestPacketFixture> createBrowserDownloadFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: local client -> https://example.com
-    // Source IP: 192.168.1.100, Dest IP: 93.184.216.34 (example.com)
-    // Source port: 50000, Dest port: 443
-    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
-    uint32_t dstIp = qHostAddressToIp32("93.184.216.34");
+    // chrome.exe and msedge.exe are both name rules, so a browser download is
+    // AskFirst no matter which browser produced it.
+    fixtures.append(makeFixture(
+        TrafficScenario::BrowserDownload,
+        buildIpv4TcpPacket("192.168.1.100", "93.184.216.34", 50000, 443),
+        "192.168.1.100", "93.184.216.34", 50000, 443,
+        "Google Chrome (chrome.exe)",
+        fixtureEvidence("chrome.exe"), ProcessCategory::AskFirst));
 
-    TestPacketFixture f;
-    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, "192.168.1.100", "93.184.216.34", true);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::BrowserDownload;
-    f.expectedCategory = "AskFirst";  // Browser downloads get AskFirst
-    f.expectedIdentity = "Chrome/Firefox (browser)";
-    fixtures.append(f);
-
-    // Also a second variation with Edge
-    TestPacketFixture f2;
-    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 443, "192.168.1.100", "93.184.216.34", true);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::BrowserDownload;
-    f2.expectedCategory = "AskFirst";
-    f2.expectedIdentity = "Edge/Chrome/Firefox (browser)";
-    fixtures.append(f2);
+    fixtures.append(makeFixture(
+        TrafficScenario::BrowserDownload,
+        buildIpv4TcpPacket("192.168.1.100", "93.184.216.34", 50001, 443),
+        "192.168.1.100", "93.184.216.34", 50001, 443,
+        "Microsoft Edge (msedge.exe)",
+        fixtureEvidence("msedge.exe"), ProcessCategory::AskFirst));
 
     return fixtures;
 }
@@ -163,28 +252,39 @@ QList<TestPacketFixture> createUpdaterFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: chromeupdate.exe contacting update server
-    // Source IP: 192.168.1.100, Dest IP: update server
-    // Source port: 50000, Dest port: 443 (HTTPS update)
-    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
-    uint32_t dstIp = qHostAddressToIp32("192.0.0.1");  // placeholder update server
+    // 1. Name rule: chromeupdate.exe is AutoCandidate even with no publisher.
+    fixtures.append(makeFixture(
+        TrafficScenario::Updater,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50000, 443),
+        "192.168.1.100", "192.0.0.1", 50000, 443,
+        "Chrome Update (chromeupdate.exe)",
+        fixtureEvidence("chromeupdate.exe"), ProcessCategory::AutoCandidate));
 
-    TestPacketFixture f;
-    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, "192.168.1.100", "192.0.0.1", true);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::Updater;
-    f.expectedCategory = "AutoCandidate";  // Updaters are AutoCandidate
-    f.expectedIdentity = "chromeupdate.exe";
-    fixtures.append(f);
+    // 2. Name rule: Edge's updater.
+    fixtures.append(makeFixture(
+        TrafficScenario::Updater,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50001, 443),
+        "192.168.1.100", "192.0.0.1", 50001, 443,
+        "Microsoft Edge Update (microsoftedgeupdate.exe)",
+        fixtureEvidence("microsoftedgeupdate.exe"), ProcessCategory::AutoCandidate));
 
-    // Also Microsoft Edge update
-    TestPacketFixture f2;
-    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 443, "192.168.1.100", "192.0.0.1", true);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::Updater;
-    f2.expectedCategory = "AutoCandidate";
-    f2.expectedIdentity = "microsoftedgeupdate.exe";
-    fixtures.append(f2);
+    // 3. No name rule: googleupdater.exe would be Unknown, but a verified
+    //    Google publisher plus product metadata is an identity rule.
+    fixtures.append(makeFixture(
+        TrafficScenario::Updater,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50002, 443),
+        "192.168.1.100", "192.0.0.1", 50002, 443,
+        "Google Updater (renamed executable, verified publisher)",
+        fixtureEvidence("googleupdater.exe", false, "Google LLC", "Google Update"),
+        ProcessCategory::AutoCandidate));
+
+    // 4. The same name with no verified signer must not borrow Google's rule.
+    fixtures.append(makeFixture(
+        TrafficScenario::Updater,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50003, 443),
+        "192.168.1.100", "192.0.0.1", 50003, 443,
+        "Unsigned copy of GoogleUpdater.exe",
+        fixtureEvidence("googleupdater.exe"), ProcessCategory::Unknown));
 
     return fixtures;
 }
@@ -194,60 +294,46 @@ QList<TestPacketFixture> createWindowsServiceFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: svchost.exe hosting multiple services
-    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
-    uint32_t dstIp = qHostAddressToIp32("192.0.0.1");
+    // svchost.exe has no name rule; the service flag is what protects it.
+    fixtures.append(makeFixture(
+        TrafficScenario::WindowsService,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50000, 80),
+        "192.168.1.100", "192.0.0.1", 50000, 80,
+        "Service host (svchost.exe)",
+        fixtureEvidence("svchost.exe", true), ProcessCategory::Protected));
 
-    // First fixture: general svchost traffic
-    TestPacketFixture f;
-    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 80, "192.168.1.100", "192.0.0.1", true);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::WindowsService;
-    f.expectedCategory = "Protected";  // Services are Protected
-    f.expectedIdentity = "Service: svchost.exe";
-    fixtures.append(f);
-
-    // Second: Windows Update via svchost
-    TestPacketFixture f2;
-    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 80, "192.168.1.100", "192.0.0.1", true);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::WindowsService;
-    f2.expectedCategory = "Protected";
-    f2.expectedIdentity = "Windows Update (svchost)";
-    fixtures.append(f2);
+    // The same host running Windows Update traffic stays Protected.
+    fixtures.append(makeFixture(
+        TrafficScenario::WindowsService,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50001, 80),
+        "192.168.1.100", "192.0.0.1", 50001, 80,
+        "Windows Update host (svchost.exe)",
+        fixtureEvidence("svchost.exe", true, "Microsoft Windows", "Windows Update"),
+        ProcessCategory::Protected));
 
     return fixtures;
 }
 
-// ─── DNS Query: DNS response/queries ───────────────────────────────────────
+// ─── DNS Query: DNS resolution traffic ─────────────────────────────────────
 QList<TestPacketFixture> createDnsFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: DNS query UDP packet
-    // Source: local -> DNS server, or DNS response -> client
-    // We'll use IPv4 UDP-like structure (ICMP-like but with UDP ports)
-    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
-    uint32_t dstIp = qHostAddressToIp32("8.8.8.8");
+    // A resolver has no name rule and is not an updater, so DNS traffic stays
+    // Unknown until the activity classifier (NG-040) describes the destination.
+    fixtures.append(makeFixture(
+        TrafficScenario::DnsQuery,
+        buildIpv4UdpPacket("192.168.1.100", "8.8.8.8", 53000, 53),
+        "192.168.1.100", "8.8.8.8", 53000, 53,
+        "DNS query (nslookup.exe)",
+        fixtureEvidence("nslookup.exe"), ProcessCategory::Unknown));
 
-    // DNS response over UDP-like (we'll use TCP parser path with UDP ports)
-    TestPacketFixture f;
-    f.rawPacket = buildTcpPacket(srcIp, dstIp, 53, 53, "192.168.1.100", "8.8.8.8", true);  // simplified
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::DnsQuery;
-    f.expectedCategory = "Unknown";  // DNS needs classification
-    f.expectedIdentity = "DNS query to 8.8.8.8";
-    fixtures.append(f);
-
-    // DNS response with answer
-    TestPacketFixture f2;
-    // Build a minimal ICMP-like packet for DNS response
-    f2.rawPacket = buildIcmpPacket(srcIp, dstIp);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::DnsQuery;
-    f2.expectedCategory = "Unknown";
-    f2.expectedIdentity = "DNS response from 8.8.8.8";
-    fixtures.append(f2);
+    fixtures.append(makeFixture(
+        TrafficScenario::DnsQuery,
+        buildIpv4UdpPacket("8.8.8.8", "192.168.1.100", 53, 53000),
+        "8.8.8.8", "192.168.1.100", 53, 53000,
+        "DNS response (nslookup.exe)",
+        fixtureEvidence("nslookup.exe"), ProcessCategory::Unknown));
 
     return fixtures;
 }
@@ -257,29 +343,22 @@ QList<TestPacketFixture> createTlsSniFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: TLS ClientHello with SNI
-    // We'll create a packet that the parser can process as TLS
-    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
-    uint32_t dstIp = qHostAddressToIp32("1.1.1.1");
+    // A TLS handshake carries no name the classifier knows yet: SNI belongs to
+    // the attribution layer (NG-032), so the category stays Unknown.
+    fixtures.append(makeFixture(
+        TrafficScenario::TlsHandshake,
+        buildIpv4TcpPacket("192.168.1.100", "1.1.1.1", 50000, 443),
+        "192.168.1.100", "1.1.1.1", 50000, 443,
+        "TLS client hello over IPv4 (curl.exe)",
+        fixtureEvidence("curl.exe"), ProcessCategory::Unknown));
 
-    TestPacketFixture f;
-    // Build TCP packet with nextHeader indicating TLS (58 = ICMPv6, but for IPv4 TCP we use protocol=6)
-    // For TLS we need to set up the parser to recognize it
-    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, "192.168.1.100", "1.1.1.1", true);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::TlsHandshake;
-    f.expectedCategory = "Unknown";  // TLS needs SNI parsing
-    f.expectedIdentity = "TLS connection to 1.1.1.1";
-    fixtures.append(f);
-
-    // Second: known website TLS
-    TestPacketFixture f2;
-    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 443, "192.168.1.100", "1.1.1.1", true);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::TlsHandshake;
-    f2.expectedCategory = "Unknown";
-    f2.expectedIdentity = "TLS to known site (SNI would reveal domain)";
-    fixtures.append(f2);
+    // Same handshake over IPv6, to keep the IPv6 builder exercised.
+    fixtures.append(makeFixture(
+        TrafficScenario::TlsHandshake,
+        buildIpv6TcpPacket("2606:4700:4700::1111", "2606:4700:4700::1001", 50001, 443),
+        QString(), QString(), 50001, 443,
+        "TLS client hello over IPv6 (curl.exe)",
+        fixtureEvidence("curl.exe"), ProcessCategory::Unknown));
 
     return fixtures;
 }
@@ -289,27 +368,20 @@ QList<TestPacketFixture> createVpnFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: VPN-encrypted traffic where destination is tun interface
-    // The dst IP would be a VPN tunnel address (e.g., 10.0.0.1 or 192.168.255.1)
-    uint32_t srcIp = qHostAddressToIp32("10.0.0.2");  // VPN client internal IP
-    uint32_t dstIp = qHostAddressToIp32("10.0.0.1");  // VPN gateway
+    // Traffic on a tunnel address is not attributable from the packet alone.
+    fixtures.append(makeFixture(
+        TrafficScenario::VpnEncrypted,
+        buildIpv4TcpPacket("10.0.0.2", "10.0.0.1", 50000, 443),
+        "10.0.0.2", "10.0.0.1", 50000, 443,
+        "OpenVPN tunnel traffic",
+        fixtureEvidence("openvpn.exe"), ProcessCategory::Unknown));
 
-    TestPacketFixture f;
-    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, "10.0.0.2", "10.0.0.1", true);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::VpnEncrypted;
-    f.expectedCategory = "Unknown";  // VPN dest is not locally resolvable
-    f.expectedIdentity = "VPN tunnel traffic";
-    fixtures.append(f);
-
-    // Another VPN variant with different subnet
-    TestPacketFixture f2;
-    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 443, "10.0.0.2", "10.0.0.1", true);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::VpnEncrypted;
-    f2.expectedCategory = "Unknown";
-    f2.expectedIdentity = "VPN tunnel traffic (alt subnet)";
-    fixtures.append(f2);
+    fixtures.append(makeFixture(
+        TrafficScenario::VpnEncrypted,
+        buildIpv4TcpPacket("10.8.0.2", "10.8.0.1", 50001, 443),
+        "10.8.0.2", "10.8.0.1", 50001, 443,
+        "WireGuard tunnel traffic",
+        fixtureEvidence("wireguard.exe"), ProcessCategory::Unknown));
 
     return fixtures;
 }
@@ -319,38 +391,20 @@ QList<TestPacketFixture> createUnknownFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: Pure IP packet that doesn't match known patterns
-    // ICMP packet with no transport info
-    uint32_t srcIp = qHostAddressToIp32("192.0.2.1");  // TEST-NET-1
-    uint32_t dstIp = qHostAddressToIp32("198.51.100.1"); // TEST-NET-2
+    // TEST-NET-1 / TEST-NET-2: unroutable addresses, no name rule, no evidence.
+    fixtures.append(makeFixture(
+        TrafficScenario::Unknown,
+        buildIpv4IcmpPacket("192.0.2.1", "198.51.100.1"),
+        "192.0.2.1", "198.51.100.1", 0, 0,
+        "IPv4 ICMP from an unrecognised process",
+        fixtureEvidence("mysteryapp.exe"), ProcessCategory::Unknown));
 
-    TestPacketFixture f;
-    f.rawPacket = buildIcmpPacket(srcIp, dstIp);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::Unknown;
-    f.expectedCategory = "Unknown";
-    f.expectedIdentity = "Unknown (TEST-NET traffic)";
-    fixtures.append(f);
-
-    // IPv6 unknown
-    TestPacketFixture f2;
-    // Minimal IPv6 ICMPv6
-    f2.rawPacket = QByteArray(40, Qt::Uninitialized);
-    uint8_t *h = reinterpret_cast<uint8_t*>(f2.rawPacket.data());
-    h[0] = 0x60;  // version
-    h[4] = 0; h[5] = 8;  // payload length 8
-    h[6] = 58;  // next header = ICMPv6
-    h[7] = 255; // hop limit
-    // src ::1, dst ::2
-    memset(h + 8, 0, 16);  // src ::1
-    h[8 + 15] = 1;
-    memset(h + 24, 0, 16);  // dst
-    h[24 + 15] = 2;  // dst ::2 (approx)
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::Unknown;
-    f2.expectedCategory = "Unknown";
-    f2.expectedIdentity = "Unknown (IPv6 ICMPv6)";
-    fixtures.append(f2);
+    fixtures.append(makeFixture(
+        TrafficScenario::Unknown,
+        buildIpv6Icmpv6Packet("2001:db8::1", "2001:db8::2"),
+        QString(), QString(), 0, 0,
+        "IPv6 ICMPv6 from an unrecognised process",
+        fixtureEvidence("mysteryapp.exe"), ProcessCategory::Unknown));
 
     return fixtures;
 }
@@ -360,55 +414,46 @@ QList<TestPacketFixture> createGameLauncherFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: Game launcher (e.g., Steam) connecting to update/CDN
-    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
-    uint32_t dstIp = qHostAddressToIp32("104.160.141.0");  // Steam CDN range
+    fixtures.append(makeFixture(
+        TrafficScenario::GameLauncher,
+        buildIpv4TcpPacket("192.168.1.100", "104.160.141.0", 50000, 443),
+        "192.168.1.100", "104.160.141.0", 50000, 443,
+        "Steam launcher",
+        fixtureEvidence("steam.exe"), ProcessCategory::AskFirst));
 
-    TestPacketFixture f;
-    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, "192.168.1.100", "104.160.141.0", true);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::GameLauncher;
-    f.expectedCategory = "AskFirst";
-    f.expectedIdentity = "Steam launcher";
-    fixtures.append(f);
-
-    // Epic Games Launcher
-    TestPacketFixture f2;
-    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 443, "192.168.1.100", "104.160.141.0", true);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::GameLauncher;
-    f2.expectedCategory = "AskFirst";
-    f2.expectedIdentity = "Epic Games Launcher";
-    fixtures.append(f2);
+    fixtures.append(makeFixture(
+        TrafficScenario::GameLauncher,
+        buildIpv4TcpPacket("192.168.1.100", "104.160.141.0", 50001, 443),
+        "192.168.1.100", "104.160.141.0", 50001, 443,
+        "Epic Games Launcher",
+        fixtureEvidence("epicgameslauncher.exe"), ProcessCategory::AskFirst));
 
     return fixtures;
 }
 
-// ─── IDE Update ──────────────────────────────────────────────────────────────
+// ─── IDE Update ─────────────────────────────────────────────────────────────
 QList<TestPacketFixture> createIdeUpdateFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: IDE (e.g., VS Code, Rider) checking for updates
-    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
-    uint32_t dstIp = qHostAddressToIp32("192.0.0.1");
+    // No IDE executable has a name or identity rule yet. That is honest and
+    // intentional: describing an IDE update is the activity classifier's job
+    // (NG-040), not a Data Saver category guess.
+    fixtures.append(makeFixture(
+        TrafficScenario::IdeUpdate,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50000, 443),
+        "192.168.1.100", "192.0.0.1", 50000, 443,
+        "Visual Studio Code update check (code.exe)",
+        fixtureEvidence("code.exe", false, "Microsoft Corporation", "Visual Studio Code"),
+        ProcessCategory::Unknown));
 
-    TestPacketFixture f;
-    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, "192.168.1.100", "192.0.0.1", true);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::IdeUpdate;
-    f.expectedCategory = "AutoCandidate";
-    f.expectedIdentity = "IDE update check";
-    fixtures.append(f);
-
-    // VS Code update specifically
-    TestPacketFixture f2;
-    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 443, "192.168.1.100", "192.0.0.1", true);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::IdeUpdate;
-    f2.expectedCategory = "AutoCandidate";
-    f2.expectedIdentity = "Code - OSS Update";
-    fixtures.append(f2);
+    fixtures.append(makeFixture(
+        TrafficScenario::IdeUpdate,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50001, 443),
+        "192.168.1.100", "192.0.0.1", 50001, 443,
+        "JetBrains IDE update check (idea64.exe)",
+        fixtureEvidence("idea64.exe", false, "JetBrains s.r.o.", "IntelliJ IDEA"),
+        ProcessCategory::Unknown));
 
     return fixtures;
 }
@@ -418,41 +463,30 @@ QList<TestPacketFixture> createRespawnWorkerFixture()
 {
     QList<TestPacketFixture> fixtures;
 
-    // Simulate: worker process that respawns after termination    // This models background worker processes that restart when killed    uint32_t srcIp = qHostAddressToIp32("192.168.1.100");
-    uint32_t dstIp = qHostAddressToIp32("192.0.0.1");
+    // A sync worker that a watchdog restarts: the first instance and the
+    // replacement must land in the same category, although the PID changes.
+    fixtures.append(makeFixture(
+        TrafficScenario::RespawnWorker,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50000, 443),
+        "192.168.1.100", "192.0.0.1", 50000, 443,
+        "OneDrive sync worker, first instance",
+        fixtureEvidence("onedrive.exe"), ProcessCategory::AutoCandidate));
 
-    // First fixture: worker initial connection    TestPacketFixture f;    f.rawPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, "192.168.1.100", "192.0.0.1", true);
-    f.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f.rawPacket.constData()), f.rawPacket.size());
-    f.scenario = TrafficScenario::RespawnWorker;
-    f.expectedCategory = "AutoCandidate";
-    f.expectedIdentity = "Worker process (respawn)";
-    fixtures.append(f);
-
-    // Second fixture: worker respawn after termination    TestPacketFixture f2;
-    f2.rawPacket = buildTcpPacket(srcIp, dstIp, 50001, 443, "192.168.1.100", "192.0.0.1", true);
-    f2.parsed = PacketParser::parseIP(reinterpret_cast<const uint8_t*>(f2.rawPacket.constData()), f2.rawPacket.size());
-    f2.scenario = TrafficScenario::RespawnWorker;
-    f2.expectedCategory = "AutoCandidate";
-    f2.expectedIdentity = "Worker process (respawn #2)";
-    fixtures.append(f2);
+    fixtures.append(makeFixture(
+        TrafficScenario::RespawnWorker,
+        buildIpv4TcpPacket("192.168.1.100", "192.0.0.1", 50001, 443),
+        "192.168.1.100", "192.0.0.1", 50001, 443,
+        "OneDrive sync worker, respawned",
+        fixtureEvidence("onedrive.exe"), ProcessCategory::AutoCandidate));
 
     return fixtures;
-}
-
-uint32_t qHostAddressToIp32(const QString &addr)
-{
-    QHostAddress ha(addr);
-    if (ha.protocol() == QAbstractSocket::IPv4Protocol)
-        return ha.toIPv4Address();
-    // Fallback: return localhost
-    return 0x0100007F;  // 127.0.0.1
 }
 
 // ─── Run all fixtures ───────────────────────────────────────────────────────
 FixtureResult runAllFixtures()
 {
     FixtureResult result;
-    QList<QList<TestPacketFixture>> allFixtures = {
+    const QList<QList<TestPacketFixture>> allFixtures = {
         createBrowserDownloadFixture(),
         createUpdaterFixture(),
         createWindowsServiceFixture(),
@@ -465,25 +499,57 @@ FixtureResult runAllFixtures()
         createRespawnWorkerFixture()
     };
 
-    for (const auto &batch : allFixtures) {
-        for (const auto &f : batch) {
-            // Simple validation: check that parsed is valid and category matches            if (!f.parsed.valid) {
-                result.details += QString("FAIL %1: parsed invalid\
-").arg(static_cast<int>(f.scenario));
-                result.failed++;
-                continue;
+    for (const QList<TestPacketFixture> &batch : allFixtures) {
+        for (const TestPacketFixture &fixture : batch) {
+            QStringList problems;
+
+            // The packet half: a fixture is only meaningful if the bytes the
+            // builder produced parse back into the 5-tuple it claims.
+            if (!fixture.parsed.valid) {
+                problems << QStringLiteral("packet did not parse");
+            } else {
+                if (!fixture.expectedSrcIP.isEmpty() && fixture.parsed.srcIP != fixture.expectedSrcIP) {
+                    problems << QStringLiteral("src %1 != %2")
+                                    .arg(fixture.parsed.srcIP, fixture.expectedSrcIP);
+                }
+                if (!fixture.expectedDstIP.isEmpty() && fixture.parsed.dstIP != fixture.expectedDstIP) {
+                    problems << QStringLiteral("dst %1 != %2")
+                                    .arg(fixture.parsed.dstIP, fixture.expectedDstIP);
+                }
+                if (fixture.parsed.srcPort != fixture.expectedSrcPort) {
+                    problems << QStringLiteral("src port %1 != %2")
+                                    .arg(fixture.parsed.srcPort)
+                                    .arg(fixture.expectedSrcPort);
+                }
+                if (fixture.parsed.dstPort != fixture.expectedDstPort) {
+                    problems << QStringLiteral("dst port %1 != %2")
+                                    .arg(fixture.parsed.dstPort)
+                                    .arg(fixture.expectedDstPort);
+                }
             }
 
-            // Check category match            if (f.expectedCategory != "Unknown" && f.expectedCategory != "Protected" &&
-                f.expectedCategory != "AskFirst" && f.expectedCategory != "AutoCandidate") {
-                // Category check skipped for Unknown category
-            } else if (f.expectedCategory != "Unknown") {
-                // We'll just note it as passed for now - actual comparison                // would need the classifyProcess logic integrated
+            // The identity half: the process behind that traffic must land in
+            // the category the fixture claims, through the real classifier.
+            const ProcessCategory actual = BandwidthGuard::classifyProcess(fixture.evidence);
+            if (actual != fixture.expectedCategory) {
+                problems << QStringLiteral("%1 classified as %2 (%3), expected %4")
+                                .arg(fixture.evidence.processName,
+                                     BandwidthGuard::categoryDisplayName(actual))
+                                .arg(static_cast<int>(actual))
+                                .arg(static_cast<int>(fixture.expectedCategory));
             }
 
-            result.passed++;
-            result.details += QString("PASS %1: %2 -> %3\
-")                .arg(static_cast<int>(f.scenario))                .arg(f.expectedIdentity)                .arg(f.expectedCategory);
+            const QString label = QStringLiteral("%1: %2")
+                                      .arg(scenarioName(fixture.scenario),
+                                           fixture.expectedIdentity);
+            if (problems.isEmpty()) {
+                ++result.passed;
+                result.details += QStringLiteral("PASS %1\n").arg(label);
+            } else {
+                ++result.failed;
+                result.details += QStringLiteral("FAIL %1 -- %2\n")
+                                      .arg(label, problems.join(QStringLiteral("; ")));
+            }
         }
     }
 

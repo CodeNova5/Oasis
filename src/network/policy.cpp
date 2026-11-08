@@ -13,11 +13,32 @@
 #include <QDebug>
 #include <QSettings>
 
+namespace {
+
+// A payload with no version predates versioning and is read as version 1. A
+// payload from a newer build is rejected rather than half-parsed, so new field
+// meanings can never be mistaken for current ones.
+bool schemaVersionOk(const QJsonObject &object)
+{
+    const QLatin1String key(PolicyContract::kSchemaVersionKey);
+    if (!object.contains(key)) return true;
+
+    const int version = object.value(key).toInt(-1);
+    if (version >= 1 && version <= PolicyContract::kSchemaVersion) return true;
+
+    qWarning() << "policy: rejecting payload with unsupported contract schema version"
+               << version;
+    return false;
+}
+
+} // namespace
+
 // ─── Application Identity serialization ─────────────────────────────────────
 
 QString toJson(const ApplicationIdentity &id)
 {
     QJsonObject obj;
+    obj[QLatin1String(PolicyContract::kSchemaVersionKey)] = PolicyContract::kSchemaVersion;
     obj[QStringLiteral("id")] = id.id;
     obj[QStringLiteral("displayName")] = id.displayName;
     QJsonArray paths;
@@ -49,7 +70,7 @@ ApplicationIdentity fromJsonApplicationIdentity(const QString &json)
 {
     ApplicationIdentity id;
     QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
-    if (doc.isNull() || !doc.isObject()) {
+    if (doc.isNull() || !doc.isObject() || !schemaVersionOk(doc.object())) {
         qWarning() << "Invalid JSON for ApplicationIdentity";
         return id;
     }
@@ -85,6 +106,7 @@ ApplicationIdentity fromJsonApplicationIdentity(const QString &json)
 QString toJson(const ActivityObservation &obs)
 {
     QJsonObject obj;
+    obj[QLatin1String(PolicyContract::kSchemaVersionKey)] = PolicyContract::kSchemaVersion;
     obj[QStringLiteral("timestamp")] = obs.timestamp.toString(Qt::ISODate);
     obj[QStringLiteral("identityId")] = obs.identityId;
     obj[QStringLiteral("pid")] = static_cast<qint64>(obs.pid);
@@ -105,7 +127,7 @@ ActivityObservation fromJsonActivityObservation(const QString &json)
 {
     ActivityObservation obs;
     QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
-    if (doc.isNull() || !doc.isObject()) {
+    if (doc.isNull() || !doc.isObject() || !schemaVersionOk(doc.object())) {
         qWarning() << "Invalid JSON for ActivityObservation";
         return obs;
     }
@@ -134,6 +156,7 @@ ActivityObservation fromJsonActivityObservation(const QString &json)
 QString toJson(const NetworkPolicy &policy)
 {
     QJsonObject obj;
+    obj[QLatin1String(PolicyContract::kSchemaVersionKey)] = PolicyContract::kSchemaVersion;
     obj[QStringLiteral("id")] = policy.id;
     obj[QStringLiteral("scope")] = policy.scope;
     obj[QStringLiteral("targetId")] = policy.targetId;
@@ -154,7 +177,7 @@ NetworkPolicy fromJsonNetworkPolicy(const QString &json)
 {
     NetworkPolicy policy;
     QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
-    if (doc.isNull() || !doc.isObject()) {
+    if (doc.isNull() || !doc.isObject() || !schemaVersionOk(doc.object())) {
         qWarning() << "Invalid JSON for NetworkPolicy";
         return policy;
     }
@@ -293,6 +316,7 @@ std::pair<QList<NetworkPolicy>, QList<QString>> reconcilePolicies()
 QString toJson(const NetworkPolicyThrottleResult &result)
 {
     QJsonObject obj;
+    obj[QLatin1String(PolicyContract::kSchemaVersionKey)] = PolicyContract::kSchemaVersion;
     obj[QStringLiteral("status")] = static_cast<int>(result.status);
     obj[QStringLiteral("message")] = result.message;
     obj[QStringLiteral("policyId")] = result.policyId;
@@ -305,11 +329,11 @@ QString toJson(const NetworkPolicyThrottleResult &result)
     return QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 }
 
-NetworkPolicyThrottleResult fromJsonThrottleResult(const QString &json)
+NetworkPolicyThrottleResult fromJsonNetworkPolicyThrottleResult(const QString &json)
 {
     NetworkPolicyThrottleResult result;
     QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
-    if (doc.isNull() || !doc.isObject()) {
+    if (doc.isNull() || !doc.isObject() || !schemaVersionOk(doc.object())) {
         qWarning() << "Invalid JSON for NetworkPolicyThrottleResult";
         return result;
     }
@@ -332,6 +356,7 @@ NetworkPolicyThrottleResult fromJsonThrottleResult(const QString &json)
 QString toJson(const AuditEvent &event)
 {
     QJsonObject obj;
+    obj[QLatin1String(PolicyContract::kSchemaVersionKey)] = PolicyContract::kSchemaVersion;
     obj[QStringLiteral("timestamp")] = event.timestamp.toString(Qt::ISODate);
     obj[QStringLiteral("type")] = static_cast<int>(event.type);
     obj[QStringLiteral("scope")] = event.scope;
@@ -349,7 +374,7 @@ AuditEvent fromJsonAuditEvent(const QString &json)
 {
     AuditEvent event;
     QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
-    if (doc.isNull() || !doc.isObject()) {
+    if (doc.isNull() || !doc.isObject() || !schemaVersionOk(doc.object())) {
         qWarning() << "Invalid JSON for AuditEvent";
         return event;
     }
