@@ -91,7 +91,7 @@ Q_DECLARE_METATYPE(ActivityObservation)
 struct NetworkPolicy
 {
     QString id;              // Unique policy identifier
-    QString scope;           // e.g. "path", "publisher", "service", "package", "group", "executable", "port", "protocol"
+    QString scope;           // e.g. "pid", "path", "publisher", "service", "package", "group", "executable", "port", "protocol"
     QString targetId;        // The path/publisher/service/group id this policy applies to
     NetworkDirection direction = NetworkDirection::Download;
     enum class Action { Allow, Notify, Ask, Throttle, Block, Schedule, NoAction };

@@ -6,6 +6,7 @@
 #include "ui_networkwidget.h"
 #include "groupdetaildialog.h"
 #include "enforcementcoordinator.h"
+#include "policyeditordialog.h"
 
 // ── Theme Manager ──
 #include "stylemanager.h"
@@ -480,6 +481,53 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
                 dlg.exec();
             });
         }
+
+        // NG-022: create a policy with an explicit scope. The dialog explains
+        // the breadth and risk of the chosen scope before it is saved, and a
+        // group policy targets the group id so future members inherit it.
+        QAction *actPolicy = menu.addAction("🛡 Create policy...");
+        connect(actPolicy, &QAction::triggered, this, [this, pid, name, groupId]() {
+            PolicyTarget target;
+            target.pid = pid;
+            target.processName = name;
+            target.executablePath = getExactProcessPath(pid, name);
+            target.groupId = groupId;
+
+            if (!groupId.isEmpty()) {
+                const QList<NetGuard::ProcessGroup> groups = m_monitor->processGroups();
+                for (const NetGuard::ProcessGroup &group : groups) {
+                    if (group.id != groupId) continue;
+                    target.groupName = group.name;
+                    for (const NetGuard::GroupMember &member : group.members) {
+                        if (member.type == NetGuard::GroupMemberType::ExecutablePath &&
+                            member.value.compare(target.executablePath,
+                                                 Qt::CaseInsensitive) == 0) {
+                            target.publisher = member.publisher;
+                        } else if (member.type == NetGuard::GroupMemberType::Service &&
+                                   target.serviceName.isEmpty()) {
+                            target.serviceName = member.value;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            PolicyEditorDialog dlg(target, this);
+            if (dlg.exec() != QDialog::Accepted) return;
+
+            QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+            policies.append(dlg.policy());
+            if (!PolicyStore::savePolicies(policies)) {
+                QMessageBox::warning(this, QStringLiteral("Create policy"),
+                                     QStringLiteral("The policy could not be saved."));
+                return;
+            }
+
+            ui->lblStatus->setText(QStringLiteral("Policy saved."));
+            // The scheduler has not seen this policy yet, so this counts as an
+            // activation change and applies it now when it is in force.
+            m_policyScheduler->evaluateNow();
+        });
 
         menu.addSeparator();
         QAction *actExempt = menu.addAction("Ignore bandwidth alerts for 2 hours");

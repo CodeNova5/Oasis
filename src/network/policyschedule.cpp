@@ -171,6 +171,11 @@ bool scheduleWindowActive(const QString &schedule, const QDateTime &now)
     return matchSchedule(schedule, now) == ScheduleMatch::Active;
 }
 
+bool scheduleIsSupported(const QString &schedule)
+{
+    return matchSchedule(schedule, QDateTime::currentDateTime()) != ScheduleMatch::Unsupported;
+}
+
 PolicyActivationState policyActivationAt(const NetworkPolicy &policy, const QDateTime &now)
 {
     if (!policy.enabled) return PolicyActivationState::Disabled;

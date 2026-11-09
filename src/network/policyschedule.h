@@ -56,6 +56,10 @@ QString policyActivationName(PolicyActivationState state);
 // True only when `schedule` is understood and `now` is inside its window.
 bool scheduleWindowActive(const QString &schedule, const QDateTime &now);
 
+// True when the window can be parsed. Empty means "no recurring window" and
+// is supported, so an editor can validate optional input without evaluating it.
+bool scheduleIsSupported(const QString &schedule);
+
 PolicyActivationState policyActivationAt(const NetworkPolicy &policy, const QDateTime &now);
 
 struct PolicyActivation
