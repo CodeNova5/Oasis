@@ -220,7 +220,11 @@ void ThrottlePolicyManager::restoreAutoApplied()
     }
 
     if (policies.isEmpty()) {
-        emit throttlesRestored(noPoliciesResult());
+        // Report on the next event-loop turn, like the applied/removed results,
+        // so a caller that is still assembling its own report (emergency
+        // restore) finishes before the outcome arrives.
+        QMetaObject::invokeMethod(this, [this]() { emit throttlesRestored(noPoliciesResult()); },
+                                  Qt::QueuedConnection);
         return;
     }
 

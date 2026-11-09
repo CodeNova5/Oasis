@@ -1,294 +1,230 @@
 /**
-
-  * @file   enforcementcoordinator.cpp
-  * @brief  EnforcementCoordinator (NG-021) implementation — coordinates Windows
-  *         Firewall, Windows QoS, and WinDivert without duplicating policy
-  *         decisions in UI code.  One policy produces a complete per-channel
-  *         result; partial success is represented explicitly; all requests are
-  *         auditable.
-  * @author Codebuff
-  */
+ * @file   enforcementcoordinator.cpp
+ * @brief  EnforcementCoordinator (NG-021) and emergency restore (NG-026).
+ * @author Codebuff
+ */
 
 #include "enforcementcoordinator.h"
 
-#include "policy.h"           // toJson / fromJson NetworkPolicy
-#include "throttlepolicymanager.h"
+#include "policy.h"
 #include "firewallmanager.h"
+#include "throttlepolicymanager.h"
 
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QDebug>
-#include <QDateTime>
-#include <QSettings>
+#include <QStringList>
 
-// ──────────────────────────────────────────────────────────────────────
-//  Static members initialisation
-// ──────────────────────────────────────────────────────────────────────
-ThrottlePolicyManager *EnforcementCoordinator::m_throttleManager = nullptr;
-FirewallManager *EnforcementCoordinator::m_firewallManager = nullptr;
-
-// ──────────────────────────────────────────────────────────────────────
-//  Constructor / destructor – lazily create shared manager instances
-// ──────────────────────────────────────────────────────────────────────
 EnforcementCoordinator::EnforcementCoordinator(QObject *parent)
     : QObject(parent)
 {
-    // managers are created on first use
+}
+
+EnforcementCoordinator::EnforcementCoordinator(ThrottlePolicyManager *throttle,
+                                               FirewallManager *firewall,
+                                               QObject *parent)
+    : QObject(parent)
+    , m_throttle(throttle)
+    , m_firewall(firewall)
+{
 }
 
 EnforcementCoordinator::~EnforcementCoordinator() = default;
 
-// ──────────────────────────────────────────────────────────────────────
-//  Public: apply a single policy to an executable path
-// ──────────────────────────────────────────────────────────────────────
-void EnforcementCoordinator::applyPolicy(const NetworkPolicy &policy,
-                                          const QString &executablePath)
+EnforcementResult EnforcementCoordinator::unenforcedResult(const NetworkPolicy &policy,
+                                                           const QString &executablePath,
+                                                           const QString &reason)
 {
-    QList<EnforcementResult> results = applyAllPolicies(QList<NetworkPolicy>() << policy,
-                                                          executablePath);
-    if (!results.isEmpty())
-        emit policyApplied(policy.id, executablePath, results.first());
+    EnforcementResult result;
+    result.policyId = policy.id;
+    result.executablePath = executablePath;
+    result.channels = channelsDescription(plannedChannels(policy));
+    result.status = EnforcementResult::Status::NotApplied;
+    result.message = reason;
+    return result;
 }
 
-void EnforcementCoordinator::removePolicy(const NetworkPolicy &policy,
-                                          const QString &executablePath)
+// ──────────────────────────────────────────────────────────────────────
+//  Public: apply one policy
+// ──────────────────────────────────────────────────────────────────────
+EnforcementResult EnforcementCoordinator::applyPolicy(const NetworkPolicy &policy,
+                                                      const QString &executablePath)
 {
-    QList<EnforcementResult> results = applyAllPolicies({}, executablePath);
-    // For removal we need a different approach – delegate to throttle manager
-    // which knows how to remove per-path
-    if (m_throttleManager) {
-        m_throttleManager->remove(executablePath);
-        emit policyRemoved(policy.id, executablePath, EnforcementResult{});
+    const PolicyChannels channels = plannedChannels(policy);
+
+    EnforcementResult result;
+    if (!policy.enabled) {
+        result = unenforcedResult(policy, executablePath, QStringLiteral("Policy is disabled"));
+    } else if (channels.firewall) {
+        result = routeToFirewall(policy, executablePath);
+    } else if (channels.throttle) {
+        result = routeToThrottle(policy, executablePath);
+    } else {
+        result = unenforcedResult(policy, executablePath,
+                                  QStringLiteral("This action needs no enforcement channel"));
     }
+
+    emit policyApplied(result.policyId, result.executablePath, result);
+    return result;
 }
 
-// ──────────────────────────────────────────────────────────────────────
-//  Public: apply all active policies for a given executable
-// ──────────────────────────────────────────────────────────────────────
 QList<EnforcementResult> EnforcementCoordinator::applyAllPolicies(
     const QList<NetworkPolicy> &policies, const QString &executablePath)
 {
     QList<EnforcementResult> results;
+    results.reserve(policies.size());
 
-    // First ensure managers exist
-    if (!m_throttleManager) {
-        m_throttleManager = new ThrottlePolicyManager();
-    }
-    if (!m_firewallManager) {
-        m_firewallManager = new FirewallManager();
-    }
+    for (const NetworkPolicy &policy : policies)
+        results.append(applyPolicy(policy, executablePath));
 
-    // Apply via throttle (QoS + WinDivert download shaper)
-    if (policyIsThrottleRelated(policies)) {
-        // The ThrottlePolicyManager applies per-executable path
-        // We'll use its apply method which handles the per-path logic
-        // and emits results through its signals.
-        // For now, coordinate with the throttle manager.
-        QList<EnforcementResult> throttleResults;
-        // Apply each policy that has a rate limit or schedule
-        for (const auto &p : policies) {
-            if (p.action == NetworkPolicy::Action::Throttle ||
-                p.action == NetworkPolicy::Action::Block ||
-                p.action == NetworkPolicy::Action::Schedule) {
-                EnforcementResult r;
-                r.policyId = p.id;
-                r.executablePath = executablePath;
-                r.status = EnforcementResult::Status::Applied; // simplified
-                r.message = QStringLiteral("Throttle applied via QoS/WinDivert");
-                throttleResults.append(r);
-            }
-        }
-        results.append(throttleResults);
-    }
-
-    // Apply via Firewall manager for firewall-type policies
-    if (policyIsFirewallRelated(policies)) {
-        for (const auto &p : policies) {
-            EnforcementResult fwResult = applyFirewall(p, executablePath);
-            results.append(fwResult);
-        }
-    }
-
+    emit enforcementComplete(executablePath, results);
     return results;
 }
 
 // ──────────────────────────────────────────────────────────────────────
-//  Public: enforce all policies from PolicyStore for an executable
+//  Emergency restore (NG-026)
+//
+//  Only policies whose source marks them as the product's own are removed. A
+//  user policy, or one whose origin is not recorded, is preserved: deletion is
+//  not something to guess at. The throttle channel is asked to take back the
+//  limits it applied automatically; the manager reports that outcome through
+//  its own signal, because the QoS call runs on the worker thread.
 // ──────────────────────────────────────────────────────────────────────
-void EnforcementCoordinator::enforceForExecutable(const QString &executablePath)
+EmergencyRestoreReport EnforcementCoordinator::emergencyRestore()
 {
-    // Load active policies from the store
-    QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    const EmergencyRestorePlan plan = buildEmergencyRestorePlan(policies);
 
-    // Filter to policies that apply to this executable
-    QList<NetworkPolicy> applicable;
-    for (const auto &p : policies) {
-        // Simple scope matching: if scope is "executable" or "path", match
-        if (p.scope == QStringLiteral("executable") ||
-            p.scope == QStringLiteral("path") ||
-            p.targetId == executablePath) {
-            applicable.append(p);
-        }
+    bool storeWritten = true;
+    if (!plan.automatic.isEmpty())
+        storeWritten = PolicyStore::savePolicies(plan.preserved);
+
+    const bool throttleAttached = m_throttle != nullptr;
+    const QString throttleNote = throttleAttached
+        ? QStringLiteral("Automatic QoS and download limits are being removed by the throttle worker")
+        : QStringLiteral("No throttle channel is attached, so no bandwidth limit was touched");
+
+    EmergencyRestoreReport report =
+        applyEmergencyRestorePlan(plan, throttleAttached, throttleNote, storeWritten);
+
+    // Ask the throttle worker only after the report is built, so the report says
+    // what was requested rather than what is merely intended.
+    if (throttleAttached)
+        m_throttle->restoreAutoApplied();
+
+    if (report.failed > 0) {
+        qWarning().noquote() << "EnforcementCoordinator: emergency restore finished with"
+                             << report.failed << "failure(s)";
     }
 
-    if (applicable.isEmpty()) return;
-
-    // Apply all applicable policies
-    QList<EnforcementResult> results = applyAllPolicies(applicable, executablePath);
-
-    // Emit completion signal
-    emit enforcementComplete(executablePath, results);
+    emit emergencyRestoreCompleted(report);
+    return report;
 }
 
 // ──────────────────────────────────────────────────────────────────────
-//  Helper: determine if policies are throttle-related (QoS/WinDivert)
+//  Firewall channel
 // ──────────────────────────────────────────────────────────────────────
-bool EnforcementCoordinator::policyIsThrottleRelated(const QList<NetworkPolicy> &policies)
-{
-    for (const auto &p : policies) {
-        // Throttle-related actions
-        if (p.action == NetworkPolicy::Action::Throttle ||
-            p.action == NetworkPolicy::Action::Block ||
-            p.action == NetworkPolicy::Action::Schedule ||
-            p.scope == QStringLiteral("service") ||
-            p.scope == QStringLiteral("package")) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-//  Helper: determine if policies are firewall-related
-// ──────────────────────────────────────────────────────────────────────
-bool EnforcementCoordinator::policyIsFirewallRelated(const QList<NetworkPolicy> &policies)
-{
-    for (const auto &p : policies) {
-        // Firewall-related actions/scope
-        if (p.action == NetworkPolicy::Action::Allow ||
-            p.action == NetworkPolicy::Action::Block ||
-            p.action == NetworkPolicy::Action::Notify ||
-            p.scope == QStringLiteral("port") ||
-            p.scope == QStringLiteral("protocol") ||
-            p.scope == QStringLiteral("publisher")) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-//  Helper: apply via Windows Firewall (delegates to FirewallManager)
-// ──────────────────────────────────────────────────────────────────────
-EnforcementResult EnforcementCoordinator::applyFirewall(const NetworkPolicy &policy,
-                                                        const QString &executablePath)
+EnforcementResult EnforcementCoordinator::routeToFirewall(const NetworkPolicy &policy,
+                                                          const QString &executablePath)
 {
     EnforcementResult result;
     result.policyId = policy.id;
     result.executablePath = executablePath;
-    result.status = EnforcementResult::Status::NotApplied;
+    result.channels = channelsDescription(plannedChannels(policy));
 
-    if (!m_firewallManager) {
-        m_firewallManager = new FirewallManager();
+    if (!m_firewall) {
+        result.status = EnforcementResult::Status::Failed;
+        result.message = QStringLiteral("No firewall manager is attached, so no rule was created");
+        return result;
     }
 
-    // Delegate to FirewallManager – it returns a human-readable message
-    QString fwMsg = m_firewallManager->applyPolicy(policy, executablePath);
+    if (!m_firewallInitialized) {
+        m_firewallInitialized = m_firewall->initialize();
+        if (!m_firewallInitialized) {
+            result.status = EnforcementResult::Status::Failed;
+            result.message = QStringLiteral("Firewall initialization failed: %1")
+                                 .arg(m_firewall->lastError());
+            result.firewallMessage = result.message;
+            return result;
+        }
+    }
 
-    if (!fwMsg.isEmpty()) {
+    if (executablePath.isEmpty()) {
+        result.status = EnforcementResult::Status::Failed;
+        result.message = QStringLiteral(
+            "No executable path was resolved, so a path-scoped rule was not created");
+        result.firewallMessage = result.message;
+        return result;
+    }
+
+    const bool wantsBlock = policy.action == NetworkPolicy::Action::Block;
+    const bool ruleCreated = wantsBlock ? m_firewall->blockApp(executablePath)
+                                        : m_firewall->allowApp(executablePath);
+
+    if (ruleCreated) {
         result.status = EnforcementResult::Status::Applied;
-        result.message = fwMsg;
-        result.firewallMessage = fwMsg;
+        result.message = wantsBlock
+            ? QStringLiteral("Blocking rules created for outbound and inbound traffic")
+            : QStringLiteral("Allow rules created for outbound and inbound traffic");
     } else {
         result.status = EnforcementResult::Status::Failed;
-        result.message = QStringLiteral("Firewall policy could not be applied");
+        result.message = QStringLiteral("The firewall rejected the rule: %1")
+                             .arg(m_firewall->lastError());
     }
 
-    // Log the action as an AuditEvent (never throws)
-    logEnforcement(policy, result, QStringLiteral("firewall_apply"));
-
+    result.firewallMessage = result.message;
     return result;
 }
 
 // ──────────────────────────────────────────────────────────────────────
-//  Helper: apply via Windows QoS / WinDivert (delegates to ThrottlePolicyManager)
+//  Throttle channel (QoS upload + WinDivert download)
 // ──────────────────────────────────────────────────────────────────────
-EnforcementResult EnforcementCoordinator::applyThrottle(const NetworkPolicy &policy,
-                                                        const QString &executablePath)
+EnforcementResult EnforcementCoordinator::routeToThrottle(const NetworkPolicy &policy,
+                                                          const QString &executablePath)
 {
     EnforcementResult result;
     result.policyId = policy.id;
     result.executablePath = executablePath;
-    result.status = EnforcementResult::Status::NotApplied;
 
-    if (!m_throttleManager) {
-        m_throttleManager = new ThrottlePolicyManager();
+    const PolicyChannels channels = plannedChannels(policy);
+    result.channels = channelsDescription(channels);
+
+    if (!m_throttle) {
+        result.status = EnforcementResult::Status::Failed;
+        result.message = QStringLiteral("No throttle worker is attached, so no limit was requested");
+        return result;
     }
 
-    // Delegate to ThrottlePolicyManager
-    // The manager applies the limit and emits a result signal;
-    // we capture the result here synchronously for the return value.
-    // In a full implementation, the result would arrive via queued connection.
+    if (executablePath.isEmpty()) {
+        result.status = EnforcementResult::Status::Failed;
+        result.message = QStringLiteral(
+            "No executable path was resolved, so no limit was requested");
+        return result;
+    }
 
-    // For now, mark as applied if the policy has a rate limit
-    if (policy.rateBitsPerSecond > 0) {
-        result.status = EnforcementResult::Status::Applied;
-        result.message = QStringLiteral("Throttle applied: %1 bits/sec")
-                         .arg(policy.rateBitsPerSecond);
-        result.downloadLimited = true;
-        result.downloadReason = QStringLiteral("Rate limit %1 bits/sec applied")
-                                 .arg(policy.rateBitsPerSecond);
+    if (policy.rateBitsPerSecond == 0 && policy.action != NetworkPolicy::Action::Schedule) {
+        result.status = EnforcementResult::Status::NotApplied;
+        result.message = QStringLiteral("Policy has no rate limit, so there was nothing to throttle");
+        return result;
+    }
+
+    // Marked automatic only when the product created the policy, so a limit the
+    // user asked for is never taken back by emergency restore.
+    m_throttle->apply(executablePath, policyOrigin(policy) == PolicyOrigin::Automatic);
+
+    result.status = EnforcementResult::Status::Requested;
+    if (policy.rateBitsPerSecond > 0 &&
+        policy.rateBitsPerSecond != ThrottlePolicyManager::DefaultLimitBitsPerSecond) {
+        result.message = QStringLiteral(
+            "Requested the default %1 bits/s limit; the policy asks for %2 bits/s, "
+            "which this build cannot set")
+            .arg(ThrottlePolicyManager::DefaultLimitBitsPerSecond)
+            .arg(policy.rateBitsPerSecond);
     } else {
-        result.status = EnforcementResult::Status::Partial;
-        result.message = QStringLiteral("No rate limit specified – no throttling applied");
+        result.message = QStringLiteral("Limit request queued on the throttle worker");
     }
 
-    // Log the action as an AuditEvent (never throws)
-    logEnforcement(policy, result, QStringLiteral("throttle_apply"));
+    if (channels.uploadShaping) result.uploadReason = QStringLiteral("QoS request queued");
+    if (channels.downloadShaping)
+        result.downloadReason = QStringLiteral("WinDivert shaping request queued");
 
     return result;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-//  Helper: log the enforcement action as an AuditEvent (never throws)
-// ──────────────────────────────────────────────────────────────────────
-void EnforcementCoordinator::logEnforcement(const NetworkPolicy &policy,
-                                              const EnforcementResult &result,
-                                              const QString &action)
-{
-    // Serialize the policy and result to JSON for the audit record
-    QString policyJson = toJson(policy);
-    QString resultJson = toJson(result);
-
-    AuditEvent event;
-    event.timestamp = QDateTime::currentDateTime();
-    event.type = AuditEvent::EventType::AutomaticDecision;
-    event.scope = policy.scope;
-    event.reason = action;
-    event.result = result.status == EnforcementResult::Status::Applied ? QStringLiteral("applied")
-                                                                      : QStringLiteral("rejected");
-    event.relatedPolicyId = policy.id;
-    event.details = QStringLiteral("Policy: %1, Action: %2")
-                       .arg(policyJson.left(200))
-                       .arg(result.message.left(200));
-
-    // Persist the audit event (QSettings-backed storage already in place)
-    // We use the existing AuditEvent serialization / persistence infrastructure.
-    QString eventJson = toJson(event);
-    // Import into the policy store's audit trail – importPoliciesJson handles
-    // merging; we just need to ensure the event is recorded somewhere durable.
-    // For now, emit it as a debug message so the developer can see it.
-    qDebug() << "EnforcementCoordinator: audit event" << eventJson;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-//  Public batch entry point – apply all policies from PolicyStore
-// ──────────────────────────────────────────────────────────────────────
-void EnforcementCoordinator::applyAllPolicies(const QList<NetworkPolicy> &policies,
-                                                const QString &executablePath)
-{
-    // This is the batch version used by enforceForExecutable
-    // Delegate to the per-policy logic
-    Q_UNUSED(policies);
-    Q_UNUSED(executablePath);
 }

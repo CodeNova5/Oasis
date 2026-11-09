@@ -1,36 +1,50 @@
 /**
-
-  * @file   enforcementcoordinator.h
-  * @brief  EnforcementCoordinator (NG-021): coordinates Windows Firewall,
-  *         Windows QoS, and WinDivert without duplicating policy decisions
-  *         in UI code.  One policy produces a complete per-channel result;
-  *         partial success is represented explicitly; all requests are auditable.
-  * @author Codebuff
-  */
+ * @file   enforcementcoordinator.h
+ * @brief  EnforcementCoordinator (NG-021): routes a policy to the channel that
+ *         can enforce it (Windows Firewall, Windows QoS, WinDivert) and reports
+ *         per-channel what actually happened. Emergency restore (NG-026) lives
+ *         here too, so the UI has one entry point for taking back the product's
+ *         own controls.
+ *
+ * The coordinator does not create managers. It is given the ones the
+ * application already owns, so a result posted by the throttle worker reaches
+ * the widget that asked for it, and so a test can run it with no managers at
+ * all — no COM, no elevation, no worker thread.
+ *
+ * @author Codebuff
+ */
 
 #pragma once
 
 #include <QObject>
 #include <QList>
-#include <QSettings>
+#include <QString>
+
+#include "network/enforcementrestore.h"
 
 struct NetworkPolicy;
-class PolicyStore;
 class ThrottlePolicyManager;
 class FirewallManager;
 
 // ──────────────────────────────────────────────────────────────────────
-//  Enforcement result — what happened when we tried to apply a policy.
+//  Enforcement result — what one policy's channel reported.
+//
+//  `Requested` is not `Applied`: QoS policy installation happens on the
+//  throttle worker (it shells out to PowerShell), so the coordinator can only
+//  report that the request was accepted. The manager's own signal carries the
+//  final outcome.
 // ──────────────────────────────────────────────────────────────────────
 struct EnforcementResult
 {
-    enum class Status { NotApplied, Applied, Partial, Failed }::Status;
+    enum class Status { NotApplied, Requested, Applied, Partial, Failed };
+
     Status status = Status::NotApplied;
     QString message;          // Human-readable result description
     QString policyId;         // The policy ID this result refers to
     QString executablePath;   // Path the policy was applied to
-    bool   uploadLimited = false;
-    bool   downloadLimited = false;
+    QString channels;         // Channels this result covers, e.g. "QoS upload"
+    bool    uploadLimited = false;
+    bool    downloadLimited = false;
     QString uploadReason;     // Why upload shaping succeeded/fails
     QString downloadReason;   // Why download shaping succeeds/fails
     QString firewallMessage;  // Firewall-specific result detail
@@ -39,63 +53,52 @@ struct EnforcementResult
 Q_DECLARE_METATYPE(EnforcementResult)
 
 // ──────────────────────────────────────────────────────────────────────
-//  The coordinator itself.  All methods are static so the UI can call
-//  it without owning a long-lived instance; it delegates to the concrete
-//  managers (ThrottlePolicyManager, FirewallManager) and logs every
-//  action as an AuditEvent.
+//  The coordinator.
 // ──────────────────────────────────────────────────────────────────────
 class EnforcementCoordinator : public QObject
 {
     Q_OBJECT
 public:
+    // No managers: every channel reports `NotApplied` with the reason. This is
+    // what the tests use, and it keeps the failure visible instead of pretending
+    // a policy was enforced.
     explicit EnforcementCoordinator(QObject *parent = nullptr);
+
+    // The managers the application owns. Either may be null.
+    EnforcementCoordinator(ThrottlePolicyManager *throttle, FirewallManager *firewall,
+                           QObject *parent = nullptr);
     ~EnforcementCoordinator() override;
 
-    // Apply a single policy to the given executable path.
-    // Tries Firewall first, then QoS/WinDivert, recording partial results.
-    static void applyPolicy(const NetworkPolicy &policy, const QString &executablePath);
+    // Apply one policy to one executable path.
+    EnforcementResult applyPolicy(const NetworkPolicy &policy, const QString &executablePath);
 
-    // Remove a previously applied policy from the given executable path.
-    static void removePolicy(const NetworkPolicy &policy, const QString &executablePath);
+    // Apply the policies that are enabled, returning one result per policy.
+    QList<EnforcementResult> applyAllPolicies(const QList<NetworkPolicy> &policies,
+                                              const QString &executablePath);
 
-    // Apply all active policies for the given executable.
-    // Returns a list of per-channel EnforcementResult one per active policy.
-    static QList<EnforcementResult> applyAllPolicies(const QList<NetworkPolicy> &policies,
-                                                     const QString &executablePath);
-
-    // Load policies from PolicyStore and apply them for the given executable.
-    static void enforceForExecutable(const QString &executablePath);
+    // NG-026: remove the controls the product applied on its own, keep every
+    // user-created policy, and report each action with its outcome. Firewall
+    // rules are not touched: this build only creates them from the Firewall tab
+    // after an explicit user action, so none of them is automatic.
+    EmergencyRestoreReport emergencyRestore();
 
 signals:
-    // One policy was applied/removed; result is auditable.
     void policyApplied(const QString &policyId, const QString &executablePath,
                        const EnforcementResult &result);
-    void policyRemoved(const QString &policyId, const QString &executablePath,
-                       const EnforcementResult &result);
-    // Batch completion — useful for UI refresh.
     void enforcementComplete(const QString &executablePath,
                              const QList<EnforcementResult> &results);
-    // Process respawn detected — re-apply group policies for the new PID
-    void processRespawnDetected(quint32 oldPid, const QString &oldExecutable,
-                              quint32 newPid, const QString &newExecutable);
+    void emergencyRestoreCompleted(const EmergencyRestoreReport &report);
 
 private:
-    // Helper: apply via Windows Firewall (delegates to FirewallManager)
-    static EnforcementResult applyFirewall(const NetworkPolicy &policy,
-                                           const QString &executablePath);
+    EnforcementResult routeToFirewall(const NetworkPolicy &policy,
+                                      const QString &executablePath);
+    EnforcementResult routeToThrottle(const NetworkPolicy &policy,
+                                      const QString &executablePath);
+    static EnforcementResult unenforcedResult(const NetworkPolicy &policy,
+                                              const QString &executablePath,
+                                              const QString &reason);
 
-    // Helper: apply via Windows QoS / WinDivert (delegates to ThrottlePolicyManager)
-    static EnforcementResult applyThrottle(const NetworkPolicy &policy,
-                                           const QString &executablePath);
-
-    // Log the enforcement action as an AuditEvent (never throws).
-    static void logEnforcement(const NetworkPolicy &policy, const EnforcementResult &result,
-                               const QString &action);
-
-    // Shared instances — created lazily
-    static ThrottlePolicyManager *m_throttleManager;
-    static FirewallManager *m_firewallManager;
-
-    // Track groups that have learned categories for re-application on respawn
-    QSet<QString> m_learnedGroups;
+    ThrottlePolicyManager *m_throttle = nullptr;
+    FirewallManager *m_firewall = nullptr;
+    bool m_firewallInitialized = false;
 };

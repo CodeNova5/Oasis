@@ -14,8 +14,10 @@
 #include "bandwidthguard.h"
 #include "throttlepolicymanager.h"
 #include "diagnostics.h"
+#include "enforcementrestore.h"
 
 class FirewallManager;
+class EnforcementCoordinator;
 
 namespace Ui { class NetworkWidget; }
 
@@ -42,6 +44,8 @@ public:
 
     void autoStart();
     void setDataSaverMode(int mode);
+    // Takes back the controls the product applied on its own (NG-026) and
+    // reports which policies were removed, which were kept, and what failed.
     void restoreAllDataSaverPolicies();
     void requestThrottlePath(const QString &path);
     void exemptProcess(const QString &processName, int durationSeconds);
@@ -91,6 +95,7 @@ private:
     NetworkTreeModel        *m_model = nullptr;
     BandwidthGuard          *m_bandwidthGuard = nullptr;
     ThrottlePolicyManager   *m_throttlePolicies = nullptr;
+    EnforcementCoordinator  *m_enforcement = nullptr;
     FirewallManager         *m_firewall = nullptr;
     QSortFilterProxyModel   *m_proxy = nullptr;
 
@@ -102,4 +107,8 @@ private:
     QHash<QString, QIcon>   m_iconCache;
     // Auto-throttle alerts waiting for the worker thread to report back.
     QHash<QString, BandwidthEvent> m_pendingThrottleEvents;
+    // Emergency restore result waiting for the throttle worker's outcome, so
+    // the user sees one report covering both the policy store and the shaping.
+    EmergencyRestoreReport  m_restoreReport;
+    bool                    m_restoreReportPending = false;
 };

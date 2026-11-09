@@ -1,7 +1,7 @@
 /**
  * @file   main.cpp
- * @brief  Focused harness for the Phase 0 tickets: NG-002 contract round-trips
- *         and NG-001 product-direction fixtures.
+ * @brief  Focused harness for the Phase 0 tickets: NG-002 contract round-trips,
+ *         NG-001 product-direction fixtures, and the NG-003 diagnostics export.
  *
  * Run it after a build:
  *   qmake tests/netguard_tests.pro && mingw32-make
@@ -14,11 +14,15 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSettings>
 #include <QStringList>
 #include <QTimeZone>
 
+#include "network/diagnostics.h"
+#include "network/enforcementrestore.h"
 #include "network/policy.h"
 #include "network/testfixtures.h"
 
@@ -297,11 +301,449 @@ void testFixtures()
                QStringLiteral("NG-001 fixtures: every fixture ran"));
 }
 
+// ─── NG-003: diagnostics export schema ─────────────────────────────────────
+// toJson() is what a user attaches to a support report, so its shape is a
+// contract: fixed key names, string enum values, and a summary that agrees with
+// the records it describes. The version is asserted as a literal on purpose:
+// changing the export should require a deliberate change to this test.
+void testDiagnosticsExportSchema()
+{
+    DiagnosticsModel model;
+
+    const QJsonObject empty = objectOf(model.toJson());
+    checkEqual(empty.value(QStringLiteral("schemaVersion")).toInt(), 1,
+               QStringLiteral("diagnostics export carries schemaVersion 1"));
+    check(QDateTime::fromString(empty.value(QStringLiteral("exportedAt")).toString(),
+                                Qt::ISODateWithMs).isValid(),
+          QStringLiteral("diagnostics export carries a parseable exportedAt"));
+
+    QStringList rootKeys = empty.keys();
+    rootKeys.sort();
+    QStringList expectedRootKeys{QStringLiteral("exportedAt"), QStringLiteral("records"),
+                                 QStringLiteral("schemaVersion"), QStringLiteral("summary")};
+    expectedRootKeys.sort();
+    checkEqual(rootKeys, expectedRootKeys, QStringLiteral("diagnostics export root keys"));
+
+    const QJsonObject emptySummary = empty.value(QStringLiteral("summary")).toObject();
+    QStringList summaryKeys = emptySummary.keys();
+    summaryKeys.sort();
+    QStringList expectedSummaryKeys{QStringLiteral("records"), QStringLiteral("droppedPackets"),
+                                    QStringLiteral("unresolvedPids"),
+                                    QStringLiteral("unknownDirections"),
+                                    QStringLiteral("staleMappings"),
+                                    QStringLiteral("pidReuses"),
+                                    QStringLiteral("adapterUnavailable")};
+    expectedSummaryKeys.sort();
+    checkEqual(summaryKeys, expectedSummaryKeys, QStringLiteral("diagnostics summary keys"));
+    check(empty.value(QStringLiteral("records")).toArray().isEmpty(),
+          QStringLiteral("an empty model exports an empty records array"));
+    for (const QString &key : summaryKeys) {
+        checkEqual(emptySummary.value(key).toInt(), 0,
+                   QStringLiteral("empty diagnostics summary counter %1 is zero").arg(key));
+    }
+
+    // One record per gap reporter the capture loop uses.
+    model.reportDroppedPackets(3, QStringLiteral("Ethernet"), QStringLiteral("capture loop"));
+    model.reportUnresolvedPid(4321, QStringLiteral("unknown.exe"), QStringLiteral("cache refresh"));
+    model.reportUnknownDirection(QStringLiteral("192.0.2.1 -> 198.51.100.1"),
+                                 QStringLiteral("capture loop"));
+    model.reportStaleMapping(77, QStringLiteral("chrome.exe"), QStringLiteral("svchost.exe"),
+                             QStringLiteral("cache refresh"));
+    model.reportAdapterUnavailable(QStringLiteral("Wi-Fi"),
+                                   QStringLiteral("No suitable adapter"));
+    model.reportServiceLookupFailed(88, QStringLiteral("Dnscache"),
+                                    QStringLiteral("SCM enumeration failed"));
+    model.reportPidReuse(99, QStringLiteral("old.exe"), QStringLiteral("new.exe"), 1000, 2000);
+
+    checkEqual(model.rowCount(), 7, QStringLiteral("one diagnostic record per reporter"));
+
+    const QJsonObject populated = objectOf(model.toJson());
+    const QJsonObject summary = populated.value(QStringLiteral("summary")).toObject();
+    checkEqual(summary.value(QStringLiteral("records")).toInt(), 7,
+               QStringLiteral("summary counts every record"));
+    for (const QString &key : {QStringLiteral("droppedPackets"), QStringLiteral("unresolvedPids"),
+                               QStringLiteral("unknownDirections"), QStringLiteral("staleMappings"),
+                               QStringLiteral("pidReuses"), QStringLiteral("adapterUnavailable")}) {
+        checkEqual(summary.value(key).toInt(), 1,
+                   QStringLiteral("summary counter %1 counts its gap").arg(key));
+    }
+
+    const QJsonArray records = populated.value(QStringLiteral("records")).toArray();
+    checkEqual(static_cast<int>(records.size()), 7,
+               QStringLiteral("export carries one object per record"));
+
+    QStringList recordKeys = records.at(0).toObject().keys();
+    recordKeys.sort();
+    QStringList expectedRecordKeys{QStringLiteral("timestamp"), QStringLiteral("dropReason"),
+                                   QStringLiteral("pidStatus"), QStringLiteral("directionStatus"),
+                                   QStringLiteral("adapterStatus"), QStringLiteral("mappingStatus"),
+                                   QStringLiteral("details"), QStringLiteral("context"),
+                                   QStringLiteral("affectedPid"),
+                                   QStringLiteral("affectedProcess")};
+    expectedRecordKeys.sort();
+    checkEqual(recordKeys, expectedRecordKeys, QStringLiteral("diagnostic record keys"));
+
+    for (const QJsonValue &value : records) {
+        const QJsonObject record = value.toObject();
+        check(QDateTime::fromString(record.value(QStringLiteral("timestamp")).toString(),
+                                    Qt::ISODateWithMs).isValid(),
+              QStringLiteral("every record timestamp is ISO-8601 with milliseconds"));
+        check(record.value(QStringLiteral("affectedPid")).isDouble(),
+              QStringLiteral("every record exports affectedPid as a number"));
+    }
+
+    // Enum values are exported as their documented names, not raw integers, so
+    // an exported report can be read without the binary.
+    const QJsonObject dropped = records.at(0).toObject();
+    checkEqual(dropped.value(QStringLiteral("dropReason")).toString(),
+               QStringLiteral("BufferOverflow"),
+               QStringLiteral("drop reason export name"));
+    checkEqual(dropped.value(QStringLiteral("pidStatus")).toString(),
+               QStringLiteral("Resolved"), QStringLiteral("pid status export name"));
+    checkEqual(dropped.value(QStringLiteral("adapterStatus")).toString(),
+               QStringLiteral("AdapterAvailable"),
+               QStringLiteral("adapter status export name"));
+    check(dropped.value(QStringLiteral("details")).toString().contains(QStringLiteral("3 packets")),
+          QStringLiteral("dropped-packet details name the count"));
+
+    const QJsonObject unresolved = records.at(1).toObject();
+    checkEqual(unresolved.value(QStringLiteral("pidStatus")).toString(),
+               QStringLiteral("Unresolved"), QStringLiteral("unresolved PID export name"));
+    checkEqual(unresolved.value(QStringLiteral("affectedPid")).toInt(), 4321,
+               QStringLiteral("unresolved PID record keeps the PID"));
+    checkEqual(unresolved.value(QStringLiteral("affectedProcess")).toString(),
+               QStringLiteral("unknown.exe"),
+               QStringLiteral("unresolved PID record keeps the process name"));
+
+    checkEqual(records.at(2).toObject().value(QStringLiteral("directionStatus")).toString(),
+               QStringLiteral("UnknownDirection"),
+               QStringLiteral("unknown direction export name"));
+
+    const QJsonObject stale = records.at(3).toObject();
+    checkEqual(stale.value(QStringLiteral("mappingStatus")).toString(),
+               QStringLiteral("StaleMapping"), QStringLiteral("stale mapping export name"));
+    checkEqual(stale.value(QStringLiteral("affectedPid")).toInt(), 77,
+               QStringLiteral("stale mapping record keeps the PID"));
+
+    const QJsonObject adapter = records.at(4).toObject();
+    checkEqual(adapter.value(QStringLiteral("adapterStatus")).toString(),
+               QStringLiteral("AdapterUnavailable"),
+               QStringLiteral("adapter unavailable export name"));
+    check(adapter.value(QStringLiteral("context")).toString().contains(QStringLiteral("Wi-Fi")),
+          QStringLiteral("adapter record names the adapter"));
+
+    const QJsonObject service = records.at(5).toObject();
+    checkEqual(service.value(QStringLiteral("pidStatus")).toString(),
+               QStringLiteral("ServiceHost"),
+               QStringLiteral("service lookup failure is not counted as an unresolved PID"));
+
+    const QJsonObject reuse = records.at(6).toObject();
+    checkEqual(reuse.value(QStringLiteral("pidStatus")).toString(),
+               QStringLiteral("PidReuse"), QStringLiteral("PID reuse export name"));
+    checkEqual(reuse.value(QStringLiteral("affectedPid")).toInt(), 99,
+               QStringLiteral("PID reuse record keeps the PID"));
+    checkEqual(reuse.value(QStringLiteral("affectedProcess")).toString(),
+               QStringLiteral("new.exe"),
+               QStringLiteral("PID reuse record names the replacement process"));
+
+    // Retention: the model keeps a bounded window, and the export's own record
+    // count must describe what survived rather than what was reported.
+    for (int i = 0; i < static_cast<int>(DiagnosticsModel::MaxRecords) + 5; ++i) {
+        DiagnosticRecord record;
+        record.timestamp = QDateTime::currentDateTimeUtc();
+        record.details = QStringLiteral("synthetic %1").arg(i);
+        model.addRecord(record);
+    }
+
+    checkEqual(model.rowCount(), static_cast<int>(DiagnosticsModel::MaxRecords),
+               QStringLiteral("diagnostics model keeps at most MaxRecords records"));
+
+    const QJsonObject bounded = objectOf(model.toJson());
+    checkEqual(bounded.value(QStringLiteral("summary")).toObject()
+                   .value(QStringLiteral("records")).toInt(),
+               static_cast<int>(DiagnosticsModel::MaxRecords),
+               QStringLiteral("bounded export reports the retained count"));
+    const QJsonArray kept = bounded.value(QStringLiteral("records")).toArray();
+    checkEqual(kept.at(0).toObject().value(QStringLiteral("details")).toString(),
+               QStringLiteral("synthetic 5"),
+               QStringLiteral("the oldest records are evicted first"));
+    checkEqual(kept.last().toObject().value(QStringLiteral("details")).toString(),
+               QStringLiteral("synthetic 504"),
+               QStringLiteral("the newest record is retained"));
+
+    model.clear();
+    const QJsonObject cleared = objectOf(model.toJson());
+    check(cleared.value(QStringLiteral("records")).toArray().isEmpty(),
+          QStringLiteral("clear() empties the export"));
+    checkEqual(cleared.value(QStringLiteral("summary")).toObject()
+                   .value(QStringLiteral("records")).toInt(),
+               0, QStringLiteral("clear() resets the summary"));
+}
+
+// ─── NG-026 / NG-027 helpers ──────────────────────────────────────────────
+// The store tests below run under their own application name, so they never
+// touch a real NetGuard policy set.
+NetworkPolicy makePolicy(const QString &id, const QString &source,
+                         NetworkPolicy::Action action = NetworkPolicy::Action::Allow)
+{
+    NetworkPolicy policy;
+    policy.id = id;
+    policy.scope = QStringLiteral("path");
+    policy.targetId = QStringLiteral("C:/Apps/%1.exe").arg(id);
+    policy.action = action;
+    policy.source = source;
+    return policy;
+}
+
+// ─── NG-026: emergency restore only removes the product's own policies ─────
+void testPolicyOriginClassification()
+{
+    NetworkPolicy policy;
+    check(policyOrigin(policy) == PolicyOrigin::Unknown,
+          QStringLiteral("an unrecorded source is not treated as automatic"));
+
+    policy.source = QStringLiteral("user");
+    check(policyOrigin(policy) == PolicyOrigin::User,
+          QStringLiteral("a user policy is recognised as the user's"));
+    policy.source = QStringLiteral(" USER ");
+    check(policyOrigin(policy) == PolicyOrigin::User,
+          QStringLiteral("origin matching ignores case and padding"));
+
+    for (const QString &source : {QStringLiteral("automatic"), QStringLiteral("AUTO"),
+                                  QStringLiteral("system"), QStringLiteral("ai")}) {
+        policy.source = source;
+        check(policyOrigin(policy) == PolicyOrigin::Automatic,
+              QStringLiteral("source '%1' counts as automatic").arg(source));
+    }
+
+    for (const QString &source : {QString(), QStringLiteral("unknown"),
+                                  QStringLiteral("user-created"),
+                                  QStringLiteral("administrator")}) {
+        policy.source = source;
+        check(policyOrigin(policy) == PolicyOrigin::Unknown,
+              QStringLiteral("source '%1' is preserved rather than guessed at").arg(source));
+    }
+}
+
+void testEmergencyRestorePlan()
+{
+    const QList<NetworkPolicy> policies{
+        makePolicy(QStringLiteral("auto-1"), QStringLiteral("automatic"),
+                   NetworkPolicy::Action::Throttle),
+        makePolicy(QStringLiteral("user-1"), QStringLiteral("user"),
+                   NetworkPolicy::Action::Block),
+        makePolicy(QStringLiteral("system-1"), QStringLiteral("system"),
+                   NetworkPolicy::Action::Throttle),
+        makePolicy(QStringLiteral("unknown-1"), QString(), NetworkPolicy::Action::Allow),
+        makePolicy(QStringLiteral("ai-1"), QStringLiteral("ai"),
+                   NetworkPolicy::Action::Throttle),
+        makePolicy(QStringLiteral("auto-2"), QStringLiteral("auto"),
+                   NetworkPolicy::Action::Block)
+    };
+
+    const EmergencyRestorePlan plan = buildEmergencyRestorePlan(policies);
+    check(plan.automatic.size() == 4, QStringLiteral("the plan removes the automatic policies"));
+    check(plan.preserved.size() == 2, QStringLiteral("the plan preserves user and unknown origin"));
+    checkEqual(plan.automatic.at(0).id, QStringLiteral("auto-1"),
+               QStringLiteral("plan removal keeps the stored order"));
+    checkEqual(plan.automatic.at(2).id, QStringLiteral("ai-1"),
+               QStringLiteral("plan removal keeps its order across automatic sources"));
+    checkEqual(plan.automatic.at(3).id, QStringLiteral("auto-2"),
+               QStringLiteral("plan removal covers every automatic source"));
+    checkEqual(plan.preserved.at(0).id, QStringLiteral("user-1"),
+               QStringLiteral("plan preservation keeps the stored order"));
+    checkEqual(plan.preserved.at(1).id, QStringLiteral("unknown-1"),
+               QStringLiteral("a policy without a source is preserved"));
+
+    const EmergencyRestorePlan empty = buildEmergencyRestorePlan({});
+    check(empty.automatic.isEmpty() && empty.preserved.isEmpty(),
+          QStringLiteral("an empty store produces an empty plan"));
+}
+
+void testEmergencyRestoreReport()
+{
+    EmergencyRestorePlan plan;
+    plan.automatic << makePolicy(QStringLiteral("auto-1"), QStringLiteral("automatic"),
+                                 NetworkPolicy::Action::Throttle);
+    plan.automatic << makePolicy(QStringLiteral("auto-2"), QStringLiteral("system"),
+                                 NetworkPolicy::Action::Block);
+    plan.preserved << makePolicy(QStringLiteral("user-1"), QStringLiteral("user"),
+                                 NetworkPolicy::Action::Block);
+    plan.preserved << makePolicy(QStringLiteral("unknown-1"), QStringLiteral("mystery"),
+                                 NetworkPolicy::Action::Allow);
+
+    const EmergencyRestoreReport report =
+        applyEmergencyRestorePlan(plan, true, QStringLiteral("worker asked"));
+
+    checkEqual(report.removed, 2, QStringLiteral("report counts removed policies"));
+    checkEqual(report.preserved, 2, QStringLiteral("report counts preserved policies"));
+    checkEqual(report.failed, 0, QStringLiteral("a successful write reports no failure"));
+    check(report.ok(), QStringLiteral("the report is ok when nothing failed"));
+    check(report.throttleRestoreRequested, QStringLiteral("report records the throttle request"));
+    checkEqual(report.removedIds, QStringList{QStringLiteral("auto-1"), QStringLiteral("auto-2")},
+               QStringLiteral("report lists the removed policy ids"));
+    checkEqual(report.preservedIds,
+               QStringList{QStringLiteral("user-1"), QStringLiteral("unknown-1")},
+               QStringLiteral("report lists the preserved policy ids"));
+    check(report.entries.size() == 5,
+          QStringLiteral("report has one entry per policy plus the throttle channel"));
+
+    checkEqual(report.entries.at(0).channel, QStringLiteral("policy store"),
+               QStringLiteral("policy actions name the store channel"));
+    checkEqual(report.entries.at(0).outcome, QStringLiteral("removed"),
+               QStringLiteral("an automatic policy is reported as removed"));
+    check(report.entries.at(0).message.contains(QStringLiteral("automatic enforcement")),
+          QStringLiteral("a removal says why it was allowed"));
+    checkEqual(report.entries.at(2).outcome, QStringLiteral("preserved"),
+               QStringLiteral("a user policy is reported as preserved"));
+    checkEqual(report.entries.at(2).message, QStringLiteral("Kept: created by the user"),
+               QStringLiteral("a user policy says who created it"));
+    checkEqual(report.entries.at(3).message,
+               QStringLiteral("Kept: origin not recorded, so it was not removed"),
+               QStringLiteral("an unknown origin says why it was kept"));
+
+    const EmergencyRestoreEntry &throttle = report.entries.last();
+    checkEqual(throttle.channel, QStringLiteral("throttle"),
+               QStringLiteral("the last entry covers the throttle channel"));
+    checkEqual(throttle.outcome, QStringLiteral("requested"),
+               QStringLiteral("an attached throttle worker reports a request, not a result"));
+    checkEqual(throttle.message, QStringLiteral("worker asked"),
+               QStringLiteral("the throttle message is passed through"));
+
+    const QString summary = report.summary();
+    check(summary.contains(QStringLiteral("Removed 2 automatic policies")),
+          QStringLiteral("summary counts the removals"));
+    check(summary.contains(QStringLiteral("kept 2 policies")),
+          QStringLiteral("summary counts the preserved policies"));
+    check(summary.contains(QStringLiteral("bandwidth limits being restored")),
+          QStringLiteral("summary mentions the throttle restore"));
+
+    const QStringList lines = report.lines();
+    check(lines.size() == 5, QStringLiteral("the dialog gets one line per entry"));
+    check(lines.at(0).contains(QStringLiteral("C:/Apps/auto-1.exe")),
+          QStringLiteral("a line names the policy target"));
+    check(lines.last().contains(QStringLiteral("throttle")),
+          QStringLiteral("the throttle line names its channel"));
+
+    // Wording and the throttle-skipped path.
+    EmergencyRestorePlan single;
+    single.automatic << makePolicy(QStringLiteral("auto-1"), QStringLiteral("automatic"),
+                                   NetworkPolicy::Action::Block);
+    const EmergencyRestoreReport one =
+        applyEmergencyRestorePlan(single, false, QStringLiteral("no limits"));
+    checkEqual(one.summary(),
+               QStringLiteral("Removed 1 automatic policy; no bandwidth limits to restore"),
+               QStringLiteral("summary uses the singular and reports a skipped throttle"));
+    checkEqual(one.entries.last().outcome, QStringLiteral("skipped"),
+               QStringLiteral("an unattached throttle channel is reported as skipped"));
+
+    const EmergencyRestoreReport none =
+        applyEmergencyRestorePlan(EmergencyRestorePlan{}, false, QStringLiteral("no limits"));
+    checkEqual(none.summary(),
+               QStringLiteral("No automatic policies to remove; no bandwidth limits to restore"),
+               QStringLiteral("an empty store reports nothing to remove"));
+    check(none.ok(), QStringLiteral("nothing to remove is not a failure"));
+    check(none.entries.size() == 1,
+          QStringLiteral("an empty plan still reports the throttle channel"));
+
+    // A failed store write must be reported, not counted as removed.
+    const EmergencyRestoreReport failed =
+        applyEmergencyRestorePlan(plan, true, QStringLiteral("worker asked"), false);
+    checkEqual(failed.removed, 0, QStringLiteral("a failed write removes nothing"));
+    checkEqual(failed.failed, 2, QStringLiteral("a failed write reports one failure per policy"));
+    checkEqual(failed.preserved, 2, QStringLiteral("a failed write does not lose the preserved count"));
+    check(!failed.ok(), QStringLiteral("a failed write makes the report not ok"));
+    check(failed.removedIds.isEmpty(), QStringLiteral("a failed write lists no removed id"));
+    checkEqual(failed.entries.at(0).outcome, QStringLiteral("failed"),
+               QStringLiteral("a failed store entry is reported as failed"));
+    check(failed.entries.at(0).message.contains(QStringLiteral("store write failed")),
+          QStringLiteral("the failure explains that the store write failed"));
+    check(failed.summary().contains(QStringLiteral("2 failed")),
+          QStringLiteral("summary counts the failures"));
+
+    // A policy with no usable target still produces an attributable line.
+    EmergencyRestorePlan noTarget;
+    NetworkPolicy bare = makePolicy(QStringLiteral("bare-id"), QStringLiteral("automatic"),
+                                    NetworkPolicy::Action::Block);
+    bare.targetId.clear();
+    noTarget.automatic << bare;
+    check(applyEmergencyRestorePlan(noTarget, false, QString()).lines().first()
+              .contains(QStringLiteral("bare-id")),
+          QStringLiteral("a missing target falls back to the policy id"));
+}
+
+// ─── NG-026: what is left behind actually reloads ─────────────────────────
+void testEmergencyRestoreStoreRoundTrip()
+{
+    QSettings().clear();
+
+    QList<NetworkPolicy> policies;
+    policies << makePolicy(QStringLiteral("auto-1"), QStringLiteral("automatic"),
+                           NetworkPolicy::Action::Throttle);
+    policies << makePolicy(QStringLiteral("user-1"), QStringLiteral("user"),
+                           NetworkPolicy::Action::Block);
+    policies << makePolicy(QStringLiteral("system-1"), QStringLiteral("system"),
+                           NetworkPolicy::Action::Schedule);
+    policies << makePolicy(QStringLiteral("unknown-1"), QString(),
+                           NetworkPolicy::Action::Allow);
+    policies[1].direction = NetworkDirection::Upload;
+    policies[1].rateBitsPerSecond = 123456;
+    policies[1].description = QStringLiteral("keep me");
+
+    check(PolicyStore::savePolicies(policies),
+          QStringLiteral("the seeded policy set is written"));
+    check(PolicyStore::loadPolicies().size() == 4,
+          QStringLiteral("the seeded policy set loads back"));
+
+    const EmergencyRestorePlan plan = buildEmergencyRestorePlan(PolicyStore::loadPolicies());
+    const EmergencyRestoreReport report =
+        applyEmergencyRestorePlan(plan, true, QStringLiteral("worker asked"));
+    check(report.ok(), QStringLiteral("restoring the stored set succeeds"));
+
+    // This is the coordinator's store step: write back only the preserved set.
+    check(PolicyStore::savePolicies(plan.preserved),
+          QStringLiteral("the preserved set is written back"));
+
+    const QList<NetworkPolicy> remaining = PolicyStore::loadPolicies();
+    check(remaining.size() == 2,
+          QStringLiteral("only the preserved policies survive the restore"));
+
+    QStringList ids;
+    for (const NetworkPolicy &policy : remaining) ids << policy.id;
+    checkEqual(ids, QStringList{QStringLiteral("user-1"), QStringLiteral("unknown-1")},
+               QStringLiteral("user and unknown-origin policies survive the restore"));
+
+    for (const NetworkPolicy &policy : remaining) {
+        if (policy.id != QStringLiteral("user-1")) continue;
+        checkEqual(policy.source, QStringLiteral("user"),
+                   QStringLiteral("the preserved policy keeps its source"));
+        checkEqual(static_cast<int>(policy.direction), static_cast<int>(NetworkDirection::Upload),
+                   QStringLiteral("the preserved policy keeps its direction"));
+        checkEqual(policy.rateBitsPerSecond, static_cast<quint64>(123456),
+                   QStringLiteral("the preserved policy keeps its rate"));
+        checkEqual(policy.description, QStringLiteral("keep me"),
+                   QStringLiteral("the preserved policy keeps its description"));
+        check(policy.action == NetworkPolicy::Action::Block,
+              QStringLiteral("the preserved policy keeps its action"));
+    }
+
+    check(PolicyStore::savePolicies({}), QStringLiteral("clearing the store succeeds"));
+    check(PolicyStore::loadPolicies().isEmpty(),
+          QStringLiteral("a cleared store loads no policies"));
+    QSettings().clear();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
+
+    // Policy-store tests write real settings, so keep them in a scope of their
+    // own and start from a clean slate.
+    QCoreApplication::setOrganizationName(QStringLiteral("UltimateNetGuardTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("netguard_tests"));
+    QSettings().clear();
 
     testApplicationIdentityRoundTrip();
     testActivityObservationRoundTrip();
@@ -311,6 +753,14 @@ int main(int argc, char *argv[])
     testSchemaVersionGate();
 
     testFixtures();
+    testDiagnosticsExportSchema();
+
+    testPolicyOriginClassification();
+    testEmergencyRestorePlan();
+    testEmergencyRestoreReport();
+    testEmergencyRestoreStoreRoundTrip();
+
+    QSettings().clear();
 
     qInfo() << "checks:" << g_checks << "failures:" << g_failures;
     return g_failures == 0 ? 0 : 1;

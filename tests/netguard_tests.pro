@@ -1,10 +1,11 @@
 ##############################################################################
 #   UltimateNetGuard — Phase 0 test harness
 #
-#   Focused harness for NG-001 (product-direction fixtures) and NG-002
-#   (observation and policy telemetry contracts). It links only the pure-logic
-#   sources it needs, so it runs without a GUI, without administrator rights,
-#   and without WinDivert.
+#   Focused harness for NG-001 (product-direction fixtures), NG-002
+#   (observation and policy telemetry contracts), NG-003 (diagnostics export
+#   schema), NG-026 (emergency-restore planning) and NG-027 (enforcement-channel
+#   routing). It links only the pure-logic sources it needs, so it runs without
+#   a GUI, without administrator rights, and without WinDivert.
 #
 #   Build and run from the repository root:
 #       qmake tests/netguard_tests.pro && mingw32-make -j4
@@ -29,12 +30,16 @@ SOURCES += \
     ../src/network/policy.cpp \
     ../src/network/packetparser.cpp \
     ../src/network/bandwidthguard.cpp \
-    ../src/network/testfixtures.cpp
+    ../src/network/testfixtures.cpp \
+    ../src/network/diagnostics.cpp \
+    ../src/network/enforcementrestore.cpp
 
 HEADERS += \
     ../src/network/policy.h \
     ../src/network/packetparser.h \
     ../src/network/bandwidthguard.h \
-    ../src/network/testfixtures.h
+    ../src/network/testfixtures.h \
+    ../src/network/diagnostics.h \
+    ../src/network/enforcementrestore.h
 
 win32: LIBS += -lws2_32

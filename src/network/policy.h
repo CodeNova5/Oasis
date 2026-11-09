@@ -172,6 +172,16 @@ NetworkPolicyThrottleResult fromJsonNetworkPolicyThrottleResult(const QString &j
 QString toJson(const AuditEvent &event);
 AuditEvent fromJsonAuditEvent(const QString &json);
 
+// ─── Policy origin ──────────────────────────────────────────────────────────
+// Who asked for a policy. Emergency restore (NG-026) may only take back what
+// the application decided on its own; anything the user created must survive.
+// The split is deliberately conservative: only a source the product itself
+// writes ("automatic", "system", "ai") counts as automatic, so an unset or
+// unrecognised source is preserved rather than silently removed.
+enum class PolicyOrigin { User, Automatic, Unknown };
+
+PolicyOrigin policyOrigin(const NetworkPolicy &policy);
+
 // ─── Policy store ──────────────────────────────────────────────────────────────
 // Persistent policy store with versioned persistence, migration, and JSON import/export.
 // Policies are stored under QSettings group "NetGuard/Policies".
@@ -188,7 +198,10 @@ struct PolicyStore
     static QList<NetworkPolicy> loadPolicies();
 
     // Save the given policies back to QSettings, overwriting the stored list.
-    static void savePolicies(const QList<NetworkPolicy> &policies);
+    // Returns false when the settings backend reports an error, so a caller
+    // such as emergency restore can report a real failure instead of assuming
+    // the write landed.
+    static bool savePolicies(const QList<NetworkPolicy> &policies);
 
     // Export all policies as a JSON array string (for backup / external editing).
     // Each policy is serialized with toJson(NetworkPolicy).

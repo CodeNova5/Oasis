@@ -5,6 +5,7 @@
 #include "networkwidget.h"
 #include "ui_networkwidget.h"
 #include "groupdetaildialog.h"
+#include "enforcementcoordinator.h"
 
 // ── Theme Manager ──
 #include "stylemanager.h"
@@ -277,6 +278,9 @@ NetworkWidget::NetworkWidget(QWidget *parent)
         ui->lblStatus->setText("⚠ Download shaping: " + downloadStatus);
     m_firewall = new FirewallManager(this);
     m_firewall->initialize();
+    // Shares the managers above, so a throttle result the worker posts reaches
+    // this widget, and emergency restore can take back only automatic controls.
+    m_enforcement = new EnforcementCoordinator(m_throttlePolicies, m_firewall, this);
 
         qRegisterMetaType<BandwidthEvent>("BandwidthEvent");
         connect(m_bandwidthGuard, &BandwidthGuard::sustainedBandwidthExceeded,
@@ -578,9 +582,36 @@ void NetworkWidget::setDataSaverMode(int mode)
 
 void NetworkWidget::restoreAllDataSaverPolicies()
 {
+    // The previous restore's policy report is still waiting for the throttle
+    // worker; starting another would replace it before it was ever shown.
+    if (m_restoreReportPending) {
+        ui->lblStatus->setText("A restore is already in progress...");
+        return;
+    }
+
     m_pendingThrottleEvents.clear();
-    ui->lblStatus->setText("Restoring Data Saver policies...");
-    m_throttlePolicies->restoreAutoApplied();
+    ui->lblStatus->setText("Restoring automatic controls...");
+
+    // Policy-level decisions first: which stored policies are the product's own
+    // and which belong to the user. The throttle channel is asked to take back
+    // its automatic limits as part of the same call, and answers asynchronously
+    // through throttlesRestored().
+    m_restoreReport = m_enforcement->emergencyRestore();
+    m_restoreReportPending = m_restoreReport.throttleRestoreRequested;
+
+    ui->lblStatus->setText((m_restoreReport.ok() ? QString() : QStringLiteral("⚠ "))
+                           + m_restoreReport.summary());
+
+    if (!m_restoreReportPending) {
+        // No throttle channel to wait for, so this report is already complete.
+        const QString title = QStringLiteral("Restore automatic controls");
+        const QString body = m_restoreReport.summary() + "\n\n"
+                             + m_restoreReport.lines().join(QLatin1Char('\n'));
+        if (m_restoreReport.ok())
+            QMessageBox::information(this, title, body);
+        else
+            QMessageBox::warning(this, title, body);
+    }
 }
 
 void NetworkWidget::onThrottleApplied(const QString &executablePath, const ThrottleResult &result)
@@ -632,13 +663,40 @@ void NetworkWidget::onThrottleRemoved(const QString &executablePath, const Throt
 
 void NetworkWidget::onThrottlesRestored(const ThrottleResult &result)
 {
-    if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
-        ui->lblStatus->setText("Data Saver policies restored.");
-        QMessageBox::information(this, "Data Saver", result.message);
-    } else {
-        ui->lblStatus->setText("⚠ Some Data Saver policies could not be restored.");
-        QMessageBox::warning(this, "Data Saver", result.message);
+    const bool throttleOk = result.status == ThrottleStatus::Removed ||
+                            result.status == ThrottleStatus::NotApplied;
+
+    if (!m_restoreReportPending) {
+        // A throttle restore that did not come from emergency restore.
+        if (throttleOk) {
+            ui->lblStatus->setText("Data Saver policies restored.");
+            QMessageBox::information(this, "Data Saver", result.message);
+        } else {
+            ui->lblStatus->setText("⚠ Some Data Saver policies could not be restored.");
+            QMessageBox::warning(this, "Data Saver", result.message);
+        }
+        return;
     }
+
+    m_restoreReportPending = false;
+
+    QStringList lines = m_restoreReport.lines();
+    lines << QStringLiteral("%1 [throttle] — %2")
+                 .arg(throttleOk ? QStringLiteral("done") : QStringLiteral("failed"),
+                      result.message.isEmpty()
+                          ? m_restoreReport.throttleMessage
+                          : result.message);
+
+    const bool ok = m_restoreReport.ok() && throttleOk;
+    ui->lblStatus->setText((ok ? QString() : QStringLiteral("⚠ "))
+                           + m_restoreReport.summary());
+
+    const QString title = QStringLiteral("Restore automatic controls");
+    const QString body = lines.join(QLatin1Char('\n'));
+    if (ok)
+        QMessageBox::information(this, title, m_restoreReport.summary() + "\n\n" + body);
+    else
+        QMessageBox::warning(this, title, m_restoreReport.summary() + "\n\n" + body);
 }
 
 void NetworkWidget::toggleInternetAccess(const QString &procName, const QString &path)

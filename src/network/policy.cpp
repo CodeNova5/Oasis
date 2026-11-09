@@ -401,6 +401,19 @@ AuditEvent fromJsonAuditEvent(const QString &json)
 // Malformed entries are rejected with a warning and omitted; the store never throws.
 
 
+// ─── Policy origin ─────────────────────────────────────────────────────────
+
+PolicyOrigin policyOrigin(const NetworkPolicy &policy)
+{
+    const QString source = policy.source.trimmed().toLower();
+    if (source == QStringLiteral("user")) return PolicyOrigin::User;
+    if (source == QStringLiteral("automatic") || source == QStringLiteral("auto") ||
+        source == QStringLiteral("system") || source == QStringLiteral("ai")) {
+        return PolicyOrigin::Automatic;
+    }
+    return PolicyOrigin::Unknown;
+}
+
 QList<NetworkPolicy> PolicyStore::loadPolicies()
 {
     QList<NetworkPolicy> result;
@@ -475,30 +488,23 @@ QList<NetworkPolicy> PolicyStore::loadPolicies()
     return result;
 }
 
-void PolicyStore::savePolicies(const QList<NetworkPolicy> &policies)
+bool PolicyStore::savePolicies(const QList<NetworkPolicy> &policies)
 {
+    // Format version 2 is a JSON array, which is what loadPolicies() and
+    // exportPoliciesJson() read. Writing a QVariantMap here would make every
+    // saved policy unreadable.
+    QJsonArray array;
+    for (const NetworkPolicy &p : policies)
+        array.append(QJsonDocument::fromJson(toJson(p).toUtf8()).object());
+
     QSettings settings;
     settings.beginGroup("NetGuard/Policies");
     settings.setValue("formatVersion", PolicyStore::kCurrentStoreVersion);
-    QVariantMap store;
-    for (const NetworkPolicy &p : policies)
-    {
-        QVariantMap fields;
-        fields["id"] = p.id;
-        fields["scope"] = p.scope;
-        fields["targetId"] = p.targetId;
-        fields["direction"] = static_cast<int>(p.direction);
-        fields["action"] = static_cast<int>(p.action);
-        fields["rateBitsPerSecond"] = p.rateBitsPerSecond;
-        fields["schedule"] = p.schedule;
-        fields["expiration"] = p.expiration.toString(Qt::ISODate);
-        fields["source"] = p.source;
-        fields["enabled"] = p.enabled;
-        fields["description"] = p.description;
-        store[p.id] = fields;
-    }
-    settings.setValue("policies", store);
+    settings.setValue("policies",
+                      QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
     settings.endGroup();
+    settings.sync();
+    return settings.status() == QSettings::NoError;
 }
 
 QString PolicyStore::exportPoliciesJson()
@@ -551,9 +557,9 @@ bool PolicyStore::importPoliciesJson(const QString &json)
     }
 
     // Write back the merged list
-    savePolicies(existing);
+    const bool saved = savePolicies(existing);
     settings.endGroup();
-    return changed;
+    return changed && saved;
 }
 
 bool PolicyStore::migrateOldFormat(QSettings &settings)
