@@ -4,9 +4,9 @@
  *
  * The process menu can only act on one executable at a time, so there was no
  * place to see the whole set of enforced limits or which stored policy asked
- * for them. This read-only dialog lists the manager's active set with its
- * attribution; removal stays in the process menu, where the executable is
- * already selected.
+ * for them. This dialog lists the manager's active set with its attribution
+ * and can remove the selected limit; the confirmation names the owner so a
+ * policy-owned limit is not mistaken for a stray one.
  *
  * @author Codebuff
  */
@@ -15,6 +15,7 @@
 #include <QDialog>
 
 class QLabel;
+class QPushButton;
 class QTableWidget;
 class ThrottlePolicyManager;
 
@@ -27,9 +28,14 @@ public:
 
 private slots:
     void refresh();
+    void removeSelected();
+    void updateButtons();
 
 private:
+    int selectedRow() const;
+
     ThrottlePolicyManager *m_manager = nullptr;
     QTableWidget *m_table = nullptr;
     QLabel *m_summary = nullptr;
+    QPushButton *m_removeButton = nullptr;
 };

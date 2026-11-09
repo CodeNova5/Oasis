@@ -88,6 +88,9 @@ private slots:
 
 public:
     QString getExactProcessPath(quint32 pid, const QString &procName);
+    // Context-menu label for the throttle action: names the owning policy when
+    // the executable already has a limit, so removal is not anonymous.
+    QString throttleActionText(const QString &path) const;
     void selectAdapterByIPOrAuto(const QString &ipOrAuto);
     QList<AdapterInfo> getAdapterList() const { return m_adapters; }
     DiagnosticsModel *diagnosticsModel() const { return m_diagnostics; }

@@ -603,7 +603,8 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
         });
 
         menu.addSeparator();
-        QAction *actThrottle = menu.addAction("Throttle this executable to 50 KiB/s...");
+        QAction *actThrottle = menu.addAction(throttleActionText(procPath));
+        actThrottle->setToolTip(QDir::toNativeSeparators(procPath));
         connect(actThrottle, &QAction::triggered, this, [this, pid, name]() {
             requestThrottle(pid, name);
         });
@@ -615,6 +616,29 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
     }
 
     menu.exec(ui->treeView->viewport()->mapToGlobal(pos));
+}
+
+QString NetworkWidget::throttleActionText(const QString &path) const
+{
+    if (path.isEmpty() || !m_throttlePolicies->isThrottled(path))
+        return QStringLiteral("Throttle this executable to 50 KiB/s...");
+
+    const QString policyId = m_throttlePolicies->policyAttribution().value(
+        ThrottlePolicyManager::normalizePath(path));
+    if (policyId.isEmpty())
+        return QStringLiteral("Remove bandwidth limit (manual)...");
+
+    QString label;
+    for (const NetworkPolicy &policy : PolicyStore::loadPolicies()) {
+        if (policy.id != policyId) continue;
+        label = policy.description.trimmed();
+        if (label.isEmpty()) label = policy.targetId.trimmed();
+        break;
+    }
+    if (label.isEmpty()) label = policyId;
+    if (label.size() > 60) label = label.left(57) + QStringLiteral("...");
+
+    return QStringLiteral("Remove bandwidth limit (policy: %1)...").arg(label);
 }
 
 void NetworkWidget::requestThrottle(quint32 pid, const QString &procName)

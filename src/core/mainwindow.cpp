@@ -913,7 +913,7 @@ void MainWindow::onDataSaverDetectionMenu(const QPoint &pos)
 
     QMenu menu(this);
     QAction *keepFullSpeed = menu.addAction("Keep full speed for 2 hours");
-    QAction *throttle = menu.addAction("Throttle executable to 50 KiB/s...");
+    QAction *throttle = menu.addAction(m_netWidget->throttleActionText(executablePath));
     QAction *block = menu.addAction("Block internet access as fallback...");
 
     connect(keepFullSpeed, &QAction::triggered, this, [this, processName]() {
