@@ -19,6 +19,7 @@
 
 class FirewallManager;
 class EnforcementCoordinator;
+class PolicyReconciler;
 
 namespace Ui { class NetworkWidget; }
 
@@ -93,6 +94,9 @@ public:
 
 private:
     void populateAdapterCombo();
+    // Queues one reconciliation instead of running it inline, so a burst of
+    // activation changes or a dialog close does not enumerate rules per event.
+    void schedulePolicyReconciliation();
     QIcon getIconByPid(quint32 pid, const QString &procName);
     void requestThrottle(quint32 pid, const QString &procName);
 
@@ -104,6 +108,7 @@ private:
     ThrottlePolicyManager   *m_throttlePolicies = nullptr;
     EnforcementCoordinator  *m_enforcement = nullptr;
     PolicyScheduler         *m_policyScheduler = nullptr;
+    PolicyReconciler        *m_policyReconciler = nullptr;
     FirewallManager         *m_firewall = nullptr;
     QSortFilterProxyModel   *m_proxy = nullptr;
 
@@ -119,6 +124,7 @@ private:
     // the user sees one report covering both the policy store and the shaping.
     EmergencyRestoreReport  m_restoreReport;
     bool                    m_restoreReportPending = false;
+    bool                    m_reconcileScheduled = false;
     // Executables currently running in each activity group, kept from the last
     // group snapshot so a scheduled window can re-apply a group policy to them.
     QHash<QString, QStringList> m_runningGroupPaths;

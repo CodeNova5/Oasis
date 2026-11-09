@@ -124,10 +124,14 @@ PolicyListDialog::PolicyListDialog(QWidget *parent)
     layout->addWidget(m_table, 1);
 
     auto *buttons = new QHBoxLayout;
+    m_verifyButton = new QPushButton(QStringLiteral("Verify..."), this);
+    m_verifyButton->setToolTip(
+        QStringLiteral("Compare the stored policies with the rules and limits Windows is enforcing"));
     m_deleteButton = new QPushButton(QStringLiteral("Delete"), this);
     m_editButton = new QPushButton(QStringLiteral("Edit..."), this);
     auto *closeBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
 
+    buttons->addWidget(m_verifyButton);
     buttons->addWidget(m_deleteButton);
     buttons->addWidget(m_editButton);
     buttons->addStretch(1);
@@ -135,6 +139,7 @@ PolicyListDialog::PolicyListDialog(QWidget *parent)
     layout->addLayout(buttons);
 
     connect(closeBox, &QDialogButtonBox::rejected, this, &PolicyListDialog::reject);
+    connect(m_verifyButton, &QPushButton::clicked, this, &PolicyListDialog::verifyRequested);
     connect(m_editButton, &QPushButton::clicked, this, &PolicyListDialog::editSelected);
     connect(m_deleteButton, &QPushButton::clicked, this, &PolicyListDialog::deleteSelected);
     connect(m_table, &QTableWidget::itemSelectionChanged,

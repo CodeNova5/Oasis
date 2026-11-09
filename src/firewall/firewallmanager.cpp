@@ -48,18 +48,18 @@ void FirewallManager::shutdown()
     if (m_comInitialized) { CoUninitialize(); m_comInitialized = false; }
 }
 
-bool FirewallManager::blockApp(const QString &appPath)
+bool FirewallManager::blockApp(const QString &appPath, const QString &policyId)
 {
     QString cleanPath = expandAndCleanPath(appPath);
-    return addRuleInternal(cleanPath, makeRuleName(cleanPath, "BLOCK_OUT"), NET_FW_ACTION_BLOCK, NET_FW_RULE_DIR_OUT) &&
-           addRuleInternal(cleanPath, makeRuleName(cleanPath, "BLOCK_IN"),  NET_FW_ACTION_BLOCK, NET_FW_RULE_DIR_IN);
+    return addRuleInternal(cleanPath, makeRuleName(cleanPath, "BLOCK_OUT"), NET_FW_ACTION_BLOCK, NET_FW_RULE_DIR_OUT, true, policyId) &&
+           addRuleInternal(cleanPath, makeRuleName(cleanPath, "BLOCK_IN"),  NET_FW_ACTION_BLOCK, NET_FW_RULE_DIR_IN, true, policyId);
 }
 
-bool FirewallManager::allowApp(const QString &appPath)
+bool FirewallManager::allowApp(const QString &appPath, const QString &policyId)
 {
     QString cleanPath = expandAndCleanPath(appPath);
-    return addRuleInternal(cleanPath, makeRuleName(cleanPath, "ALLOW_OUT"), NET_FW_ACTION_ALLOW, NET_FW_RULE_DIR_OUT) &&
-           addRuleInternal(cleanPath, makeRuleName(cleanPath, "ALLOW_IN"),  NET_FW_ACTION_ALLOW, NET_FW_RULE_DIR_IN);
+    return addRuleInternal(cleanPath, makeRuleName(cleanPath, "ALLOW_OUT"), NET_FW_ACTION_ALLOW, NET_FW_RULE_DIR_OUT, true, policyId) &&
+           addRuleInternal(cleanPath, makeRuleName(cleanPath, "ALLOW_IN"),  NET_FW_ACTION_ALLOW, NET_FW_RULE_DIR_IN, true, policyId);
 }
 
 bool FirewallManager::removeAppRules(const QString &appPath)
@@ -318,6 +318,12 @@ QList<FirewallRule> FirewallManager::listRules(bool netGuardOnly) const
                 rule->get_Action(&act);
                 r.action = act;
 
+                BSTR bDesc = nullptr;
+                if (SUCCEEDED(rule->get_Description(&bDesc)) && bDesc) {
+                    r.description = QString::fromWCharArray(bDesc);
+                    SysFreeString(bDesc);
+                }
+
                 long proto;
                 rule->get_Protocol(&proto);
                 r.protocol = static_cast<NET_FW_IP_PROTOCOL_>(proto);
@@ -335,7 +341,8 @@ QList<FirewallRule> FirewallManager::listRules(bool netGuardOnly) const
 }
 
 bool FirewallManager::addRuleInternal(const QString &appPath, const QString &name,
-                                      NET_FW_ACTION_ action, NET_FW_RULE_DIRECTION_ direction, bool enabled)
+                                      NET_FW_ACTION_ action, NET_FW_RULE_DIRECTION_ direction,
+                                      bool enabled, const QString &policyId)
 {
     if (!m_fwRules) return false;
 
@@ -350,7 +357,11 @@ bool FirewallManager::addRuleInternal(const QString &appPath, const QString &nam
     if (FAILED(hr)) return false;
 
     BSTR bN = Q2B(name);
-    BSTR bD = Q2B("Managed by Ultimate NetGuard AIO");
+    // The description carries the policy id so reconciliation can attribute the
+    // rule; a rule created from the Firewall tab keeps the generic text.
+    BSTR bD = Q2B(policyId.isEmpty()
+                      ? QStringLiteral("Managed by Ultimate NetGuard AIO")
+                      : QStringLiteral("NetGuard policy %1").arg(policyId));
     BSTR bG = Q2B("Ultimate NetGuard AIO");
     BSTR bA = nativePath.isEmpty() ? nullptr : Q2B(nativePath);
 

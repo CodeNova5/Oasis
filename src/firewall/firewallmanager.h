@@ -28,6 +28,10 @@ struct FirewallRule {
     QString                name;
     QString                appPath;
     QString                realAppPath; // Clean native path used for icon extraction
+    // Rule description. A policy-applied rule stores its policy id here as
+    // "NetGuard policy <id>", which is how reconciliation tells it apart from
+    // a rule the user created from the Firewall tab.
+    QString                description;
     bool                   enabled   = false;
     NET_FW_RULE_DIRECTION_ direction = NET_FW_RULE_DIR_OUT;
     NET_FW_ACTION_         action    = NET_FW_ACTION_ALLOW;
@@ -49,9 +53,11 @@ public:
     bool isInitialized() const { return m_fwRules != nullptr; }
     void shutdown();
 
-    // Core rule modifications
-    bool blockApp           (const QString &appPath);
-    bool allowApp           (const QString &appPath);
+    // Core rule modifications. `policyId` attributes the created rules to a
+    // stored policy, so reconciliation may later remove them; omitted for rules
+    // the Firewall tab creates on the user's behalf.
+    bool blockApp           (const QString &appPath, const QString &policyId = QString());
+    bool allowApp           (const QString &appPath, const QString &policyId = QString());
     bool removeAppRules     (const QString &appPath);
     bool removeRuleByName   (const QString &name);
     bool toggleRule         (const QString &name, bool enable);
@@ -75,7 +81,8 @@ signals:
 private:
     bool    addRuleInternal(const QString &appPath, const QString &name,
                          NET_FW_ACTION_         action,
-                         NET_FW_RULE_DIRECTION_ direction, bool enabled = true);
+                         NET_FW_RULE_DIRECTION_ direction, bool enabled = true,
+                         const QString &policyId = QString());
     QString makeRuleName   (const QString &appPath, const QString &suffix) const;
     void    setError       (const QString &msg);
 

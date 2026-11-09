@@ -215,8 +215,10 @@ EnforcementResult EnforcementCoordinator::routeToFirewall(const NetworkPolicy &p
     }
 
     const bool wantsBlock = policy.action == NetworkPolicy::Action::Block;
-    const bool ruleCreated = wantsBlock ? m_firewall->blockApp(executablePath)
-                                        : m_firewall->allowApp(executablePath);
+    // The policy id goes into the rule description so reconciliation can tell
+    // this rule from one the user created from the Firewall tab.
+    const bool ruleCreated = wantsBlock ? m_firewall->blockApp(executablePath, policy.id)
+                                        : m_firewall->allowApp(executablePath, policy.id);
 
     if (ruleCreated) {
         result.status = EnforcementResult::Status::Applied;

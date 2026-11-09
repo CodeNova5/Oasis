@@ -8,6 +8,7 @@
 #include "enforcementcoordinator.h"
 #include "policyeditordialog.h"
 #include "policylistdialog.h"
+#include "policyreconcile.h"
 
 // ── Theme Manager ──
 #include "stylemanager.h"
@@ -34,6 +35,7 @@
 #include <QPalette>
 #include <QVariant>
 #include <QPixmap>
+#include <QTimer>
 
 #ifndef _WIN32_WINNT
 #  define _WIN32_WINNT 0x0601
@@ -292,6 +294,21 @@ NetworkWidget::NetworkWidget(QWidget *parent)
             this, &NetworkWidget::onPolicyActivationChanged);
     m_policyScheduler->start();
 
+    // NG-024: compare stored policies with what Windows enforces. The startup
+    // pass runs only when the firewall is usable; a non-elevated session should
+    // not warn on every launch. Group-scoped policies are re-applied from the
+    // first group snapshot, and the Policies dialog verifies everything on
+    // demand.
+    m_policyReconciler = new PolicyReconciler(m_throttlePolicies, m_firewall, this);
+    if (m_firewall->isInitialized()) {
+        QTimer::singleShot(8000, this, [this]() {
+            const ReconciliationReport report =
+                m_policyReconciler->reconcileNow(m_runningGroupPaths);
+            if (report.repaired > 0 || report.removed > 0 || !report.ok())
+                ui->lblStatus->setText(report.summary());
+        });
+    }
+
         qRegisterMetaType<BandwidthEvent>("BandwidthEvent");
         connect(m_bandwidthGuard, &BandwidthGuard::sustainedBandwidthExceeded,
             this, &NetworkWidget::onBandwidthDetected, Qt::QueuedConnection);
@@ -396,10 +413,24 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // later group snapshot does not assume the old pairs are still applied.
     connect(ui->btnPolicies, &QPushButton::clicked, this, [this]() {
         PolicyListDialog dlg(this);
+        connect(&dlg, &PolicyListDialog::verifyRequested, this, [this, &dlg]() {
+            const ReconciliationReport report =
+                m_policyReconciler->reconcileNow(m_runningGroupPaths);
+            QString body = report.summary();
+            const QStringList details = report.lines();
+            if (!details.isEmpty())
+                body += QStringLiteral("\n\n") + details.join(QLatin1Char('\n'));
+            if (report.ok())
+                QMessageBox::information(&dlg, QStringLiteral("Verify policies"), body);
+            else
+                QMessageBox::warning(&dlg, QStringLiteral("Verify policies"), body);
+            ui->lblStatus->setText(report.summary());
+        });
         dlg.exec();
         if (!dlg.changed()) return;
         m_enforcement->forgetReappliedPolicies();
         m_policyScheduler->evaluateNow();
+        schedulePolicyReconciliation();
         ui->lblStatus->setText(QStringLiteral("Policies updated."));
     });
     connect(ui->edtFilter, &QLineEdit::textChanged, this, &NetworkWidget::onFilterChanged);
@@ -807,15 +838,30 @@ void NetworkWidget::onThrottlesRestored(const ThrottleResult &result)
         QMessageBox::warning(this, title, m_restoreReport.summary() + "\n\n" + body);
 }
 
+void NetworkWidget::schedulePolicyReconciliation()
+{
+    if (m_reconcileScheduled) return;
+    m_reconcileScheduled = true;
+    QTimer::singleShot(0, this, [this]() {
+        m_reconcileScheduled = false;
+        if (!m_policyReconciler || !m_firewall || !m_firewall->isInitialized()) return;
+        const ReconciliationReport report =
+            m_policyReconciler->reconcileNow(m_runningGroupPaths);
+        if (report.repaired > 0 || report.removed > 0 || !report.ok())
+            ui->lblStatus->setText(report.summary());
+    });
+}
+
 void NetworkWidget::onPolicyActivationChanged(const NetworkPolicy &policy,
                                               PolicyActivationState state,
                                               const QString &reason)
 {
     if (state != PolicyActivationState::Active) {
-        // The policy is no longer in force, but withdrawing firewall or QoS
-        // state here would guess at rule ownership: firewall rule names are
-        // keyed by the executable's base name, so a removal could take a rule
-        // the user created for the same file. NG-024 owns that reconciliation.
+        // The policy left its window or expired. Firewall rules created by a
+        // policy carry its id, so reconciliation can withdraw those safely; a
+        // bandwidth limit cannot yet be attributed to a policy, so it is left
+        // in place and reported.
+        schedulePolicyReconciliation();
         Q_UNUSED(reason);
         return;
     }

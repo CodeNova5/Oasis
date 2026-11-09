@@ -36,6 +36,11 @@ public:
     // activation and forget stale re-application bookkeeping.
     bool changed() const { return m_changed; }
 
+signals:
+    // NG-024: the caller owns the enforcement managers, so it performs the
+    // verification and shows the result while this dialog is open.
+    void verifyRequested();
+
 private slots:
     void editSelected();
     void deleteSelected();
@@ -49,6 +54,7 @@ private:
     QLabel *m_summary = nullptr;
     QPushButton *m_editButton = nullptr;
     QPushButton *m_deleteButton = nullptr;
+    QPushButton *m_verifyButton = nullptr;
     QList<NetworkPolicy> m_policies;
     bool m_changed = false;
 };

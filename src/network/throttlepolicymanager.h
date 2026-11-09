@@ -61,6 +61,15 @@ public:
     // Purely a cache lookup, no PowerShell involved.
     bool isThrottled(const QString &executablePath) const;
 
+    // Read-only views for policy reconciliation (NG-024). Paths are normalized
+    // the same way as isThrottled(); the auto-applied set is the subset the
+    // product may take back without touching a user-requested limit.
+    QStringList activePaths() const { return m_activePolicies.keys(); }
+    QStringList autoAppliedPaths() const {
+        return QStringList(m_autoApplied.cbegin(), m_autoApplied.cend());
+    }
+    QHash<QString, quint64> downloadLimits() const { return m_downloadLimits; }
+
     // Empty while download shaping works; otherwise why it cannot start.
     QString downloadLimiterStatus() const { return m_downloadStatus; }
 
