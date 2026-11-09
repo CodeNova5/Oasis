@@ -8,9 +8,10 @@
  * policy, and routes edit through the same `PolicyEditorDialog` used for
  * creation. Deletion asks for confirmation because it cannot be undone.
  *
- * Deleting or editing a policy does not withdraw firewall or shaping state that
- * was already applied: this build cannot attribute a rule to the policy that
- * created it. NG-024 owns that reconciliation.
+ * Deleting or editing a policy does not withdraw enforcement directly here;
+ * the caller schedules NG-024 reconciliation, which removes the rules and
+ * bandwidth limits attributed to the policy. Limits applied outside a policy
+ * are left in place, and **Limits...** shows who owns each active limit.
  *
  * @author Codebuff
  */

@@ -95,6 +95,10 @@ QStringList ReconciliationReport::lines() const
             result << QStringLiteral("requested a limit for %1 — %2")
                           .arg(subject, action.message);
             break;
+        case ReconciliationAction::Kind::ReassignThrottle:
+            result << QStringLiteral("updated the limit owner for %1 — %2")
+                          .arg(subject, action.message);
+            break;
         case ReconciliationAction::Kind::RemoveThrottle:
             result << QStringLiteral("removed the limit for %1 — %2")
                           .arg(subject, action.message);
@@ -262,7 +266,30 @@ ReconciliationReport planPolicyReconciliation(
     for (auto it = desiredThrottle.constBegin(); it != desiredThrottle.constEnd(); ++it) {
         const bool throttled = observed.throttledPaths.contains(it.key());
         const bool downloadLimited = observed.downloadLimits.contains(it.key());
-        if (throttled && (!wantsDownload(it->policy) || downloadLimited)) continue;
+
+        if (throttled && (!wantsDownload(it->policy) || downloadLimited)) {
+            // The enforced limit is right, but a different policy may have
+            // asked for it originally. Hand ownership over without touching
+            // QoS, so a later withdrawal follows the policy that wants it now.
+            // A limit applied outside a policy has no owner and is not adopted.
+            const QString currentOwner = observed.throttlePolicyIds.value(it.key());
+            const bool automatic = policyOrigin(it->policy) == PolicyOrigin::Automatic;
+            const bool autoMatches =
+                observed.autoAppliedPaths.contains(it.key()) == automatic;
+            if (!currentOwner.isEmpty() &&
+                (currentOwner != it->policy.id || !autoMatches)) {
+                ReconciliationAction reassign;
+                reassign.kind = ReconciliationAction::Kind::ReassignThrottle;
+                reassign.policyId = it->policy.id;
+                reassign.path = it->path;
+                reassign.automatic = automatic;
+                reassign.message = currentOwner == it->policy.id
+                    ? QStringLiteral("the limit's automatic status changed")
+                    : QStringLiteral("the limit is now owned by the active policy");
+                report.actions << reassign;
+            }
+            continue;
+        }
 
         ReconciliationAction action;
         action.kind = ReconciliationAction::Kind::ApplyThrottle;

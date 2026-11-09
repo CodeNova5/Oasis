@@ -61,6 +61,12 @@ public:
     void applyForPolicy(const QString &executablePath, const QString &policyId,
                         bool automatic = false);
     void remove(const QString &executablePath);
+    // Changes which policy owns an already-enforced limit, without another QoS
+    // call. Used when a different active policy takes over a path; an
+    // unattributed (manual) limit is never adopted. Returns false when there is
+    // no settled limit to reassign.
+    bool reassign(const QString &executablePath, const QString &policyId,
+                  bool automatic = false);
     void restoreAutoApplied();
 
     // Purely a cache lookup, no PowerShell involved.

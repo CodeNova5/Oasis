@@ -221,6 +221,24 @@ void ThrottlePolicyManager::remove(const QString &executablePath)
     emit removeRequested(path, policyId);
 }
 
+bool ThrottlePolicyManager::reassign(const QString &executablePath,
+                                     const QString &policyId, bool automatic)
+{
+    const QString path = normalizePath(executablePath);
+    if (path.isEmpty() || policyId.isEmpty() || m_inFlight.contains(path) ||
+        !m_activePolicies.contains(path)) {
+        return false;
+    }
+
+    if (automatic)
+        m_autoApplied.insert(path);
+    else
+        m_autoApplied.remove(path);
+    m_policyAttribution.insert(path, policyId);
+    save();
+    return true;
+}
+
 void ThrottlePolicyManager::restoreAutoApplied()
 {
     if (m_restoreInFlight) return;

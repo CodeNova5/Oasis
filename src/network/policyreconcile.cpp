@@ -110,6 +110,12 @@ ReconciliationReport PolicyReconciler::reconcileNow(
             m_throttle->applyForPolicy(action.path, action.policyId, action.automatic);
             ++report.repaired;
             break;
+        case ReconciliationAction::Kind::ReassignThrottle:
+            if (m_throttle->reassign(action.path, action.policyId, action.automatic))
+                ++report.repaired;
+            else
+                ++report.failed;
+            break;
         case ReconciliationAction::Kind::RemoveThrottle:
             m_throttle->remove(action.path);
             ++report.removed;

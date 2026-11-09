@@ -238,6 +238,16 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="btnLimits">
+       <property name="text">
+        <string>Limits…</string>
+       </property>
+       <property name="toolTip">
+        <string>Show active bandwidth limits and the policy that owns each one</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QLineEdit" name="edtFilter">
        <property name="placeholderText">
         <string>Filter data…</string>

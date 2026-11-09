@@ -9,6 +9,7 @@
 #include "policyeditordialog.h"
 #include "policylistdialog.h"
 #include "policyreconcile.h"
+#include "bandwidthlimitsdialog.h"
 
 // ── Theme Manager ──
 #include "stylemanager.h"
@@ -432,6 +433,10 @@ NetworkWidget::NetworkWidget(QWidget *parent)
         m_policyScheduler->evaluateNow();
         schedulePolicyReconciliation();
         ui->lblStatus->setText(QStringLiteral("Policies updated."));
+    });
+    connect(ui->btnLimits, &QPushButton::clicked, this, [this]() {
+        BandwidthLimitsDialog dlg(m_throttlePolicies, this);
+        dlg.exec();
     });
     connect(ui->edtFilter, &QLineEdit::textChanged, this, &NetworkWidget::onFilterChanged);
 

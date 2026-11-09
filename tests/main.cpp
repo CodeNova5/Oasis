@@ -1078,7 +1078,7 @@ void testReconciliationThrottle()
     checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveThrottle), 1,
                QStringLiteral("disabling a throttle policy withdraws its limit"));
 
-    // A still-wanted path keeps its limit even if an older policy owned it.
+    // A still-wanted path keeps its limit; only its owner is handed over.
     PolicyObservation otherOwner;
     otherOwner.throttledPaths.insert(key);
     otherOwner.downloadLimits.insert(key, 1000000);
@@ -1088,6 +1088,42 @@ void testReconciliationThrottle()
                QStringLiteral("a still-wanted path keeps its limit"));
     checkEqual(actionCount(report, ReconciliationAction::Kind::ApplyThrottle), 0,
                QStringLiteral("a still-wanted path is not re-applied"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ReassignThrottle), 1,
+               QStringLiteral("a limit owned by an older policy is handed over"));
+    const ReconciliationAction *reassign =
+        firstAction(report, ReconciliationAction::Kind::ReassignThrottle);
+    checkEqual(reassign ? reassign->policyId : QString(), QStringLiteral("p-throttle"),
+               QStringLiteral("the new owner is the active policy"));
+    check(reassign && !reassign->automatic,
+          QStringLiteral("a user policy takes over without becoming automatic"));
+
+    PolicyObservation sameOwner;
+    sameOwner.throttledPaths.insert(key);
+    sameOwner.downloadLimits.insert(key, 1000000);
+    sameOwner.throttlePolicyIds.insert(key, QStringLiteral("p-throttle"));
+    report = planPolicyReconciliation({throttle}, noGroups, sameOwner, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ReassignThrottle), 0,
+               QStringLiteral("a limit already owned by the active policy is left alone"));
+
+    // A limit with no owner stays manual; a policy does not quietly adopt it.
+    PolicyObservation manualLimit;
+    manualLimit.throttledPaths.insert(key);
+    manualLimit.downloadLimits.insert(key, 1000000);
+    report = planPolicyReconciliation({throttle}, noGroups, manualLimit, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ReassignThrottle), 0,
+               QStringLiteral("a manual limit is not adopted by a policy"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveThrottle), 0,
+               QStringLiteral("a manual limit is not removed by the planner"));
+
+    // An automatic policy taking over marks the limit as automatic.
+    PolicyObservation automaticOwner;
+    automaticOwner.throttledPaths.insert(automaticKey);
+    automaticOwner.downloadLimits.insert(automaticKey, 1000000);
+    automaticOwner.throttlePolicyIds.insert(automaticKey, QStringLiteral("p-old-owner"));
+    report = planPolicyReconciliation({automatic}, noGroups, automaticOwner, now);
+    reassign = firstAction(report, ReconciliationAction::Kind::ReassignThrottle);
+    check(reassign && reassign->automatic,
+          QStringLiteral("an automatic policy takes over the limit as automatic"));
 
     // A limit that cannot be attributed is reported, not removed.
     PolicyObservation unattributedLimit;

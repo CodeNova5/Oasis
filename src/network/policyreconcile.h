@@ -57,7 +57,7 @@ struct PolicyObservation
 struct ReconciliationAction
 {
     enum class Kind { CreateFirewallRule, RemoveFirewallRule, ApplyThrottle,
-                      RemoveThrottle, Report };
+                      ReassignThrottle, RemoveThrottle, Report };
 
     Kind kind = Kind::Report;
     QString policyId;

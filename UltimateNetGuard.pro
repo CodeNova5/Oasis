@@ -52,6 +52,7 @@ SOURCES += \
     src/network/policyeditordialog.cpp \
     src/network/policylistdialog.cpp \
     src/network/policyreconcile.cpp \
+    src/network/bandwidthlimitsdialog.cpp \
     src/network/policyreconcileplan.cpp \
     src/identity/applicationidentity.cpp \
     src/identity/publisherresolver.cpp \
@@ -96,6 +97,7 @@ HEADERS += \
     src/network/policyeditordialog.h \
     src/network/policylistdialog.h \
     src/network/policyreconcile.h \
+    src/network/bandwidthlimitsdialog.h \
     src/identity/applicationidentity.h \
     src/identity/publisherresolver.h \
     src/identity/serviceresolver.h \
