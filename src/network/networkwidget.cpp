@@ -337,6 +337,36 @@ NetworkWidget::NetworkWidget(QWidget *parent)
                                      previousStartMs, currentStartMs);
     }, Qt::QueuedConnection);
 
+    // NG-025: a group's live membership changes when an updater or worker exits
+    // and a replacement appears with traffic. Re-apply that group's stored
+    // policies to whatever is running now; the coordinator skips pairs it has
+    // already applied, so a PID-only refresh does not churn firewall or QoS.
+    connect(m_monitor, &NetworkMonitor::groupSnapshotReady, this,
+            [this](const QList<NetGuard::ProcessGroup> &groups) {
+        const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+        bool hasGroupPolicy = false;
+        for (const NetworkPolicy &policy : policies) {
+            if (policy.enabled &&
+                policy.scope.trimmed().compare(QStringLiteral("group"), Qt::CaseInsensitive) == 0) {
+                hasGroupPolicy = true;
+                break;
+            }
+        }
+        if (!hasGroupPolicy) return;
+
+        for (const NetGuard::ProcessGroup &group : groups) {
+            QStringList running;
+            for (const NetGuard::GroupMember &member : group.members) {
+                if (member.type == NetGuard::GroupMemberType::ExecutablePath &&
+                    member.observedPid != 0) {
+                    running << member.value;
+                }
+            }
+            if (!running.isEmpty())
+                m_enforcement->reapplyGroupPolicies(group.id, running, policies);
+        }
+    }, Qt::QueuedConnection);
+
     connect(ui->cmbAdapter, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &NetworkWidget::onAdapterChanged);
     connect(ui->btnStartStop, &QPushButton::clicked, this, &NetworkWidget::onStartStop);
     connect(ui->btnClear, &QPushButton::clicked, this, &NetworkWidget::onClearTable);

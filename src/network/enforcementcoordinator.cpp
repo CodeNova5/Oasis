@@ -80,6 +80,59 @@ QList<EnforcementResult> EnforcementCoordinator::applyAllPolicies(
 }
 
 // ──────────────────────────────────────────────────────────────────────
+//  Group re-application (NG-025)
+//
+//  Groups are rebuilt from the processes that own traffic, so a member that
+//  exits and is replaced shows up as a membership change: the old PID is no
+//  longer running and a new executable path may appear. This is the only place
+//  that decides whether a control must be applied again, so a replacement is
+//  handled the same way whether the group was automatic or created by the user.
+// ──────────────────────────────────────────────────────────────────────
+QList<EnforcementResult> EnforcementCoordinator::reapplyGroupPolicies(
+    const QString &groupId, const QStringList &executablePaths,
+    const QList<NetworkPolicy> &policies)
+{
+    QList<EnforcementResult> results;
+    if (groupId.isEmpty() || executablePaths.isEmpty()) return results;
+
+    for (const NetworkPolicy &policy : policies) {
+        if (!policy.enabled || policy.id.isEmpty()) continue;
+        if (policy.scope.trimmed().compare(QStringLiteral("group"), Qt::CaseInsensitive) != 0)
+            continue;
+        if (policy.targetId != groupId) continue;
+
+        const PolicyChannels channels = plannedChannels(policy);
+        if (!channels.any()) continue;  // advisory policy: nothing to re-apply
+
+        for (const QString &path : executablePaths) {
+            const QString executable = path.trimmed();
+            if (executable.isEmpty()) continue;
+
+            const QString pairKey = groupId + QLatin1Char('\n') + policy.id +
+                                    QLatin1Char('\n') + executable.toLower();
+            if (m_reappliedPairs.contains(pairKey)) continue;
+
+            const EnforcementResult result = applyPolicy(policy, executable);
+            if (result.status == EnforcementResult::Status::Failed) {
+                // Do not remember a hard failure: the next snapshot retries it,
+                // which is how a transient firewall initialization failure heals.
+                continue;
+            }
+
+            m_reappliedPairs.insert(pairKey);
+            results.append(result);
+        }
+    }
+
+    return results;
+}
+
+void EnforcementCoordinator::forgetReappliedPolicies()
+{
+    m_reappliedPairs.clear();
+}
+
+// ──────────────────────────────────────────────────────────────────────
 //  Emergency restore (NG-026)
 //
 //  Only policies whose source marks them as the product's own are removed. A
@@ -96,6 +149,10 @@ EmergencyRestoreReport EnforcementCoordinator::emergencyRestore()
     bool storeWritten = true;
     if (!plan.automatic.isEmpty())
         storeWritten = PolicyStore::savePolicies(plan.preserved);
+
+    // The stored policy set changed, so a later group refresh must not assume
+    // the previous re-applications are still in place.
+    m_reappliedPairs.clear();
 
     const bool throttleAttached = m_throttle != nullptr;
     const QString throttleNote = throttleAttached
@@ -137,7 +194,9 @@ EnforcementResult EnforcementCoordinator::routeToFirewall(const NetworkPolicy &p
     }
 
     if (!m_firewallInitialized) {
-        m_firewallInitialized = m_firewall->initialize();
+        // NetworkWidget initializes its firewall manager in the constructor;
+        // reuse that instead of initializing the COM objects a second time.
+        m_firewallInitialized = m_firewall->isInitialized() || m_firewall->initialize();
         if (!m_firewallInitialized) {
             result.status = EnforcementResult::Status::Failed;
             result.message = QStringLiteral("Firewall initialization failed: %1")

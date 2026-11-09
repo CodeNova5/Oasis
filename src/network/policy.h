@@ -92,7 +92,7 @@ struct NetworkPolicy
 {
     QString id;              // Unique policy identifier
     QString scope;           // e.g. "path", "publisher", "service", "package", "group", "executable", "port", "protocol"
-    QString targetId;        // The path/publisher/service/target this policy applies to
+    QString targetId;        // The path/publisher/service/group id this policy applies to
     NetworkDirection direction = NetworkDirection::Download;
     enum class Action { Allow, Notify, Ask, Throttle, Block, Schedule, NoAction };
     enum class ScheduleType { None, Recurring, Expiration, Both };

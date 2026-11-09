@@ -18,7 +18,9 @@
 
 #include <QObject>
 #include <QList>
+#include <QSet>
 #include <QString>
+#include <QStringList>
 
 #include "network/enforcementrestore.h"
 
@@ -76,6 +78,22 @@ public:
     QList<EnforcementResult> applyAllPolicies(const QList<NetworkPolicy> &policies,
                                               const QString &executablePath);
 
+    // NG-025: a group's live membership changed, which is what a respawned
+    // updater or worker looks like once it owns traffic. Re-applies the enabled
+    // group-scoped policies (scope "group", targetId == groupId) to the
+    // executables running now. A (group, policy, executable) triple is applied
+    // once: firewall and shaping controls are keyed by executable path, so a
+    // process that exits and comes back at the same path is already covered,
+    // while a replacement at a new path is not and gets its own rule. Returns
+    // only the results produced for newly applied pairs.
+    QList<EnforcementResult> reapplyGroupPolicies(const QString &groupId,
+                                                  const QStringList &executablePaths,
+                                                  const QList<NetworkPolicy> &policies);
+
+    // Forgets what reapplyGroupPolicies() remembers, so the next snapshot
+    // re-applies every pair (used when the policy store was changed wholesale).
+    void forgetReappliedPolicies();
+
     // NG-026: remove the controls the product applied on its own, keep every
     // user-created policy, and report each action with its outcome. Firewall
     // rules are not touched: this build only creates them from the Firewall tab
@@ -101,4 +119,6 @@ private:
     ThrottlePolicyManager *m_throttle = nullptr;
     FirewallManager *m_firewall = nullptr;
     bool m_firewallInitialized = false;
+    // "group-id\npolicy-id\nlowercased-path" for every pair already applied.
+    QSet<QString> m_reappliedPairs;
 };

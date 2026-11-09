@@ -43,6 +43,10 @@ public:
     ~FirewallManager() override;
 
     bool initialize();
+    // True once initialize() has obtained the rules collection. Callers that
+    // share the manager use this instead of calling initialize() again, which
+    // would overwrite the COM pointers without releasing them.
+    bool isInitialized() const { return m_fwRules != nullptr; }
     void shutdown();
 
     // Core rule modifications
