@@ -1050,6 +1050,45 @@ void testReconciliationThrottle()
     checkEqual(report.unattributed, 0,
                QStringLiteral("an automatic limit is attributed to the product"));
 
+    // A limit attributed to a policy that no longer exists is withdrawn.
+    PolicyObservation attributedGone;
+    attributedGone.throttledPaths.insert(key);
+    attributedGone.throttlePolicyIds.insert(key, QStringLiteral("p-gone"));
+    report = planPolicyReconciliation({}, noGroups, attributedGone, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveThrottle), 1,
+               QStringLiteral("a limit attributed to a deleted policy is removed"));
+    checkEqual(report.unattributed, 0,
+               QStringLiteral("an attributed limit is not counted as left in place"));
+    const ReconciliationAction *removed =
+        firstAction(report, ReconciliationAction::Kind::RemoveThrottle);
+    checkEqual(removed ? removed->policyId : QString(), QStringLiteral("p-gone"),
+               QStringLiteral("the removal reports the owning policy"));
+    check(removed && removed->message.contains(QStringLiteral("no longer active")),
+          QStringLiteral("the removal explains why the limit goes"));
+
+    // A policy that still exists but is disabled no longer wants its limit.
+    NetworkPolicy paused = throttle;
+    paused.enabled = false;
+    PolicyObservation attributedPaused;
+    attributedPaused.throttledPaths.insert(key);
+    attributedPaused.throttlePolicyIds.insert(key, QStringLiteral("p-throttle"));
+    report = planPolicyReconciliation({paused}, noGroups, attributedPaused, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ApplyThrottle), 0,
+               QStringLiteral("a disabled throttle policy does not request a limit"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveThrottle), 1,
+               QStringLiteral("disabling a throttle policy withdraws its limit"));
+
+    // A still-wanted path keeps its limit even if an older policy owned it.
+    PolicyObservation otherOwner;
+    otherOwner.throttledPaths.insert(key);
+    otherOwner.downloadLimits.insert(key, 1000000);
+    otherOwner.throttlePolicyIds.insert(key, QStringLiteral("p-old-owner"));
+    report = planPolicyReconciliation({throttle}, noGroups, otherOwner, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveThrottle), 0,
+               QStringLiteral("a still-wanted path keeps its limit"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ApplyThrottle), 0,
+               QStringLiteral("a still-wanted path is not re-applied"));
+
     // A limit that cannot be attributed is reported, not removed.
     PolicyObservation unattributedLimit;
     unattributedLimit.throttledPaths.insert(key);

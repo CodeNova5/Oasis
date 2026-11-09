@@ -268,8 +268,10 @@ EnforcementResult EnforcementCoordinator::routeToThrottle(const NetworkPolicy &p
     }
 
     // Marked automatic only when the product created the policy, so a limit the
-    // user asked for is never taken back by emergency restore.
-    m_throttle->apply(executablePath, policyOrigin(policy) == PolicyOrigin::Automatic);
+    // user asked for is never taken back by emergency restore. The policy id
+    // travels with the request so reconciliation can withdraw the limit later.
+    m_throttle->applyForPolicy(executablePath, policy.id,
+                               policyOrigin(policy) == PolicyOrigin::Automatic);
 
     result.status = EnforcementResult::Status::Requested;
     if (policy.rateBitsPerSecond > 0 &&

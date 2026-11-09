@@ -278,11 +278,18 @@ ReconciliationReport planPolicyReconciliation(
     for (const QString &path : observed.throttledPaths) {
         if (desiredThrottle.contains(path)) continue;
 
-        if (observed.autoAppliedPaths.contains(path)) {
+        // A limit is safe to withdraw when the product applied it automatically,
+        // or when it names the policy that asked for it; only a limit with no
+        // attribution at all is left in place.
+        const QString attributed = observed.throttlePolicyIds.value(path);
+        if (observed.autoAppliedPaths.contains(path) || !attributed.isEmpty()) {
             ReconciliationAction action;
             action.kind = ReconciliationAction::Kind::RemoveThrottle;
+            action.policyId = attributed;
             action.path = path;
-            action.message = QStringLiteral("no active policy wants this automatic limit any more");
+            action.message = attributed.isEmpty()
+                ? QStringLiteral("no active policy wants this automatic limit any more")
+                : QStringLiteral("the policy that asked for this limit is no longer active");
             report.actions << action;
         } else {
             ++report.unattributed;

@@ -49,6 +49,7 @@ struct PolicyObservation
     QList<FirewallObservation> firewallRules;  // NetGuard rules only
     QSet<QString> throttledPaths;              // normalized
     QSet<QString> autoAppliedPaths;            // subset the product may remove
+    QHash<QString, QString> throttlePolicyIds; // normalized path -> policy id
     QHash<QString, quint64> downloadLimits;    // normalized path -> bits/s
 };
 

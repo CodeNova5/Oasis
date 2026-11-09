@@ -180,11 +180,23 @@ constexpr quint64 ThrottlePolicyManager::DefaultLimitBitsPerSecond;
 
 void ThrottlePolicyManager::apply(const QString &executablePath, bool automatic)
 {
-    const QString path = normalizePath(executablePath);
+    applyInternal(normalizePath(executablePath), QString(), automatic);
+}
+
+void ThrottlePolicyManager::applyForPolicy(const QString &executablePath,
+                                           const QString &policyId, bool automatic)
+{
+    applyInternal(normalizePath(executablePath), policyId, automatic);
+}
+
+void ThrottlePolicyManager::applyInternal(const QString &path, const QString &policyId,
+                                          bool automatic)
+{
     if (path.isEmpty() || m_inFlight.contains(path)) return;
 
     m_inFlight.insert(path);
     m_pendingAutomatic.insert(path, automatic);
+    m_pendingPolicyId.insert(path, policyId);
 
     // The download half starts immediately instead of waiting for the
     // PowerShell round trip that installs the QoS policy.
@@ -264,6 +276,7 @@ void ThrottlePolicyManager::onWorkerApplied(const QString &executablePath,
 {
     m_inFlight.remove(executablePath);
     const bool automatic = m_pendingAutomatic.take(executablePath);
+    const QString policyId = m_pendingPolicyId.take(executablePath);
 
     ThrottleResult outcome = result;
     if (result.status == ThrottleStatus::Applied) {
@@ -275,6 +288,10 @@ void ThrottlePolicyManager::onWorkerApplied(const QString &executablePath,
             m_autoApplied.insert(executablePath);
         else
             m_autoApplied.remove(executablePath);
+        if (policyId.isEmpty())
+            m_policyAttribution.remove(executablePath);
+        else
+            m_policyAttribution.insert(executablePath, policyId);
         save();
         outcome.message = withDownloadChannelNote(result.message);
     } else if (m_downloadLimits.remove(executablePath) > 0) {
@@ -293,6 +310,7 @@ void ThrottlePolicyManager::onWorkerRemoved(const QString &executablePath,
     if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
         m_activePolicies.remove(executablePath);
         m_autoApplied.remove(executablePath);
+        m_policyAttribution.remove(executablePath);
         save();
     }
     emit throttleRemoved(executablePath, result);
@@ -312,6 +330,7 @@ void ThrottlePolicyManager::onWorkerRestored(const ThrottleResult &result,
             ++it;
         } else {
             m_autoApplied.remove(it.key());
+            m_policyAttribution.remove(it.key());
             it = m_activePolicies.erase(it);
         }
     }
@@ -327,6 +346,7 @@ void ThrottlePolicyManager::onWorkerVerified(const QStringList &existingPolicyId
         if (existingPolicyIds.contains(it.value())) {
             ++it;
         } else {
+            m_policyAttribution.remove(it.key());
             it = m_activePolicies.erase(it);
             changed = true;
         }
@@ -362,6 +382,15 @@ void ThrottlePolicyManager::load()
     for (const QString &path : autoPolicies) {
         if (m_activePolicies.contains(path)) m_autoApplied.insert(path);
     }
+
+    // Attribution only matters for a limit that still exists.
+    const QVariantMap attributed = settings.value("policyAttribution").toMap();
+    for (auto it = attributed.constBegin(); it != attributed.constEnd(); ++it) {
+        const QString path = normalizePath(it.key());
+        const QString policyId = it.value().toString();
+        if (m_activePolicies.contains(path) && !policyId.isEmpty())
+            m_policyAttribution.insert(path, policyId);
+    }
     settings.endGroup();
 }
 
@@ -379,5 +408,12 @@ void ThrottlePolicyManager::save() const
         if (m_activePolicies.contains(path)) autoPolicies << path;
     }
     settings.setValue("autoPolicies", autoPolicies);
+
+    QVariantMap attributed;
+    for (auto it = m_policyAttribution.constBegin(); it != m_policyAttribution.constEnd(); ++it) {
+        if (m_activePolicies.contains(it.key()) && !it.value().isEmpty())
+            attributed.insert(it.key(), it.value());
+    }
+    settings.setValue("policyAttribution", attributed);
     settings.endGroup();
 }

@@ -85,6 +85,7 @@ ReconciliationReport PolicyReconciler::reconcileNow(
         observed.throttledPaths.insert(normalizedPath(path));
     for (const QString &path : m_throttle->autoAppliedPaths())
         observed.autoAppliedPaths.insert(normalizedPath(path));
+    observed.throttlePolicyIds = m_throttle->policyAttribution();
     observed.downloadLimits = m_throttle->downloadLimits();
 
     report = planPolicyReconciliation(PolicyStore::loadPolicies(), groupPaths, observed,
@@ -105,7 +106,8 @@ ReconciliationReport PolicyReconciler::reconcileNow(
             break;
         case ReconciliationAction::Kind::ApplyThrottle:
             // The worker performs the QoS call; this is a request, not a result.
-            m_throttle->apply(action.path, action.automatic);
+            // The policy id is attached so the limit can be withdrawn later.
+            m_throttle->applyForPolicy(action.path, action.policyId, action.automatic);
             ++report.repaired;
             break;
         case ReconciliationAction::Kind::RemoveThrottle:

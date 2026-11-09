@@ -55,6 +55,11 @@ public:
     // `automatic` marks a limit applied by Data Saver enforcement, which is the
     // only kind restoreAutoApplied() will take back.
     void apply(const QString &executablePath, bool automatic = false);
+    // Applies a limit on behalf of a stored policy. The attribution is kept
+    // (and persisted with the active set) so reconciliation can withdraw the
+    // limit once that policy stops wanting it; a plain apply() clears it.
+    void applyForPolicy(const QString &executablePath, const QString &policyId,
+                        bool automatic = false);
     void remove(const QString &executablePath);
     void restoreAutoApplied();
 
@@ -68,6 +73,8 @@ public:
     QStringList autoAppliedPaths() const {
         return QStringList(m_autoApplied.cbegin(), m_autoApplied.cend());
     }
+    // Normalized path -> NetGuard policy id, for limits applied by a policy.
+    QHash<QString, QString> policyAttribution() const { return m_policyAttribution; }
     QHash<QString, quint64> downloadLimits() const { return m_downloadLimits; }
 
     // Empty while download shaping works; otherwise why it cannot start.
@@ -95,6 +102,7 @@ private slots:
     void onWorkerVerified(const QStringList &existingPolicyIds);
 
 private:
+    void applyInternal(const QString &path, const QString &policyId, bool automatic);
     static QString policyIdForPath(const QString &path);
     QVariantMap policySnapshot() const;
     void load();
@@ -107,7 +115,10 @@ private:
     QHash<QString, QString> m_activePolicies;
     // Paths whose limit was applied by Data Saver enforcement, not by the user.
     QSet<QString> m_autoApplied;
+    // Path -> NetGuard policy id for limits a stored policy asked for.
+    QHash<QString, QString> m_policyAttribution;
     QHash<QString, bool> m_pendingAutomatic;
+    QHash<QString, QString> m_pendingPolicyId;
     // Paths with a QoS call already running. A second request for the same path
     // is dropped so PowerShell is never asked twice in parallel; the running call
     // still reports its own result.
