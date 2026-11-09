@@ -3,8 +3,8 @@
 #
 #   Focused harness for NG-001 (product-direction fixtures), NG-002
 #   (observation and policy telemetry contracts), NG-003 (diagnostics export
-#   schema), NG-026 (emergency-restore planning) and NG-027 (enforcement-channel
-#   routing). It links only the pure-logic sources it needs, so it runs without
+#   schema), NG-026 (emergency-restore planning), NG-027 (enforcement-channel
+#   routing) and NG-024 (policy attribution and reconciliation planning). It links only the pure-logic sources it needs, so it runs without
 #   a GUI, without administrator rights, and without WinDivert.
 #
 #   Build and run from the repository root:
@@ -32,7 +32,9 @@ SOURCES += \
     ../src/network/bandwidthguard.cpp \
     ../src/network/testfixtures.cpp \
     ../src/network/diagnostics.cpp \
-    ../src/network/enforcementrestore.cpp
+    ../src/network/enforcementrestore.cpp \
+    ../src/network/policyschedule.cpp \
+    ../src/network/policyreconcileplan.cpp
 
 HEADERS += \
     ../src/network/policy.h \
@@ -40,6 +42,8 @@ HEADERS += \
     ../src/network/bandwidthguard.h \
     ../src/network/testfixtures.h \
     ../src/network/diagnostics.h \
-    ../src/network/enforcementrestore.h
+    ../src/network/enforcementrestore.h \
+    ../src/network/policyschedule.h \
+    ../src/network/policyreconcile.h
 
 win32: LIBS += -lws2_32

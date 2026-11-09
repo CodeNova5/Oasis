@@ -12,8 +12,10 @@
  */
 
 #include <QCoreApplication>
+#include <QDate>
 #include <QDateTime>
 #include <QDebug>
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -24,6 +26,7 @@
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/policy.h"
+#include "network/policyreconcile.h"
 #include "network/testfixtures.h"
 
 namespace {
@@ -733,6 +736,331 @@ void testEmergencyRestoreStoreRoundTrip()
     QSettings().clear();
 }
 
+// ─── NG-024: attribution and reconciliation planning ───────────────────────
+QString normPath(const QString &path)
+{
+    return QDir::cleanPath(QDir::toNativeSeparators(path)).toLower();
+}
+
+FirewallObservation observedRule(const QString &name, const QString &path, bool block,
+                                 bool inbound, const QString &policyId,
+                                 bool enabled = true)
+{
+    FirewallObservation rule;
+    rule.name = name;
+    rule.path = path;
+    rule.block = block;
+    rule.inbound = inbound;
+    rule.enabled = enabled;
+    rule.policyId = policyId;
+    return rule;
+}
+
+int actionCount(const ReconciliationReport &report, ReconciliationAction::Kind kind)
+{
+    int count = 0;
+    for (const ReconciliationAction &action : report.actions) {
+        if (action.kind == kind) ++count;
+    }
+    return count;
+}
+
+const ReconciliationAction *firstAction(const ReconciliationReport &report,
+                                        ReconciliationAction::Kind kind)
+{
+    for (const ReconciliationAction &action : report.actions) {
+        if (action.kind == kind) return &action;
+    }
+    return nullptr;
+}
+
+void testReconciledPolicyId()
+{
+    const QString id = QStringLiteral("policy-42");
+    checkEqual(reconciledPolicyId(QStringLiteral("NetGuard policy %1").arg(id)), id,
+               QStringLiteral("a rule description written by a policy yields its id"));
+    checkEqual(reconciledPolicyId(QStringLiteral("  netguard POLICY   policy-42  ")), id,
+               QStringLiteral("attribution ignores case and padding"));
+    checkEqual(reconciledPolicyId(QStringLiteral("NetGuard policy")), QString(),
+               QStringLiteral("a description without an id yields nothing"));
+    checkEqual(reconciledPolicyId(QString()), QString(),
+               QStringLiteral("an empty description is not attributed"));
+    checkEqual(reconciledPolicyId(QStringLiteral("Ultimate NetGuard AIO")), QString(),
+               QStringLiteral("a rule from the Firewall tab is not attributed"));
+}
+
+void testReconciliationFirewall()
+{
+    const QDateTime now(QDate(2026, 11, 9), QTime(12, 0));
+    const QHash<QString, QStringList> noGroups;
+    const QString blockedPath = QStringLiteral("C:/Apps/Blocked.exe");
+
+    NetworkPolicy block = makePolicy(QStringLiteral("p-block"), QStringLiteral("user"),
+                                     NetworkPolicy::Action::Block);
+    block.targetId = blockedPath;
+
+    ReconciliationReport report =
+        planPolicyReconciliation({block}, noGroups, PolicyObservation(), now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
+               QStringLiteral("an active block policy with no rules creates them"));
+    const ReconciliationAction *create =
+        firstAction(report, ReconciliationAction::Kind::CreateFirewallRule);
+    if (create) {
+        checkEqual(create->path, blockedPath,
+                   QStringLiteral("the repaired rule uses the policy's target"));
+        check(create->block, QStringLiteral("a block policy repairs a block rule"));
+        checkEqual(create->policyId, QStringLiteral("p-block"),
+                   QStringLiteral("the repaired rule carries the policy id"));
+    }
+
+    // Both directions, attributed to this policy: nothing to do.
+    PolicyObservation covered;
+    covered.firewallRules << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_OUT"),
+                                          blockedPath, true, false, QStringLiteral("p-block"))
+                          << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_IN"),
+                                          blockedPath, true, true, QStringLiteral("p-block"));
+    report = planPolicyReconciliation({block}, noGroups, covered, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 0,
+               QStringLiteral("attributed rules in both directions cover the policy"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveFirewallRule), 0,
+               QStringLiteral("covering rules are not removed"));
+    checkEqual(report.summary(),
+               QStringLiteral("All stored policies match the enforced state."),
+               QStringLiteral("a covered policy produces a clean report"));
+
+    // A rule made from the Firewall tab is adopted rather than duplicated.
+    PolicyObservation userRules;
+    userRules.firewallRules << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_OUT"),
+                                            blockedPath, true, false, QString())
+                            << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_IN"),
+                                            blockedPath, true, true, QString());
+    report = planPolicyReconciliation({block}, noGroups, userRules, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
+               QStringLiteral("an unattributed rule is rewritten with the policy id"));
+    checkEqual(report.unattributed, 0,
+               QStringLiteral("a rule that a policy adopts is not counted as left in place"));
+
+    // One direction disabled is as good as missing.
+    PolicyObservation half;
+    half.firewallRules << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_OUT"),
+                                       blockedPath, true, false, QStringLiteral("p-block"))
+                       << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_IN"),
+                                       blockedPath, true, true, QStringLiteral("p-block"), false);
+    report = planPolicyReconciliation({block}, noGroups, half, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
+               QStringLiteral("a disabled rule does not cover the policy"));
+    create = firstAction(report, ReconciliationAction::Kind::CreateFirewallRule);
+    if (create) {
+        check(create->message.contains(QStringLiteral("inbound")),
+              QStringLiteral("the report names the missing direction"));
+    }
+
+    // Attributed rules whose policy is gone are removed; the current policy is
+    // still repaired, and unrelated user rules are left alone.
+    NetworkPolicy other = makePolicy(QStringLiteral("p-other"), QStringLiteral("user"),
+                                     NetworkPolicy::Action::Block);
+    other.targetId = QStringLiteral("C:/Apps/Other.exe");
+    PolicyObservation stale;
+    stale.firewallRules << observedRule(QStringLiteral("NetGuard_Gone_BLOCK_OUT"),
+                                        QStringLiteral("C:/Apps/Gone.exe"), true, false,
+                                        QStringLiteral("p-gone"))
+                        << observedRule(QStringLiteral("NetGuard_Gone_BLOCK_IN"),
+                                        QStringLiteral("C:/Apps/Gone.exe"), true, true,
+                                        QStringLiteral("p-gone"))
+                        << observedRule(QStringLiteral("NetGuard_Custom_BLOCK_OUT"),
+                                        QStringLiteral("C:/Apps/Custom.exe"), true, false,
+                                        QString());
+    report = planPolicyReconciliation({other}, noGroups, stale, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveFirewallRule), 2,
+               QStringLiteral("both directions of a stale attributed rule are removed"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
+               QStringLiteral("the current policy is still repaired"));
+    checkEqual(report.unattributed, 1,
+               QStringLiteral("an unrelated user rule is left in place and reported"));
+    check(report.actions.last().kind == ReconciliationAction::Kind::Report,
+          QStringLiteral("the plan ends with the left-in-place summary"));
+    checkEqual(report.summary(), QStringLiteral("0 repaired, 0 removed, 1 left in place"),
+               QStringLiteral("left-in-place controls appear in the summary"));
+
+    // Changing the action withdraws the old rules and creates the new ones.
+    NetworkPolicy allow = makePolicy(QStringLiteral("p-same"), QStringLiteral("user"),
+                                     NetworkPolicy::Action::Allow);
+    allow.targetId = QStringLiteral("C:/Apps/Same.exe");
+    PolicyObservation wasBlocked;
+    wasBlocked.firewallRules << observedRule(QStringLiteral("NetGuard_Same_BLOCK_OUT"),
+                                             allow.targetId, true, false, QStringLiteral("p-same"))
+                             << observedRule(QStringLiteral("NetGuard_Same_BLOCK_IN"),
+                                             allow.targetId, true, true, QStringLiteral("p-same"));
+    report = planPolicyReconciliation({allow}, noGroups, wasBlocked, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
+               QStringLiteral("switching to allow creates an allow rule"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveFirewallRule), 2,
+               QStringLiteral("switching to allow removes both block rules"));
+    create = firstAction(report, ReconciliationAction::Kind::CreateFirewallRule);
+    check(!create || !create->block,
+          QStringLiteral("the created rule matches the new action"));
+
+    // Disabled and expired policies want nothing; their rules are withdrawn.
+    NetworkPolicy disabled = block;
+    disabled.enabled = false;
+    report = planPolicyReconciliation({disabled}, noGroups, covered, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 0,
+               QStringLiteral("a disabled policy creates no rules"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveFirewallRule), 2,
+               QStringLiteral("disabling a policy withdraws its attributed rules"));
+
+    NetworkPolicy expired = block;
+    expired.expiration = now.addSecs(-60);
+    report = planPolicyReconciliation({expired}, noGroups, covered, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 0,
+               QStringLiteral("an expired policy creates no rules"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveFirewallRule), 2,
+               QStringLiteral("expiring a policy withdraws its attributed rules"));
+
+    // Two policies wanting the same action agree; the first keeps ownership.
+    NetworkPolicy second = block;
+    second.id = QStringLiteral("p-block-2");
+    report = planPolicyReconciliation({block, second}, noGroups, PolicyObservation(), now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
+               QStringLiteral("policies that agree need only one rule"));
+    create = firstAction(report, ReconciliationAction::Kind::CreateFirewallRule);
+    checkEqual(create ? create->policyId : QString(), QStringLiteral("p-block"),
+               QStringLiteral("the first policy keeps ownership"));
+
+    // Two policies disagreeing about the same target are not guessed at.
+    NetworkPolicy opposite = block;
+    opposite.id = QStringLiteral("p-opposite");
+    opposite.action = NetworkPolicy::Action::Allow;
+    report = planPolicyReconciliation({block, opposite}, noGroups, PolicyObservation(), now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 0,
+               QStringLiteral("a conflict creates no rule"));
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveFirewallRule), 0,
+               QStringLiteral("a conflict removes no rule"));
+    checkEqual(report.unresolved, 1, QStringLiteral("a conflict is reported as unresolved"));
+
+    // Group scope expands to the cached running members.
+    NetworkPolicy group = makePolicy(QStringLiteral("p-group"), QStringLiteral("user"),
+                                     NetworkPolicy::Action::Block);
+    group.scope = QStringLiteral("group");
+    group.targetId = QStringLiteral("group-1");
+    QHash<QString, QStringList> groups;
+    groups.insert(QStringLiteral("group-1"), QStringList{blockedPath});
+    report = planPolicyReconciliation({group}, groups, PolicyObservation(), now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
+               QStringLiteral("a group policy repairs each running member"));
+    create = firstAction(report, ReconciliationAction::Kind::CreateFirewallRule);
+    checkEqual(create ? create->path : QString(), blockedPath,
+               QStringLiteral("the group member path is used, not the group id"));
+
+    report = planPolicyReconciliation({group}, noGroups, PolicyObservation(), now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 0,
+               QStringLiteral("a group with no running members changes nothing"));
+    checkEqual(static_cast<int>(report.actions.size()), 1,
+               QStringLiteral("a group with no running members is explained"));
+    check(report.actions.first().message.contains(QStringLiteral("no running members")),
+          QStringLiteral("the group note names the reason"));
+
+    // Scopes this build cannot resolve are reported, never guessed at.
+    NetworkPolicy publisher = makePolicy(QStringLiteral("p-pub"), QStringLiteral("user"),
+                                         NetworkPolicy::Action::Block);
+    publisher.scope = QStringLiteral("publisher");
+    publisher.targetId = QStringLiteral("Google LLC");
+    report = planPolicyReconciliation({publisher}, noGroups, PolicyObservation(), now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 0,
+               QStringLiteral("an unresolved scope creates no rule"));
+    checkEqual(report.unresolved, 1, QStringLiteral("an unresolved scope is counted"));
+
+    // The rendered report mentions the created rule.
+    report = planPolicyReconciliation({block}, noGroups, PolicyObservation(), now);
+    checkEqual(static_cast<int>(report.lines().size()), 1,
+               QStringLiteral("one line per action"));
+    check(!report.lines().isEmpty() &&
+              report.lines().first().contains(QStringLiteral("created block")),
+          QStringLiteral("the rendered line describes the created block rule"));
+}
+
+void testReconciliationThrottle()
+{
+    const QDateTime now(QDate(2026, 11, 9), QTime(12, 0));
+    const QHash<QString, QStringList> noGroups;
+
+    NetworkPolicy throttle = makePolicy(QStringLiteral("p-throttle"), QStringLiteral("user"),
+                                        NetworkPolicy::Action::Throttle);
+    throttle.direction = NetworkDirection::Both;
+    throttle.rateBitsPerSecond = 1000000;
+
+    ReconciliationReport report =
+        planPolicyReconciliation({throttle}, noGroups, PolicyObservation(), now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ApplyThrottle), 1,
+               QStringLiteral("an active throttle policy requests a limit"));
+    const ReconciliationAction *apply =
+        firstAction(report, ReconciliationAction::Kind::ApplyThrottle);
+    if (apply) {
+        checkEqual(apply->path, throttle.targetId,
+                   QStringLiteral("the limit uses the policy's target"));
+        checkEqual(apply->policyId, QStringLiteral("p-throttle"),
+                   QStringLiteral("the request carries the policy id"));
+        check(!apply->automatic,
+              QStringLiteral("a user policy's limit is not marked automatic"));
+    }
+
+    const QString key = normPath(throttle.targetId);
+
+    PolicyObservation limited;
+    limited.throttledPaths.insert(key);
+    limited.downloadLimits.insert(key, 1000000);
+    report = planPolicyReconciliation({throttle}, noGroups, limited, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ApplyThrottle), 0,
+               QStringLiteral("an existing upload and download limit covers the policy"));
+
+    PolicyObservation throttledOnly;
+    throttledOnly.throttledPaths.insert(key);
+    report = planPolicyReconciliation({throttle}, noGroups, throttledOnly, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ApplyThrottle), 1,
+               QStringLiteral("a missing download limit is requested again"));
+    apply = firstAction(report, ReconciliationAction::Kind::ApplyThrottle);
+    check(apply && apply->message.contains(QStringLiteral("download")),
+          QStringLiteral("the request names the missing download limit"));
+
+    NetworkPolicy upload = throttle;
+    upload.direction = NetworkDirection::Upload;
+    report = planPolicyReconciliation({upload}, noGroups, throttledOnly, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ApplyThrottle), 0,
+               QStringLiteral("an upload-only policy needs no download limit"));
+
+    NetworkPolicy automatic = makePolicy(QStringLiteral("p-auto"),
+                                         QStringLiteral("automatic"),
+                                         NetworkPolicy::Action::Throttle);
+    automatic.direction = NetworkDirection::Both;
+    report = planPolicyReconciliation({automatic}, noGroups, PolicyObservation(), now);
+    apply = firstAction(report, ReconciliationAction::Kind::ApplyThrottle);
+    check(apply && apply->automatic,
+          QStringLiteral("an automatically created policy's limit may be withdrawn later"));
+
+    const QString automaticKey = normPath(automatic.targetId);
+
+    // A limit the product applied for a policy that is gone is withdrawn.
+    PolicyObservation staleAuto;
+    staleAuto.throttledPaths.insert(automaticKey);
+    staleAuto.autoAppliedPaths.insert(automaticKey);
+    report = planPolicyReconciliation({}, noGroups, staleAuto, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveThrottle), 1,
+               QStringLiteral("a stale automatic limit is removed"));
+    checkEqual(report.unattributed, 0,
+               QStringLiteral("an automatic limit is attributed to the product"));
+
+    // A limit that cannot be attributed is reported, not removed.
+    PolicyObservation unattributedLimit;
+    unattributedLimit.throttledPaths.insert(key);
+    report = planPolicyReconciliation({}, noGroups, unattributedLimit, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::RemoveThrottle), 0,
+               QStringLiteral("an unattributed limit is not removed"));
+    checkEqual(report.unattributed, 1,
+               QStringLiteral("an unattributed limit is counted as left in place"));
+    checkEqual(report.summary(), QStringLiteral("0 repaired, 0 removed, 1 left in place"),
+               QStringLiteral("the unattributed limit appears in the summary"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -759,6 +1087,10 @@ int main(int argc, char *argv[])
     testEmergencyRestorePlan();
     testEmergencyRestoreReport();
     testEmergencyRestoreStoreRoundTrip();
+
+    testReconciledPolicyId();
+    testReconciliationFirewall();
+    testReconciliationThrottle();
 
     QSettings().clear();
 

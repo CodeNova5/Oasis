@@ -52,6 +52,7 @@ SOURCES += \
     src/network/policyeditordialog.cpp \
     src/network/policylistdialog.cpp \
     src/network/policyreconcile.cpp \
+    src/network/policyreconcileplan.cpp \
     src/identity/applicationidentity.cpp \
     src/identity/publisherresolver.cpp \
     src/identity/serviceresolver.cpp \
