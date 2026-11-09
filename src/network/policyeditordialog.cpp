@@ -49,6 +49,24 @@ QString policyScopeKey(PolicyScopeKind scope)
     return QString();
 }
 
+namespace {
+
+bool policyScopeFromKey(const QString &key, PolicyScopeKind *scope)
+{
+    const QString k = key.trimmed().toLower();
+    if (k == QLatin1String("pid")) { *scope = PolicyScopeKind::Pid; return true; }
+    if (k == QLatin1String("path") || k == QLatin1String("executable")) {
+        *scope = PolicyScopeKind::ExecutablePath;
+        return true;
+    }
+    if (k == QLatin1String("publisher")) { *scope = PolicyScopeKind::Publisher; return true; }
+    if (k == QLatin1String("service")) { *scope = PolicyScopeKind::Service; return true; }
+    if (k == QLatin1String("group")) { *scope = PolicyScopeKind::ApplicationGroup; return true; }
+    return false;
+}
+
+} // namespace
+
 QString policyScopeBreadth(PolicyScopeKind scope)
 {
     switch (scope) {
@@ -129,7 +147,62 @@ PolicyEditorDialog::PolicyEditorDialog(const PolicyTarget &target, QWidget *pare
     : QDialog(parent)
     , m_target(target)
 {
+    buildUi();
     setWindowTitle(QStringLiteral("Create policy"));
+    updateScopeDescription();
+    updateActionControls();
+}
+
+PolicyEditorDialog::PolicyEditorDialog(const NetworkPolicy &policy, QWidget *parent)
+    : QDialog(parent)
+{
+    m_editing = true;
+    m_policyId = policy.id;
+    m_policySource = policy.source;
+
+    PolicyScopeKind scope = PolicyScopeKind::ExecutablePath;
+    policyScopeFromKey(policy.scope, &scope);
+    switch (scope) {
+    case PolicyScopeKind::Pid:
+        m_target.pid = policy.targetId.toUInt();
+        break;
+    case PolicyScopeKind::Publisher:
+        m_target.publisher = policy.targetId;
+        break;
+    case PolicyScopeKind::Service:
+        m_target.serviceName = policy.targetId;
+        break;
+    case PolicyScopeKind::ApplicationGroup:
+        m_target.groupId = policy.targetId;
+        break;
+    case PolicyScopeKind::ExecutablePath:
+        m_target.executablePath = policy.targetId;
+        break;
+    }
+
+    buildUi();
+    setWindowTitle(QStringLiteral("Edit policy"));
+
+    const int scopeIndex = m_scopeCombo->findData(static_cast<int>(scope));
+    if (scopeIndex >= 0) m_scopeCombo->setCurrentIndex(scopeIndex);
+    updateScopeDescription();
+
+    const int actionIndex = m_actionCombo->findData(static_cast<int>(policy.action));
+    if (actionIndex >= 0) m_actionCombo->setCurrentIndex(actionIndex);
+    const int directionIndex = m_directionCombo->findData(static_cast<int>(policy.direction));
+    if (directionIndex >= 0) m_directionCombo->setCurrentIndex(directionIndex);
+    if (policy.rateBitsPerSecond > 0)
+        m_rateSpin->setValue(static_cast<double>(policy.rateBitsPerSecond) / 1000000.0);
+    m_scheduleCombo->setCurrentText(policy.schedule);
+    m_expiresCheck->setChecked(policy.expiration.isValid());
+    if (policy.expiration.isValid()) m_expirationEdit->setDateTime(policy.expiration);
+    m_enabledCheck->setChecked(policy.enabled);
+    m_descriptionEdit->setText(policy.description);
+    updateActionControls();
+}
+
+void PolicyEditorDialog::buildUi()
+{
     setMinimumWidth(560);
 
     auto *layout = new QVBoxLayout(this);
@@ -242,6 +315,10 @@ PolicyEditorDialog::PolicyEditorDialog(const PolicyTarget &target, QWidget *pare
         QStringLiteral("Why this policy exists (optional)"));
     effectLayout->addRow(QStringLiteral("Note:"), m_descriptionEdit);
 
+    m_enabledCheck = new QCheckBox(QStringLiteral("Enabled"), effectBox);
+    m_enabledCheck->setChecked(true);
+    effectLayout->addRow(QStringLiteral("State:"), m_enabledCheck);
+
     layout->addWidget(effectBox);
 
     auto *buttons = new QDialogButtonBox(
@@ -255,9 +332,6 @@ PolicyEditorDialog::PolicyEditorDialog(const PolicyTarget &target, QWidget *pare
     connect(m_actionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &PolicyEditorDialog::updateActionControls);
     connect(m_expiresCheck, &QCheckBox::toggled, m_expirationEdit, &QWidget::setEnabled);
-
-    updateScopeDescription();
-    updateActionControls();
 }
 
 PolicyScopeKind PolicyEditorDialog::currentScope() const
@@ -280,9 +354,14 @@ void PolicyEditorDialog::updateScopeDescription()
     switch (scope) {
     case PolicyScopeKind::Pid:
         m_targetEdit->setReadOnly(true);
-        m_targetEdit->setText(m_target.pid
-            ? QStringLiteral("PID %1 (%2)").arg(m_target.pid).arg(m_target.processName)
-            : QString());
+        if (m_target.pid == 0)
+            m_targetEdit->clear();
+        else if (m_target.processName.isEmpty())
+            m_targetEdit->setText(QStringLiteral("PID %1").arg(m_target.pid));
+        else
+            m_targetEdit->setText(QStringLiteral("PID %1 (%2)")
+                                      .arg(m_target.pid)
+                                      .arg(m_target.processName));
         break;
     case PolicyScopeKind::ExecutablePath:
         m_targetEdit->setReadOnly(false);
@@ -380,8 +459,10 @@ void PolicyEditorDialog::accept()
     }
 
     m_policy = NetworkPolicy();
-    m_policy.id = QStringLiteral("policy-") +
-                  QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_policy.id = m_editing
+        ? m_policyId
+        : QStringLiteral("policy-") +
+              QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_policy.scope = policyScopeKey(scope);
     m_policy.targetId = target;
     m_policy.direction = static_cast<NetworkDirection>(
@@ -404,8 +485,8 @@ void PolicyEditorDialog::accept()
         m_policy.scheduleType = NetworkPolicy::ScheduleType::None;
     }
 
-    m_policy.source = QStringLiteral("user");
-    m_policy.enabled = true;
+    m_policy.source = m_editing ? m_policySource : QStringLiteral("user");
+    m_policy.enabled = m_enabledCheck->isChecked();
     m_policy.description = m_descriptionEdit->text().trimmed();
 
     QDialog::accept();

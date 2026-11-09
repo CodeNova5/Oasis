@@ -7,6 +7,7 @@
 #include "groupdetaildialog.h"
 #include "enforcementcoordinator.h"
 #include "policyeditordialog.h"
+#include "policylistdialog.h"
 
 // ── Theme Manager ──
 #include "stylemanager.h"
@@ -390,6 +391,17 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     connect(ui->btnStartStop, &QPushButton::clicked, this, &NetworkWidget::onStartStop);
     connect(ui->btnClear, &QPushButton::clicked, this, &NetworkWidget::onClearTable);
     connect(ui->btnExpandAll, &QPushButton::clicked, this, &NetworkWidget::onExpandAll);
+    // The list edits and deletes stored policies; after a change the scheduler
+    // must see the new set and the re-application memory must be forgotten so a
+    // later group snapshot does not assume the old pairs are still applied.
+    connect(ui->btnPolicies, &QPushButton::clicked, this, [this]() {
+        PolicyListDialog dlg(this);
+        dlg.exec();
+        if (!dlg.changed()) return;
+        m_enforcement->forgetReappliedPolicies();
+        m_policyScheduler->evaluateNow();
+        ui->lblStatus->setText(QStringLiteral("Policies updated."));
+    });
     connect(ui->edtFilter, &QLineEdit::textChanged, this, &NetworkWidget::onFilterChanged);
 
     // ── Auto-refresh adapters when the ComboBox dropdown is opened ──

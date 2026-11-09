@@ -50,6 +50,7 @@ SOURCES += \
     src/network/enforcementcoordinator.cpp \
     src/network/policyschedule.cpp \
     src/network/policyeditordialog.cpp \
+    src/network/policylistdialog.cpp \
     src/identity/applicationidentity.cpp \
     src/identity/publisherresolver.cpp \
     src/identity/serviceresolver.cpp \
@@ -90,6 +91,7 @@ HEADERS += \
     src/network/enforcementcoordinator.h \
     src/network/policyschedule.h \
     src/network/policyeditordialog.h \
+    src/network/policylistdialog.h \
     src/identity/applicationidentity.h \
     src/identity/publisherresolver.h \
     src/identity/serviceresolver.h \

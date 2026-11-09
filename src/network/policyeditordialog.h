@@ -69,6 +69,9 @@ class PolicyEditorDialog : public QDialog
     Q_OBJECT
 public:
     explicit PolicyEditorDialog(const PolicyTarget &target, QWidget *parent = nullptr);
+    // Edit an existing policy: the id and source are kept, so editing a user
+    // policy cannot quietly turn it into something emergency restore removes.
+    explicit PolicyEditorDialog(const NetworkPolicy &policy, QWidget *parent = nullptr);
 
     // Valid once the dialog has been accepted.
     NetworkPolicy policy() const { return m_policy; }
@@ -76,6 +79,7 @@ public:
     void accept() override;
 
 private:
+    void buildUi();
     PolicyScopeKind currentScope() const;
     NetworkPolicy::Action currentAction() const;
     void updateScopeDescription();
@@ -84,6 +88,9 @@ private:
 
     PolicyTarget m_target;
     NetworkPolicy m_policy;
+    bool m_editing = false;
+    QString m_policyId;
+    QString m_policySource;
 
     QComboBox *m_scopeCombo = nullptr;
     QLineEdit *m_targetEdit = nullptr;
@@ -94,5 +101,6 @@ private:
     QComboBox *m_scheduleCombo = nullptr;
     QCheckBox *m_expiresCheck = nullptr;
     QDateTimeEdit *m_expirationEdit = nullptr;
+    QCheckBox *m_enabledCheck = nullptr;
     QLineEdit *m_descriptionEdit = nullptr;
 };
