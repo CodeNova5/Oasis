@@ -15,6 +15,7 @@
 #include "throttlepolicymanager.h"
 #include "diagnostics.h"
 #include "enforcementrestore.h"
+#include "policyschedule.h"
 
 class FirewallManager;
 class EnforcementCoordinator;
@@ -78,6 +79,12 @@ private slots:
 
     void onTreeViewContextMenu(const QPoint &pos);
 
+    // NG-023: a policy entered or left its window. Entry is applied at once;
+    // leaving is reported but not withdrawn (see the implementation note).
+    void onPolicyActivationChanged(const NetworkPolicy &policy,
+                                   PolicyActivationState state,
+                                   const QString &reason);
+
 public:
     QString getExactProcessPath(quint32 pid, const QString &procName);
     void selectAdapterByIPOrAuto(const QString &ipOrAuto);
@@ -96,6 +103,7 @@ private:
     BandwidthGuard          *m_bandwidthGuard = nullptr;
     ThrottlePolicyManager   *m_throttlePolicies = nullptr;
     EnforcementCoordinator  *m_enforcement = nullptr;
+    PolicyScheduler         *m_policyScheduler = nullptr;
     FirewallManager         *m_firewall = nullptr;
     QSortFilterProxyModel   *m_proxy = nullptr;
 
@@ -111,4 +119,7 @@ private:
     // the user sees one report covering both the policy store and the shaping.
     EmergencyRestoreReport  m_restoreReport;
     bool                    m_restoreReportPending = false;
+    // Executables currently running in each activity group, kept from the last
+    // group snapshot so a scheduled window can re-apply a group policy to them.
+    QHash<QString, QStringList> m_runningGroupPaths;
 };

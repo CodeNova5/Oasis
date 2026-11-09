@@ -48,6 +48,7 @@ SOURCES += \
     src/network/diagnostics.cpp \
     src/network/enforcementrestore.cpp \
     src/network/enforcementcoordinator.cpp \
+    src/network/policyschedule.cpp \
     src/identity/applicationidentity.cpp \
     src/identity/publisherresolver.cpp \
     src/identity/serviceresolver.cpp \
@@ -86,6 +87,7 @@ HEADERS += \
     src/network/diagnostics.h \
     src/network/enforcementrestore.h \
     src/network/enforcementcoordinator.h \
+    src/network/policyschedule.h \
     src/identity/applicationidentity.h \
     src/identity/publisherresolver.h \
     src/identity/serviceresolver.h \

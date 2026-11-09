@@ -282,6 +282,14 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // this widget, and emergency restore can take back only automatic controls.
     m_enforcement = new EnforcementCoordinator(m_throttlePolicies, m_firewall, this);
 
+    // NG-023: evaluate the stored policies at startup (which is how a boundary
+    // missed while the application was closed is recovered) and then on a
+    // timer, so a window opening takes effect without a restart.
+    m_policyScheduler = new PolicyScheduler(this);
+    connect(m_policyScheduler, &PolicyScheduler::activationChanged,
+            this, &NetworkWidget::onPolicyActivationChanged);
+    m_policyScheduler->start();
+
         qRegisterMetaType<BandwidthEvent>("BandwidthEvent");
         connect(m_bandwidthGuard, &BandwidthGuard::sustainedBandwidthExceeded,
             this, &NetworkWidget::onBandwidthDetected, Qt::QueuedConnection);
@@ -343,17 +351,9 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // already applied, so a PID-only refresh does not churn firewall or QoS.
     connect(m_monitor, &NetworkMonitor::groupSnapshotReady, this,
             [this](const QList<NetGuard::ProcessGroup> &groups) {
-        const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
-        bool hasGroupPolicy = false;
-        for (const NetworkPolicy &policy : policies) {
-            if (policy.enabled &&
-                policy.scope.trimmed().compare(QStringLiteral("group"), Qt::CaseInsensitive) == 0) {
-                hasGroupPolicy = true;
-                break;
-            }
-        }
-        if (!hasGroupPolicy) return;
-
+        // Remember what is running in each group: scheduled activation needs the
+        // paths later, when no group snapshot is being delivered.
+        m_runningGroupPaths.clear();
         for (const NetGuard::ProcessGroup &group : groups) {
             QStringList running;
             for (const NetGuard::GroupMember &member : group.members) {
@@ -362,8 +362,26 @@ NetworkWidget::NetworkWidget(QWidget *parent)
                     running << member.value;
                 }
             }
-            if (!running.isEmpty())
-                m_enforcement->reapplyGroupPolicies(group.id, running, policies);
+            if (!running.isEmpty()) m_runningGroupPaths.insert(group.id, running);
+        }
+
+        // Only group policies that are in force now: a policy outside its
+        // scheduled window must not be re-applied because a member appeared.
+        const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+        const QDateTime now = QDateTime::currentDateTime();
+        QList<NetworkPolicy> activeGroupPolicies;
+        for (const NetworkPolicy &policy : policies) {
+            if (policy.scope.trimmed().compare(QStringLiteral("group"), Qt::CaseInsensitive) != 0)
+                continue;
+            if (policyActivationAt(policy, now) != PolicyActivationState::Active)
+                continue;
+            activeGroupPolicies << policy;
+        }
+        if (activeGroupPolicies.isEmpty()) return;
+
+        for (auto it = m_runningGroupPaths.constBegin();
+             it != m_runningGroupPaths.constEnd(); ++it) {
+            m_enforcement->reapplyGroupPolicies(it.key(), it.value(), activeGroupPolicies);
         }
     }, Qt::QueuedConnection);
 
@@ -727,6 +745,39 @@ void NetworkWidget::onThrottlesRestored(const ThrottleResult &result)
         QMessageBox::information(this, title, m_restoreReport.summary() + "\n\n" + body);
     else
         QMessageBox::warning(this, title, m_restoreReport.summary() + "\n\n" + body);
+}
+
+void NetworkWidget::onPolicyActivationChanged(const NetworkPolicy &policy,
+                                              PolicyActivationState state,
+                                              const QString &reason)
+{
+    if (state != PolicyActivationState::Active) {
+        // The policy is no longer in force, but withdrawing firewall or QoS
+        // state here would guess at rule ownership: firewall rule names are
+        // keyed by the executable's base name, so a removal could take a rule
+        // the user created for the same file. NG-024 owns that reconciliation.
+        Q_UNUSED(reason);
+        return;
+    }
+
+    const QString scope = policy.scope.trimmed().toLower();
+    if (scope == QStringLiteral("group")) {
+        const QStringList running = m_runningGroupPaths.value(policy.targetId);
+        if (!running.isEmpty()) {
+            m_enforcement->reapplyGroupPolicies(policy.targetId, running,
+                                                QList<NetworkPolicy>{policy});
+        }
+        return;
+    }
+
+    if (scope == QStringLiteral("path") || scope == QStringLiteral("executable")) {
+        const QString path = policy.targetId.trimmed();
+        if (!path.isEmpty()) m_enforcement->applyPolicy(policy, path);
+        return;
+    }
+
+    // Publisher, service, and package scopes need the identity mapping, which
+    // policy enforcement does not resolve yet.
 }
 
 void NetworkWidget::toggleInternetAccess(const QString &procName, const QString &path)
