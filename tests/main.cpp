@@ -23,6 +23,7 @@
 #include <QStringList>
 #include <QTimeZone>
 
+#include "firewall/rulenames.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/policy.h"
@@ -1061,6 +1062,60 @@ void testReconciliationThrottle()
                QStringLiteral("the unattributed limit appears in the summary"));
 }
 
+// ─── Firewall rule names are unique per executable path ────────────────────
+void testFirewallRuleNames()
+{
+    const QString installed = QStringLiteral("C:/Program Files/App/app.exe");
+    const QString portable = QStringLiteral("D:/Portable/App/app.exe");
+
+    // The old naming collided; the new naming must not.
+    checkEqual(legacyFirewallRuleName(installed, QStringLiteral("BLOCK_OUT")),
+               legacyFirewallRuleName(portable, QStringLiteral("BLOCK_OUT")),
+               QStringLiteral("the legacy name only used the base name"));
+    checkEqual(legacyFirewallRuleName(installed, QStringLiteral("BLOCK_OUT")),
+               QStringLiteral("NetGuard_app_BLOCK_OUT"),
+               QStringLiteral("the legacy format is still recognised"));
+
+    const QString installedName = firewallRuleName(installed, QStringLiteral("BLOCK_OUT"));
+    const QString portableName = firewallRuleName(portable, QStringLiteral("BLOCK_OUT"));
+    check(installedName != portableName,
+          QStringLiteral("same base name in different folders gets distinct rule names"));
+    check(installedName.startsWith(QStringLiteral("NetGuard_app_")),
+          QStringLiteral("the rule name keeps the executable base name readable"));
+    check(installedName.endsWith(QStringLiteral("_BLOCK_OUT")),
+          QStringLiteral("the rule name keeps its action/direction suffix"));
+    checkEqual(firewallRuleName(installed, QStringLiteral("BLOCK_OUT")), installedName,
+               QStringLiteral("the same path always yields the same rule name"));
+    checkEqual(firewallRuleName(QStringLiteral("C:\\Program Files\\App\\APP.EXE"),
+                                QStringLiteral("BLOCK_OUT")),
+               installedName,
+               QStringLiteral("case and separator style do not change the rule name"));
+    checkEqual(firewallRuleName(QStringLiteral("C:/Program Files/App/./app.exe"),
+                                QStringLiteral("BLOCK_OUT")),
+               installedName,
+               QStringLiteral("redundant path segments do not change the rule name"));
+    check(firewallRuleName(installed, QStringLiteral("BLOCK_IN")) != installedName,
+          QStringLiteral("the inbound and outbound rules have distinct names"));
+    check(firewallRuleName(installed, QStringLiteral("ALLOW_OUT")) != installedName,
+          QStringLiteral("the block and allow rules have distinct names"));
+
+    const QString longPath = QStringLiteral("C:/") + QString(100, QLatin1Char('x')) +
+                             QStringLiteral("/tool.exe");
+    check(firewallRuleName(longPath, QStringLiteral("BLOCK_OUT")).size() < 100,
+          QStringLiteral("a long folder name still fits the firewall name limit"));
+
+    const QString longBase = QStringLiteral("C:/Tools/") + QString(200, QLatin1Char('n')) +
+                             QStringLiteral(".exe");
+    const QString longBaseName = firewallRuleName(longBase, QStringLiteral("BLOCK_OUT"));
+    check(longBaseName.size() < 100,
+          QStringLiteral("a very long executable name is shortened"));
+    check(longBaseName != firewallRuleName(QStringLiteral("C:/Other/") +
+                                               QString(200, QLatin1Char('n')) +
+                                               QStringLiteral(".exe"),
+                                           QStringLiteral("BLOCK_OUT")),
+          QStringLiteral("shortening the base name keeps distinct paths distinct"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -1091,6 +1146,7 @@ int main(int argc, char *argv[])
     testReconciledPolicyId();
     testReconciliationFirewall();
     testReconciliationThrottle();
+    testFirewallRuleNames();
 
     QSettings().clear();
 

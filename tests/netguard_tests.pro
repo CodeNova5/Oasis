@@ -34,7 +34,8 @@ SOURCES += \
     ../src/network/diagnostics.cpp \
     ../src/network/enforcementrestore.cpp \
     ../src/network/policyschedule.cpp \
-    ../src/network/policyreconcileplan.cpp
+    ../src/network/policyreconcileplan.cpp \
+    ../src/firewall/rulenames.cpp
 
 HEADERS += \
     ../src/network/policy.h \
@@ -44,6 +45,7 @@ HEADERS += \
     ../src/network/diagnostics.h \
     ../src/network/enforcementrestore.h \
     ../src/network/policyschedule.h \
-    ../src/network/policyreconcile.h
+    ../src/network/policyreconcile.h \
+    ../src/firewall/rulenames.h
 
 win32: LIBS += -lws2_32

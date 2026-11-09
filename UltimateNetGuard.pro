@@ -60,6 +60,7 @@ SOURCES += \
     src/identity/processgroupmanager.cpp \
     src/network/groupdetaildialog.cpp \
     src/firewall/firewallmanager.cpp \
+    src/firewall/rulenames.cpp \
     src/firewall/firewallmodel.cpp \
     src/firewall/firewallwidget.cpp \
     src/hardware/hardwaremonitor.cpp \
@@ -102,6 +103,7 @@ HEADERS += \
     src/identity/processgroupmanager.h \
     src/network/groupdetaildialog.h \
     src/firewall/firewallmanager.h \
+    src/firewall/rulenames.h \
     src/firewall/firewallmodel.h \
     src/firewall/firewallwidget.h \
     src/hardware/hardwaremonitor.h \

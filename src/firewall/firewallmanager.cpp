@@ -5,6 +5,7 @@
  * Includes Ultimate Lockdown Engine and strict Path Sanitization.
  */
 #include "firewallmanager.h"
+#include "rulenames.h"
 #include <QFileInfo>
 #include <QProcess>
 #include <QStringList>
@@ -68,18 +69,22 @@ bool FirewallManager::removeAppRules(const QString &appPath)
     bool success = true;
 
     QString cleanPath = expandAndCleanPath(appPath);
-    QString base = "NetGuard_" + QFileInfo(cleanPath).completeBaseName();
 
-    QString bOut = base + "_BLOCK_OUT";
-    QString bIn  = base + "_BLOCK_IN";
-    QString aOut = base + "_ALLOW_OUT";
-    QString aIn  = base + "_ALLOW_IN";
+    // Remove both the current path-unique names and the base-name-only names
+    // older builds wrote, so an upgrade does not leave stale rules behind.
+    const QString suffixes[] = {QStringLiteral("BLOCK_OUT"), QStringLiteral("BLOCK_IN"),
+                                QStringLiteral("ALLOW_OUT"), QStringLiteral("ALLOW_IN")};
 
     BSTR b;
-    b = Q2B(bOut); m_fwRules->Remove(b); SysFreeString(b);
-    b = Q2B(bIn);  m_fwRules->Remove(b); SysFreeString(b);
-    b = Q2B(aOut); m_fwRules->Remove(b); SysFreeString(b);
-    b = Q2B(aIn);  m_fwRules->Remove(b); SysFreeString(b);
+    for (const QString &suffix : suffixes) {
+        const QString names[] = {makeRuleName(cleanPath, suffix),
+                                 legacyFirewallRuleName(cleanPath, suffix)};
+        for (const QString &name : names) {
+            b = Q2B(name);
+            m_fwRules->Remove(b);
+            SysFreeString(b);
+        }
+    }
 
     emit rulesChanged();
     return success;
@@ -200,15 +205,21 @@ bool FirewallManager::removeFromWhitelist(const QString &appPath) { return remov
 bool FirewallManager::isBlocked(const QString &appPath) const
 {
     QString cleanPath = expandAndCleanPath(appPath);
-    QString nOut = makeRuleName(cleanPath, "BLOCK_OUT");
     if (!m_fwRules) return false;
-    BSTR bName = Q2B(nOut);
-    INetFwRule *rule = nullptr;
-    HRESULT hr = m_fwRules->Item(bName, &rule);
-    SysFreeString(bName);
-    if (SUCCEEDED(hr) && rule) {
-        rule->Release();
-        return true;
+
+    // A rule written by an older build still blocks the app, and is only
+    // renamed the next time the policy is applied.
+    const QString names[] = {makeRuleName(cleanPath, QStringLiteral("BLOCK_OUT")),
+                             legacyFirewallRuleName(cleanPath, QStringLiteral("BLOCK_OUT"))};
+    for (const QString &name : names) {
+        BSTR bName = Q2B(name);
+        INetFwRule *rule = nullptr;
+        HRESULT hr = m_fwRules->Item(bName, &rule);
+        SysFreeString(bName);
+        if (SUCCEEDED(hr) && rule) {
+            rule->Release();
+            return true;
+        }
     }
     return false;
 }
@@ -351,6 +362,13 @@ bool FirewallManager::addRuleInternal(const QString &appPath, const QString &nam
 
     removeRuleByName(name);
 
+    // Drop the base-name-only rule an older build may have written for the
+    // same action, so upgrading does not leave two rules for one executable.
+    const QString suffix =
+        (action == NET_FW_ACTION_BLOCK ? QStringLiteral("BLOCK_") : QStringLiteral("ALLOW_")) +
+        (direction == NET_FW_RULE_DIR_IN ? QStringLiteral("IN") : QStringLiteral("OUT"));
+    removeRuleByName(legacyFirewallRuleName(nativePath, suffix));
+
     INetFwRule *rule = nullptr;
     HRESULT hr = CoCreateInstance(CLSID_NetFwRule_Compat, nullptr, CLSCTX_INPROC_SERVER,
                                   __uuidof(INetFwRule), reinterpret_cast<void**>(&rule));
@@ -388,7 +406,7 @@ bool FirewallManager::addRuleInternal(const QString &appPath, const QString &nam
 
 QString FirewallManager::makeRuleName(const QString &appPath, const QString &suffix) const
 {
-    return "NetGuard_" + QFileInfo(appPath).completeBaseName() + "_" + suffix;
+    return firewallRuleName(appPath, suffix);
 }
 
 void FirewallManager::setError(const QString &msg) {
