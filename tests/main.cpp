@@ -26,6 +26,7 @@
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
 #include "attribution/tlsobserver.h"
+#include "attribution/quicobserver.h"
 #include "firewall/rulenames.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
@@ -1770,6 +1771,217 @@ void testTlsObserver()
           QStringLiteral("an empty datagram is ignored"));
 }
 
+void testQuicObserver()
+{
+    auto u16 = [](QByteArray &out, quint16 value) {
+        out.append(static_cast<char>((value >> 8) & 0xFF));
+        out.append(static_cast<char>(value & 0xFF));
+    };
+    auto u32 = [](QByteArray &out, quint32 value) {
+        out.append(static_cast<char>((value >> 24) & 0xFF));
+        out.append(static_cast<char>((value >> 16) & 0xFF));
+        out.append(static_cast<char>((value >> 8) & 0xFF));
+        out.append(static_cast<char>(value & 0xFF));
+    };
+    auto varint = [](QByteArray &out, quint64 value) {
+        if (value < (1ULL << 6)) {
+            out.append(static_cast<char>(value));
+        } else if (value < (1ULL << 14)) {
+            out.append(static_cast<char>(0x40 | ((value >> 8) & 0x3F)));
+            out.append(static_cast<char>(value & 0xFF));
+        } else if (value < (1ULL << 30)) {
+            out.append(static_cast<char>(0x80 | ((value >> 24) & 0x3F)));
+            out.append(static_cast<char>((value >> 16) & 0xFF));
+            out.append(static_cast<char>((value >> 8) & 0xFF));
+            out.append(static_cast<char>(value & 0xFF));
+        } else {
+            out.append(static_cast<char>(0xC0 | ((value >> 56) & 0x3F)));
+            for (int shift = 48; shift >= 0; shift -= 8) {
+                out.append(static_cast<char>((value >> shift) & 0xFF));
+            }
+        }
+    };
+    auto longHeader = [&](quint32 version, quint8 typeBits) {
+        QByteArray packet;
+        packet.append(static_cast<char>(0xC0 | ((typeBits & 0x03) << 4)));
+        u32(packet, version);
+        packet.append(static_cast<char>(8));
+        packet += QByteArray(8, 'D');
+        packet.append(static_cast<char>(0));
+        return packet;
+    };
+    auto initial = [&](quint32 version, quint8 typeBits = 0) {
+        QByteArray packet = longHeader(version, typeBits);
+        varint(packet, 0);      // no token
+        varint(packet, 1 + 32); // one packet-number byte + ciphertext
+        packet.append(static_cast<char>(0));
+        packet += QByteArray(32, 'C');
+        return packet;
+    };
+    auto parse = [](const QByteArray &packet) {
+        return QuicObserver::parsePacket(
+            reinterpret_cast<const uint8_t *>(packet.constData()), packet.size());
+    };
+
+    // Supported versions expose only clear header facts; the hostname is not
+    // available because the ClientHello inside the Initial is encrypted.
+    const QByteArray v1 = initial(0x00000001);
+    const QuicObservation observed = parse(v1);
+    check(observed.status == QuicMetadataStatus::InitialEncrypted,
+          QStringLiteral("a QUIC v1 Initial is encrypted, not decrypted"));
+    checkEqual(observed.versionName, QStringLiteral("QUIC v1"),
+               QStringLiteral("the QUIC v1 version is printable"));
+    checkEqual(observed.packetType, QStringLiteral("initial"),
+               QStringLiteral("the v1 Initial packet type is identified"));
+    check(!observed.hasHostname(),
+          QStringLiteral("an encrypted QUIC Initial never claims a hostname"));
+    checkEqual(quicMetadataStatusName(observed.status),
+               QStringLiteral("encrypted QUIC Initial"),
+               QStringLiteral("the encrypted Initial status is printable"));
+
+    const QuicObservation v2 = parse(initial(0x6B3343CF, 1));
+    check(v2.status == QuicMetadataStatus::InitialEncrypted &&
+              v2.versionName == QStringLiteral("QUIC v2"),
+          QStringLiteral("the v2 Initial packet type is identified"));
+
+    const QuicObservation zeroRtt = parse(initial(0x00000001, 1));
+    check(zeroRtt.status == QuicMetadataStatus::NotInitial &&
+              zeroRtt.packetType == QStringLiteral("0-RTT"),
+          QStringLiteral("a v1 0-RTT packet is not an Initial"));
+    const QuicObservation retry = parse(initial(0x6B3343CF, 0));
+    check(retry.status == QuicMetadataStatus::NotInitial &&
+              retry.packetType == QStringLiteral("retry"),
+          QStringLiteral("a v2 Retry packet is not an Initial"));
+
+    // Unsupported versions and version negotiation remain explicitly unknown.
+    const QuicObservation draft = parse(initial(0xFF00001D));
+    check(draft.status == QuicMetadataStatus::UnsupportedVersion &&
+              draft.versionName.contains(QStringLiteral("ff00001d")),
+          QStringLiteral("an unsupported QUIC version yields no attribution"));
+    QByteArray negotiation = longHeader(0, 0);
+    check(parse(negotiation).status == QuicMetadataStatus::VersionNegotiation,
+          QStringLiteral("a version-negotiation packet is recognized"));
+
+    // Non-QUIC payloads are ignored cheaply.
+    check(parse(QByteArray("hello")).status == QuicMetadataStatus::NotQuic,
+          QStringLiteral("ordinary UDP is not QUIC"));
+    check(parse(QByteArray(1, static_cast<char>(0x40))).status ==
+              QuicMetadataStatus::NotQuic,
+          QStringLiteral("short-header QUIC has no usable metadata"));
+    check(QuicObserver::parsePacket(nullptr, 0).status == QuicMetadataStatus::NotQuic,
+          QStringLiteral("an empty payload is ignored"));
+
+    // Malformed long headers never produce a packet type or a guessed version.
+    check(parse(v1.left(3)).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("a truncated QUIC version is malformed"));
+
+    QByteArray badDestinationId;
+    badDestinationId.append(static_cast<char>(0xC0));
+    u32(badDestinationId, 0x00000001);
+    badDestinationId.append(static_cast<char>(21)); // maximum is 20
+    badDestinationId += QByteArray(21, 'D');
+    check(parse(badDestinationId).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("an over-long destination connection ID is malformed"));
+
+    QByteArray shortDestinationId;
+    shortDestinationId.append(static_cast<char>(0xC0));
+    u32(shortDestinationId, 0x00000001);
+    shortDestinationId.append(static_cast<char>(8));
+    shortDestinationId += QByteArray(3, 'D');
+    check(parse(shortDestinationId).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("a truncated destination connection ID is malformed"));
+
+    QByteArray badSourceId = longHeader(0x00000001, 0);
+    badSourceId[badSourceId.size() - 1] = static_cast<char>(20);
+    check(parse(badSourceId).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("a truncated source connection ID is malformed"));
+
+    QByteArray oversizedToken = longHeader(0x00000001, 0);
+    varint(oversizedToken, 100);
+    check(parse(oversizedToken).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("an over-long token is malformed"));
+
+    QByteArray zeroLength = longHeader(0x00000001, 0);
+    varint(zeroLength, 0);
+    varint(zeroLength, 0);
+    check(parse(zeroLength).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("a zero-length QUIC packet payload is malformed"));
+
+    QByteArray noCiphertext = longHeader(0x00000001, 0);
+    varint(noCiphertext, 0);
+    varint(noCiphertext, 1); // one packet-number byte, no ciphertext
+    noCiphertext.append(static_cast<char>(0));
+    check(parse(noCiphertext).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("an Initial without ciphertext is malformed"));
+
+    QByteArray pastEnd = longHeader(0x00000001, 0);
+    varint(pastEnd, 0);
+    varint(pastEnd, 100);
+    pastEnd.append(static_cast<char>(0));
+    check(parse(pastEnd).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("a packet length past the datagram is malformed"));
+
+    QByteArray truncatedVarint = longHeader(0x00000001, 0);
+    truncatedVarint.append(static_cast<char>(0xC0)); // needs eight bytes
+    truncatedVarint.append(static_cast<char>(0x00));
+    check(parse(truncatedVarint).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("a truncated variable-length integer is malformed"));
+
+    QByteArray noFixedBit = v1;
+    noFixedBit[0] = static_cast<char>(noFixedBit[0] & 0xBF);
+    check(parse(noFixedBit).status == QuicMetadataStatus::Malformed,
+          QStringLiteral("an Initial without the fixed bit is malformed"));
+
+    QByteArray twoByteLength = longHeader(0x00000001, 0);
+    varint(twoByteLength, 0);
+    varint(twoByteLength, 1 + 200); // encoded with a two-byte varint
+    twoByteLength.append(static_cast<char>(0));
+    twoByteLength += QByteArray(200, 'C');
+    check(parse(twoByteLength).status == QuicMetadataStatus::InitialEncrypted,
+          QStringLiteral("multi-byte QUIC lengths are decoded"));
+
+    // IP/UDP framing is skipped for both address families.
+    QByteArray udp;
+    u16(udp, 50000);
+    u16(udp, 443);
+    u16(udp, static_cast<quint16>(8 + v1.size()));
+    u16(udp, 0);
+    udp += v1;
+
+    QByteArray ipv4(20, '\0');
+    ipv4[0] = static_cast<char>(0x45);
+    ipv4[9] = 17;
+    ipv4 += udp;
+    check(QuicObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(ipv4.constData()), ipv4.size())
+                  .status == QuicMetadataStatus::InitialEncrypted,
+          QStringLiteral("an IPv4 QUIC Initial is parsed"));
+
+    QByteArray ipv6(40, '\0');
+    ipv6[0] = static_cast<char>(0x60);
+    ipv6[6] = 17;
+    ipv6 += udp;
+    check(QuicObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(ipv6.constData()), ipv6.size())
+                  .status == QuicMetadataStatus::InitialEncrypted,
+          QStringLiteral("an IPv6 QUIC Initial is parsed"));
+
+    QByteArray tcp = ipv4;
+    tcp[9] = 6;
+    check(QuicObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(tcp.constData()), tcp.size())
+                  .status == QuicMetadataStatus::NotQuic,
+          QStringLiteral("TCP is not QUIC-over-UDP"));
+
+    QByteArray shortUdp = ipv4;
+    shortUdp.truncate(20 + 4);
+    check(QuicObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(shortUdp.constData()), shortUdp.size())
+                  .status == QuicMetadataStatus::NotQuic,
+          QStringLiteral("a truncated UDP header is ignored"));
+}
+
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -1804,6 +2016,7 @@ int main(int argc, char *argv[])
     testDnsObserverParse();
     testDnsCorrelator();
     testTlsObserver();
+    testQuicObserver();
 
     QSettings().clear();
 

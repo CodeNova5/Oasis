@@ -39,6 +39,7 @@ SOURCES += \
     ../src/attribution/dnsobserver.cpp \
     ../src/attribution/dnscorrelator.cpp \
     ../src/attribution/tlsobserver.cpp \
+    ../src/attribution/quicobserver.cpp \
     ../src/firewall/rulenames.cpp
 
 HEADERS += \
@@ -53,6 +54,7 @@ HEADERS += \
     ../src/attribution/dnsobserver.h \
     ../src/attribution/dnscorrelator.h \
     ../src/attribution/tlsobserver.h \
+    ../src/attribution/quicobserver.h \
     ../src/firewall/rulenames.h
 
 win32: LIBS += -lws2_32

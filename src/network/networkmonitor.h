@@ -17,6 +17,7 @@
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
 #include "attribution/tlsobserver.h"
+#include "attribution/quicobserver.h"
 #include "identity/applicationidentity.h"
 #include "identity/serviceresolver.h"
 #include "identity/processlineage.h"
@@ -126,6 +127,10 @@ signals:
     // actually parsed; fragmented, encrypted, ECH-hidden, and malformed
     // handshakes arrive with an unavailable status and no name.
     void tlsObservation(const TlsObservation &observation);
+    // NG-033: safe QUIC long-header metadata. A valid Initial is reported as
+    // encrypted with no hostname; unsupported versions, version negotiation,
+    // and malformed packets are explicit instead of being misclassified.
+    void quicObservation(const QuicObservation &observation);
 
 protected:
     void run() override;

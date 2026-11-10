@@ -158,6 +158,7 @@ NetworkMonitor::NetworkMonitor(QObject *parent) : QThread(parent)
 {
     qRegisterMetaType<DnsEvent>("DnsEvent");
     qRegisterMetaType<TlsObservation>("TlsObservation");
+    qRegisterMetaType<QuicObservation>("QuicObservation");
     m_speedTimer = new QTimer(this);
     m_speedTimer->setInterval(1000);
     connect(m_speedTimer, &QTimer::timeout, this, [this]() {
@@ -546,6 +547,24 @@ void NetworkMonitor::run()
                     // store bounds lifetime by the DNS TTL and keeps the owner.
                     m_dnsCorrelator.observe(event);
                     emit dnsObservation(event);
+                }
+            }
+
+            // NG-033: safe QUIC metadata. Only clear long-header facts are
+            // parsed: the Initial payload holds an encrypted ClientHello, so
+            // this reports unknown attribution rather than decrypting traffic.
+            if (pkt.protocol.startsWith(QStringLiteral("UDP"))) {
+                QuicObservation observation = QuicObserver::parseDatagram(
+                    reinterpret_cast<const uint8_t *>(buf.constData()),
+                    static_cast<quint32>(len));
+                if (observation.status != QuicMetadataStatus::NotQuic &&
+                    observation.status != QuicMetadataStatus::NotInitial) {
+                    if (pid != 0) {
+                        observation.pid = pid;
+                        observation.processName = proc;
+                    }
+                    observation.identityId = identityId;
+                    emit quicObservation(observation);
                 }
             }
 
