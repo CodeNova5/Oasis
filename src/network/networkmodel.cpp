@@ -11,6 +11,7 @@
 #include <QColor>
 #include <QBrush>
 #include <QStringList>
+#include <utility>
 
 namespace {
 
@@ -146,6 +147,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             }
             case COL_SRC:    return {};
             case COL_DST:    return {};
+            case COL_DOMAIN: return {};
             case COL_SERVICE:return {};
             case COL_RX:     return "↓ " + formatSpeed(p.totalRxSpeed);
             case COL_TX:     return "↑ " + formatSpeed(p.totalTxSpeed);
@@ -253,6 +255,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
     if (role == Qt::UserRole + 5) {
         switch (col) {
         case COL_NAME:   return c.key.protocol;
+        case COL_DOMAIN: return c.domain;
         case COL_RX:     return static_cast<qulonglong>(c.rxSpeed);
         case COL_TX:     return static_cast<qulonglong>(c.txSpeed);
         case COL_BYTES:  return static_cast<qulonglong>(c.rxBytes + c.txBytes);
@@ -266,12 +269,32 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         case COL_NAME:    return c.key.protocol;
         case COL_SRC:     return QString("%1 : %2").arg(c.key.srcIP).arg(c.key.srcPort);
         case COL_DST:     return QString("%1 : %2").arg(c.key.dstIP).arg(c.key.dstPort);
+        case COL_DOMAIN:  return c.domain;
         case COL_SERVICE: return c.service;
         case COL_RX:      return "↓ " + formatSpeed(c.rxSpeed);
         case COL_TX:      return "↑ " + formatSpeed(c.txSpeed);
         case COL_BYTES:   return formatBytes(c.rxBytes + c.txBytes);
         case COL_PKTS:    return static_cast<qulonglong>(c.packets);
         }
+    }
+
+    if (role == Qt::ToolTipRole && col == COL_DOMAIN) {
+        if (c.domain.isEmpty()) {
+            return QStringLiteral("No DNS answer has been observed for this endpoint.\n"
+                                  "A direct-IP or encrypted-DNS connection stays unattributed.");
+        }
+        QStringList lines;
+        lines << (c.domains.size() > 1 ? QStringLiteral("DNS names for this endpoint:")
+                                       : QStringLiteral("DNS name for this endpoint:"));
+        for (const QString &name : c.domains) lines << "  " + name;
+        lines << QStringLiteral("Source: %1").arg(attributionSourceName(c.domainSource));
+        lines << QStringLiteral("Confidence: %1")
+                     .arg(NetGuard::groupConfidenceName(c.domainConfidence));
+        if (c.domainExpiresAt.isValid()) {
+            lines << QStringLiteral("Valid until: %1")
+                         .arg(c.domainExpiresAt.toLocalTime().toString("HH:mm:ss"));
+        }
+        return lines.join('\n');
     }
 
     if (role == Qt::ForegroundRole) {
@@ -290,7 +313,7 @@ QVariant NetworkTreeModel::headerData(int s, Qt::Orientation o, int role) const
 {
     if (o != Qt::Horizontal || role != Qt::DisplayRole) return {};
     static const char *H[COL_COUNT] = {
-        "Application / Protocol", "Source", "Destination",
+        "Application / Protocol", "Source", "Destination", "Domain",
         "Service", "Download", "Upload", "Total Bytes", "Packets"
     };
     return QLatin1String(H[s]);
@@ -358,6 +381,9 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
             beginInsertRows(pIdx, cRow, cRow);
             ConnectionStat c;
             c.key = key;
+            // The remote side is the one DNS can name; for download traffic it
+            // is the source address, for upload it is the destination.
+            c.remoteAddress = isDown ? pkt.srcIP : pkt.dstIP;
             if (isDown) c.rxBytes = bytes; else c.txBytes = bytes;
             c.packets = 1;
             c.service = pkt.service;
@@ -379,11 +405,23 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
 
 void NetworkTreeModel::onTick()
 {
+    const QDateTime now = QDateTime::currentDateTimeUtc();
     for (int pRow = 0; pRow < m_procs.size(); ++pRow) {
         ProcessNode &p = m_procs[pRow];
         quint64 sumRx = 0, sumTx = 0;
 
         for (auto &c : p.conns) {
+            // NG-031: a connection with no new traffic must still lose a name
+            // whose DNS TTL has run out. The refresh below repopulates it if a
+            // fresh answer arrived.
+            if (!c.domain.isEmpty() && c.domainExpiresAt.isValid()
+                && c.domainExpiresAt <= now) {
+                c.domain.clear();
+                c.domains.clear();
+                c.domainSource = AttributionSource::Unknown;
+                c.domainConfidence = ApplicationIdentity::Confidence::Unknown;
+                c.domainExpiresAt = QDateTime();
+            }
             quint64 rawRx = (c.rxBytes > c.prevRx) ? (c.rxBytes - c.prevRx) : 0;
             quint64 rawTx = (c.txBytes > c.prevTx) ? (c.txBytes - c.prevTx) : 0;
 
@@ -407,6 +445,61 @@ void NetworkTreeModel::onTick()
                              {Qt::DisplayRole, Qt::UserRole + 5});
         }
         emit dataChanged(createIndex(pRow, COL_NAME, nullptr), createIndex(pRow, COL_PKTS, nullptr), {Qt::DisplayRole, Qt::UserRole + 5});
+    }
+}
+
+void NetworkTreeModel::setDomainResolver(
+    std::function<QList<DomainAttribution>(const QString &)> resolver)
+{
+    m_domainResolver = std::move(resolver);
+}
+
+void NetworkTreeModel::refreshDomains()
+{
+    if (!m_domainResolver) return;
+
+    for (int pRow = 0; pRow < m_procs.size(); ++pRow) {
+        ProcessNode &p = m_procs[pRow];
+        if (p.conns.isEmpty()) continue;
+        const QModelIndex pIdx = createIndex(pRow, 0, nullptr);
+        for (int cRow = 0; cRow < p.conns.size(); ++cRow) {
+            ConnectionStat &c = p.conns[cRow];
+            const QList<DomainAttribution> records =
+                m_domainResolver(c.remoteAddress);
+
+            QString domain;
+            QStringList names;
+            AttributionSource source = AttributionSource::Unknown;
+            ApplicationIdentity::Confidence confidence =
+                ApplicationIdentity::Confidence::Unknown;
+            QDateTime expiresAt;
+            if (!records.isEmpty()) {
+                // lookup() returns the most recently seen name first; keep the
+                // rest for the tooltip without claiming they all arrived now.
+                domain = records.first().name;
+                source = records.first().source;
+                confidence = records.first().confidence;
+                expiresAt = records.first().expiresAt;
+                for (const DomainAttribution &record : records) {
+                    if (!names.contains(record.name)) names << record.name;
+                }
+            }
+
+            if (c.domain == domain && c.domains == names
+                && c.domainSource == source && c.domainConfidence == confidence
+                && c.domainExpiresAt == expiresAt) {
+                continue;
+            }
+
+            c.domain = domain;
+            c.domains = names;
+            c.domainSource = source;
+            c.domainConfidence = confidence;
+            c.domainExpiresAt = expiresAt;
+            emit dataChanged(index(cRow, COL_DOMAIN, pIdx),
+                             index(cRow, COL_DOMAIN, pIdx),
+                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole + 5});
+        }
     }
 }
 

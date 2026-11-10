@@ -10,6 +10,8 @@
 #include <QVector>
 #include <QTimer>
 #include <QIcon>
+#include <functional>
+#include "attribution/dnscorrelator.h"
 #include "packetparser.h"
 #include "network/policy.h"
 #include "identity/serviceresolver.h"
@@ -24,6 +26,14 @@ struct ConnectionStat
     quint64 prevRx   = 0, prevTx   = 0;
     quint32 packets  = 0;
     QString service;
+    // NG-031: the remote endpoint and the DNS name(s) recently attributed to
+    // it. `domain` is the most recent name; `domains` backs the tooltip.
+    QString remoteAddress;
+    QString domain;
+    QStringList domains;
+    AttributionSource domainSource = AttributionSource::Unknown;
+    ApplicationIdentity::Confidence domainConfidence = ApplicationIdentity::Confidence::Unknown;
+    QDateTime domainExpiresAt;
 };
 
 struct ProcessNode
@@ -61,6 +71,7 @@ enum NetCol : int {
     COL_NAME = 0,
     COL_SRC,
     COL_DST,
+    COL_DOMAIN,
     COL_SERVICE,
     COL_RX,
     COL_TX,
@@ -85,6 +96,11 @@ public:
 
     void addPackets(const QList<CapturedPacketInfo> &batch);
     void setProcessIcon(const QString &procName, const QIcon &icon);
+    // NG-031: resolves each connection's remote address through the DNS
+    // correlator. Called after a capture batch and safe to call repeatedly;
+    // only rows whose name, source, or confidence changed are refreshed.
+    void setDomainResolver(std::function<QList<DomainAttribution>(const QString &)> resolver);
+    void refreshDomains();
     // NG-012: replace the PID -> services map and refresh the affected rows.
     void applyServiceSnapshot(const NetGuard::ServicePidMap &services);
     void clear();
@@ -102,5 +118,6 @@ private:
     QVector<ProcessNode> m_procs;
     QHash<QString, int>  m_procIdx;
     NetGuard::ServicePidMap m_servicesByPid; // NG-012 services per live PID
+    std::function<QList<DomainAttribution>(const QString &)> m_domainResolver;
     QTimer              *m_ticker = nullptr;
 };

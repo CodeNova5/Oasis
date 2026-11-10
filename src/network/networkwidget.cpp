@@ -249,19 +249,27 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     hv->setSectionResizeMode(0, QHeaderView::Interactive);       // COL_NAME
     hv->setSectionResizeMode(1, QHeaderView::ResizeToContents);  // COL_SRC
     hv->setSectionResizeMode(2, QHeaderView::ResizeToContents);  // COL_DST
-    hv->setSectionResizeMode(3, QHeaderView::ResizeToContents);  // COL_SERVICE
-    hv->setSectionResizeMode(4, QHeaderView::Fixed);             // COL_RX
-    hv->setSectionResizeMode(5, QHeaderView::Fixed);             // COL_TX
-    hv->setSectionResizeMode(6, QHeaderView::ResizeToContents);  // COL_BYTES
-    hv->setSectionResizeMode(7, QHeaderView::Stretch);           // COL_PKTS
+    hv->setSectionResizeMode(3, QHeaderView::Interactive);       // COL_DOMAIN
+    hv->setSectionResizeMode(4, QHeaderView::ResizeToContents);  // COL_SERVICE
+    hv->setSectionResizeMode(5, QHeaderView::Fixed);             // COL_RX
+    hv->setSectionResizeMode(6, QHeaderView::Fixed);             // COL_TX
+    hv->setSectionResizeMode(7, QHeaderView::ResizeToContents);  // COL_BYTES
+    hv->setSectionResizeMode(8, QHeaderView::Stretch);           // COL_PKTS
 
     hv->resizeSection(0, 260); // COL_NAME
-    hv->resizeSection(4, 110); // COL_RX
-    hv->resizeSection(5, 110); // COL_TX
+    hv->resizeSection(3, 200); // COL_DOMAIN
+    hv->resizeSection(5, 110); // COL_RX
+    hv->resizeSection(6, 110); // COL_TX
     hv->setHighlightSections(false);
     hv->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     m_monitor = new NetworkMonitor(this);
+    // NG-031: connection rows ask the DNS correlator for the remote endpoint's
+    // names; the lookup filters expired answers, so the UI never shows stale
+    // attribution.
+    m_model->setDomainResolver([this](const QString &address) {
+        return m_monitor->attributionsForAddress(address);
+    });
     m_diagnostics = new DiagnosticsModel(this);
         m_bandwidthGuard = new BandwidthGuard(this);
     m_throttlePolicies = new ThrottlePolicyManager(this);
@@ -1069,6 +1077,7 @@ void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batc
 {
     m_bandwidthGuard->observe(batch);
     m_model->addPackets(batch);
+    m_model->refreshDomains();
     m_totalPkts += batch.size();
     ui->lblPackets->setText(QString::number(m_totalPkts));
 
