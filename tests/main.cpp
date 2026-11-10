@@ -27,6 +27,7 @@
 #include "attribution/dnscorrelator.h"
 #include "attribution/tlsobserver.h"
 #include "attribution/quicobserver.h"
+#include "attribution/endpointcatalog.h"
 #include "firewall/rulenames.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
@@ -1982,6 +1983,320 @@ void testQuicObserver()
 }
 
 
+void testEndpointCatalog()
+{
+    QSettings().clear();
+
+    CatalogCategory parsedCategory = CatalogCategory::Unknown;
+    check(catalogCategoryFromToken(QStringLiteral("cloud-sync"), &parsedCategory) &&
+              parsedCategory == CatalogCategory::CloudSync,
+          QStringLiteral("a category token round-trips"));
+    check(!catalogCategoryFromToken(QStringLiteral("not-a-category"), &parsedCategory),
+          QStringLiteral("an unknown category token is rejected"));
+    checkEqual(catalogCategoryToken(CatalogCategory::Unknown), QStringLiteral("unknown"),
+               QStringLiteral("the unknown category has a stable token"));
+    checkEqual(catalogCategoryDisplayName(CatalogCategory::WindowsUpdate),
+               QStringLiteral("Windows Update"),
+               QStringLiteral("the category has a printable name"));
+    checkEqual(QString::number(catalogCategoryTokens().size()), QStringLiteral("9"),
+               QStringLiteral("all categories have tokens"));
+
+    CatalogRuleSource parsedSource = CatalogRuleSource::BuiltIn;
+    check(catalogRuleSourceFromToken(QStringLiteral("user"), &parsedSource) &&
+              parsedSource == CatalogRuleSource::User,
+          QStringLiteral("a rule source token round-trips"));
+
+    EndpointCatalog catalog;
+    check(catalog.rules().size() >= 12,
+          QStringLiteral("the bundled catalog contains rules"));
+    check(!catalog.catalogVersion().isEmpty(),
+          QStringLiteral("the bundled catalog is versioned"));
+    bool hasWindowsService = false;
+    for (const CatalogRule &rule : catalog.rules()) {
+        if (rule.id == QStringLiteral("builtin-windows-update-service")) {
+            hasWindowsService = true;
+            break;
+        }
+    }
+    check(hasWindowsService, QStringLiteral("the bundled rules are inspectable"));
+
+    // Service, publisher/product, executable, and endpoint evidence each match.
+    CatalogQuery query;
+    query.serviceName = QStringLiteral("WUAUSERV");
+    CatalogMatch match = catalog.bestMatch(query);
+    check(match.matched && match.category == CatalogCategory::WindowsUpdate &&
+              match.ruleId == QStringLiteral("builtin-windows-update-service"),
+          QStringLiteral("a service key matches its category"));
+    check(match.matchedOn.join(QStringLiteral(" | ")).contains(QStringLiteral("service")),
+          QStringLiteral("the match explains the service evidence"));
+
+    query = CatalogQuery();
+    query.publisher = QStringLiteral("Google LLC");
+    query.product = QStringLiteral("Google Update");
+    match = catalog.bestMatch(query);
+    check(match.matched && match.category == CatalogCategory::BrowserUpdate &&
+              match.ruleId == QStringLiteral("builtin-chrome-update"),
+          QStringLiteral("a verified publisher and product match together"));
+    query.product.clear();
+    check(!catalog.bestMatch(query).matched,
+          QStringLiteral("publisher alone does not satisfy a narrower rule"));
+
+    query = CatalogQuery();
+    query.executableName = QStringLiteral("C:\\Program Files (x86)\\Steam\\steam.exe");
+    match = catalog.bestMatch(query);
+    check(match.matched && match.category == CatalogCategory::GameLauncher,
+          QStringLiteral("an executable basename matches case-insensitively"));
+
+    query = CatalogQuery();
+    query.domain = QStringLiteral("FE3.DELIVERY.MP.MICROSOFT.COM.");
+    match = catalog.bestMatch(query);
+    check(match.matched && match.category == CatalogCategory::WindowsUpdate,
+          QStringLiteral("a wildcard endpoint domain matches a subdomain"));
+    query.domain = QStringLiteral("delivery.mp.microsoft.com");
+    check(!catalog.bestMatch(query).matched,
+          QStringLiteral("a wildcard endpoint does not match its bare suffix"));
+    query.domain = QStringLiteral("UPDATE.GOOGLEAPIS.COM.");
+    check(catalog.bestMatch(query).category == CatalogCategory::BrowserUpdate,
+          QStringLiteral("an exact endpoint domain is normalized"));
+    query.domain = QStringLiteral("cdn.update.googleapis.com");
+    check(!catalog.bestMatch(query).matched,
+          QStringLiteral("an exact endpoint does not match a subdomain"));
+
+    // Local rules can use address prefixes and identity evidence.
+    CatalogRule rangeRule;
+    rangeRule.id = QStringLiteral("user-corporate-range");
+    rangeRule.category = CatalogCategory::ForegroundDownload;
+    rangeRule.explanation = QStringLiteral("Corporate download range");
+    rangeRule.addressPrefixes = { QStringLiteral("10.20.0.0/16") };
+    QString error;
+    check(catalog.upsertRule(rangeRule, &error), error);
+    query = CatalogQuery();
+    query.remoteAddress = QStringLiteral("10.20.4.5");
+    match = catalog.bestMatch(query);
+    check(match.matched && match.category == CatalogCategory::ForegroundDownload &&
+              match.source == CatalogRuleSource::User,
+          QStringLiteral("an IPv4 address prefix matches inside its range"));
+    query.remoteAddress = QStringLiteral("10.21.4.5");
+    check(!catalog.bestMatch(query).matched,
+          QStringLiteral("an IPv4 address prefix does not match outside its range"));
+
+    CatalogRule ipv6Rule;
+    ipv6Rule.id = QStringLiteral("user-ipv6-range");
+    ipv6Rule.category = CatalogCategory::CloudSync;
+    ipv6Rule.explanation = QStringLiteral("IPv6 test range");
+    ipv6Rule.addressPrefixes = { QStringLiteral("2001:db8::/32") };
+    check(catalog.upsertRule(ipv6Rule, &error), error);
+    query = CatalogQuery();
+    query.remoteAddress = QStringLiteral("2001:db8:1::5");
+    check(catalog.bestMatch(query).category == CatalogCategory::CloudSync,
+          QStringLiteral("an IPv6 address prefix matches inside its range"));
+    query.remoteAddress = QStringLiteral("2001:db9::1");
+    check(!catalog.bestMatch(query).matched,
+          QStringLiteral("an IPv6 address prefix does not match outside its range"));
+
+    CatalogRule combinedRule;
+    combinedRule.id = QStringLiteral("user-contoso-sync");
+    combinedRule.category = CatalogCategory::CloudSync;
+    combinedRule.explanation = QStringLiteral("Contoso sync client");
+    combinedRule.publisherContains = QStringLiteral("contoso");
+    combinedRule.serviceName = QStringLiteral("syncsvc");
+    check(catalog.upsertRule(combinedRule, &error), error);
+    query = CatalogQuery();
+    query.publisher = QStringLiteral("Contoso Corporation");
+    check(!catalog.bestMatch(query).matched,
+          QStringLiteral("one criterion of a combined rule is not enough"));
+    query.serviceName = QStringLiteral("SyncSvc");
+    check(catalog.bestMatch(query).matched,
+          QStringLiteral("all criteria of a combined rule must match"));
+
+    CatalogRule specificRule;
+    specificRule.id = QStringLiteral("user-windows-update-microsoft");
+    specificRule.category = CatalogCategory::PackageManager;
+    specificRule.explanation = QStringLiteral("Microsoft-signed update carrier");
+    specificRule.serviceName = QStringLiteral("wuauserv");
+    specificRule.publisherContains = QStringLiteral("microsoft");
+    check(catalog.upsertRule(specificRule, &error), error);
+    query = CatalogQuery();
+    query.serviceName = QStringLiteral("wuauserv");
+    query.publisher = QStringLiteral("Microsoft Corporation");
+    const QList<CatalogMatch> ranked = catalog.matches(query);
+    check(ranked.size() >= 2,
+          QStringLiteral("all matching rules remain inspectable"));
+    check(ranked.first().ruleId == QStringLiteral("user-windows-update-microsoft") &&
+              ranked.first().category == CatalogCategory::PackageManager,
+          QStringLiteral("the more specific rule wins"));
+
+    CatalogRule pathRule;
+    pathRule.id = QStringLiteral("user-contoso-path");
+    pathRule.category = CatalogCategory::CloudSync;
+    pathRule.explanation = QStringLiteral("Contoso sync executable path");
+    pathRule.executablePath = QStringLiteral("C:\\Program Files\\Contoso\\sync.exe");
+    check(catalog.upsertRule(pathRule, &error), error);
+    query = CatalogQuery();
+    query.executablePath = QStringLiteral("c:/program files/contoso/sync.exe");
+    check(catalog.bestMatch(query).ruleId == QStringLiteral("user-contoso-path"),
+          QStringLiteral("an executable path matches case-insensitively"));
+
+    CatalogRule identityRule;
+    identityRule.id = QStringLiteral("user-identity");
+    identityRule.category = CatalogCategory::DeveloperTool;
+    identityRule.explanation = QStringLiteral("Known developer identity");
+    identityRule.identityId = QStringLiteral("AbC123");
+    check(catalog.upsertRule(identityRule, &error), error);
+    query = CatalogQuery();
+    query.identityId = QStringLiteral("abc123");
+    check(catalog.bestMatch(query).category == CatalogCategory::DeveloperTool,
+          QStringLiteral("a durable identity id matches"));
+
+    // Invalid and unsafe rules are rejected atomically.
+    CatalogRule invalid;
+    invalid.id = QStringLiteral("broken-rule");
+    invalid.category = CatalogCategory::WindowsUpdate;
+    invalid.explanation = QStringLiteral("invalid for testing");
+    check(!EndpointCatalog::validateRule(invalid, &error),
+          QStringLiteral("a rule without criteria is invalid"));
+    invalid.domainPatterns = { QStringLiteral("*.bad..example") };
+    check(!EndpointCatalog::validateRule(invalid, &error),
+          QStringLiteral("an invalid domain pattern is rejected"));
+    invalid.domainPatterns.clear();
+    invalid.addressPrefixes = { QStringLiteral("10.0.0.0/33") };
+    check(!EndpointCatalog::validateRule(invalid, &error),
+          QStringLiteral("an invalid IPv4 prefix is rejected"));
+    invalid.addressPrefixes.clear();
+    invalid.executableName = QStringLiteral("C:\\evil.exe");
+    check(!EndpointCatalog::validateRule(invalid, &error),
+          QStringLiteral("an executable criterion cannot contain a path"));
+    invalid.executableName.clear();
+    invalid.id = QStringLiteral("bad id");
+    invalid.publisherContains = QStringLiteral("example");
+    check(!EndpointCatalog::validateRule(invalid, &error),
+          QStringLiteral("an invalid rule id is rejected"));
+    const int ruleCount = catalog.rules().size();
+    check(!catalog.upsertRule(invalid, &error),
+          QStringLiteral("an invalid rule is not stored"));
+    checkEqual(QString::number(catalog.rules().size()), QString::number(ruleCount),
+               QStringLiteral("a rejected rule leaves the catalog unchanged"));
+
+    check(!catalog.removeRule(QStringLiteral("builtin-steam"), &error),
+          QStringLiteral("a bundled rule cannot be removed"));
+    check(catalog.setRuleEnabled(QStringLiteral("builtin-steam"), false),
+          QStringLiteral("a bundled rule can be disabled"));
+    query = CatalogQuery();
+    query.executableName = QStringLiteral("steam.exe");
+    check(!catalog.bestMatch(query).matched,
+          QStringLiteral("a disabled rule stops matching"));
+    check(catalog.setRuleEnabled(QStringLiteral("builtin-steam"), true),
+          QStringLiteral("a bundled rule can be re-enabled"));
+    check(catalog.bestMatch(query).matched,
+          QStringLiteral("a re-enabled rule matches again"));
+
+    // Import is versioned and atomic.
+    auto makeDocument = [](const QJsonArray &rules, int schemaVersion = 1) {
+        QJsonObject root;
+        root.insert(QStringLiteral("format"), QStringLiteral("netguard.endpoint-catalog"));
+        root.insert(QStringLiteral("schemaVersion"), schemaVersion);
+        root.insert(QStringLiteral("catalogVersion"), QStringLiteral("2026.12.1"));
+        root.insert(QStringLiteral("rules"), rules);
+        return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    };
+
+    QJsonObject importedObject;
+    importedObject.insert(QStringLiteral("id"), QStringLiteral("imported-contoso"));
+    importedObject.insert(QStringLiteral("category"), QStringLiteral("cloud-sync"));
+    importedObject.insert(QStringLiteral("explanation"),
+                          QStringLiteral("Imported Contoso sync"));
+    importedObject.insert(QStringLiteral("serviceName"), QStringLiteral("contoso-sync"));
+    QJsonArray importedRules;
+    importedRules.append(importedObject);
+    const QString importedJson = makeDocument(importedRules);
+
+    EndpointCatalog importedCatalog;
+    check(importedCatalog.importJson(importedJson, &error), error);
+    checkEqual(importedCatalog.catalogVersion(), QStringLiteral("2026.12.1"),
+               QStringLiteral("an imported catalog carries its version"));
+    checkEqual(QString::number(importedCatalog.rules().size()),
+               QString::number(EndpointCatalog::builtinRules().size() + 1),
+               QStringLiteral("an import replaces prior imported rules"));
+    query = CatalogQuery();
+    query.serviceName = QStringLiteral("contoso-sync");
+    match = importedCatalog.bestMatch(query);
+    check(match.matched && match.category == CatalogCategory::CloudSync &&
+              match.source == CatalogRuleSource::Imported,
+          QStringLiteral("an imported rule matches and is marked imported"));
+
+    check(!importedCatalog.importJson(makeDocument(importedRules, 2), &error),
+          QStringLiteral("a newer catalog schema is rejected"));
+    check(importedCatalog.bestMatch(query).matched,
+          QStringLiteral("a rejected import leaves the catalog unchanged"));
+
+    QJsonObject noCriteria;
+    noCriteria.insert(QStringLiteral("id"), QStringLiteral("imported-broken"));
+    noCriteria.insert(QStringLiteral("category"), QStringLiteral("cloud-sync"));
+    noCriteria.insert(QStringLiteral("explanation"), QStringLiteral("no criteria"));
+    QJsonArray noCriteriaRules;
+    noCriteriaRules.append(noCriteria);
+    check(!importedCatalog.importJson(makeDocument(noCriteriaRules), &error),
+          QStringLiteral("an imported rule without criteria is rejected"));
+    check(importedCatalog.bestMatch(query).matched,
+          QStringLiteral("an invalid rule does not replace the catalog"));
+
+    QJsonArray duplicateRules;
+    duplicateRules.append(importedObject);
+    duplicateRules.append(importedObject);
+    check(!importedCatalog.importJson(makeDocument(duplicateRules), &error),
+          QStringLiteral("duplicate imported ids are rejected"));
+    check(!importedCatalog.importJson(QStringLiteral("{not-json"), &error),
+          QStringLiteral("malformed catalog JSON is rejected"));
+
+    // A full export can be imported back, and local rules survive the round trip.
+    const QString fullJson = catalog.toJson();
+    check(fullJson.contains(QStringLiteral("\"schemaVersion\":1")) &&
+              fullJson.contains(QStringLiteral("netguard.endpoint-catalog")),
+          QStringLiteral("the export carries its format and schema version"));
+    EndpointCatalog roundTrip;
+    check(roundTrip.importJson(fullJson, &error), error);
+    query = CatalogQuery();
+    query.publisher = QStringLiteral("Contoso Corporation");
+    query.serviceName = QStringLiteral("syncsvc");
+    match = roundTrip.bestMatch(query);
+    check(match.matched && match.category == CatalogCategory::CloudSync,
+          QStringLiteral("local rules survive a full export/import round trip"));
+    check(roundTrip.bestMatch([]{ CatalogQuery q; q.serviceName = QStringLiteral("wuauserv"); return q; }())
+              .category == CatalogCategory::WindowsUpdate,
+          QStringLiteral("bundled rules survive a full export/import round trip"));
+
+    // Local changes persist through QSettings, and a malformed stored document
+    // fails without disturbing the loaded catalog.
+    QSettings().clear();
+    EndpointCatalog persisted;
+    CatalogRule persistedRule;
+    persistedRule.id = QStringLiteral("user-persisted");
+    persistedRule.category = CatalogCategory::CloudSync;
+    persistedRule.explanation = QStringLiteral("Persisted sync service");
+    persistedRule.serviceName = QStringLiteral("persisted-svc");
+    check(persisted.upsertRule(persistedRule, &error), error);
+    check(persisted.save(&error), error);
+
+    EndpointCatalog loaded;
+    check(loaded.load(&error), error);
+    query = CatalogQuery();
+    query.serviceName = QStringLiteral("persisted-svc");
+    match = loaded.bestMatch(query);
+    check(match.matched && match.source == CatalogRuleSource::User,
+          QStringLiteral("a local rule persists and reloads as a user rule"));
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("NetGuard/EndpointCatalog"));
+    settings.setValue(QStringLiteral("document"), QStringLiteral("{broken"));
+    settings.endGroup();
+    check(!loaded.load(&error),
+          QStringLiteral("a malformed stored catalog is rejected"));
+    check(loaded.bestMatch(query).matched,
+          QStringLiteral("a failed load leaves the in-memory catalog usable"));
+
+    QSettings().clear();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -2017,6 +2332,7 @@ int main(int argc, char *argv[])
     testDnsCorrelator();
     testTlsObserver();
     testQuicObserver();
+    testEndpointCatalog();
 
     QSettings().clear();
 

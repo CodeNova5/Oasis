@@ -58,6 +58,7 @@ SOURCES += \
     src/attribution/dnscorrelator.cpp \
     src/attribution/tlsobserver.cpp \
     src/attribution/quicobserver.cpp \
+    src/attribution/endpointcatalog.cpp \
     src/identity/applicationidentity.cpp \
     src/identity/publisherresolver.cpp \
     src/identity/serviceresolver.cpp \
@@ -106,6 +107,7 @@ HEADERS += \
     src/attribution/dnscorrelator.h \
     src/attribution/tlsobserver.h \
     src/attribution/quicobserver.h \
+    src/attribution/endpointcatalog.h \
     src/identity/applicationidentity.h \
     src/identity/publisherresolver.h \
     src/identity/serviceresolver.h \
