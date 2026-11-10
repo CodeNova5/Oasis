@@ -70,6 +70,10 @@ private slots:
     void onExportDiagnostics();
     void onClearDiagnostics();
 
+    // NG-036: attribution collection, retention, redaction, and history clearing.
+    void applyAttributionPrivacy();
+    void onClearAttributionHistory();
+
     void recordLiveTraffic();
     void refreshHistoryUI();
     void saveHistoryToJson();
@@ -77,6 +81,8 @@ private slots:
 private:
     void setupWidgets();
     void setupDiagnosticsView();
+    void setupAttributionPrivacyView();
+    void refreshAttributionHistory();
     void setupTray();
     void animateLiveBadge();
     void loadSettings();

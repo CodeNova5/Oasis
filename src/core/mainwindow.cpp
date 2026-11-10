@@ -15,7 +15,9 @@
 #include "network/networkwidget.h"
 #include "network/bandwidthguard.h"
 #include "attribution/attributionconfidence.h"
+#include "attribution/attributionprivacy.h"
 #include "network/diagnostics.h"
+#include "network/networkmonitor.h"
 #include "firewall/firewallwidget.h"
 #include "hardware/hardwarewidget.h"
 #include "taskbar/taskbaroverlay.h"
@@ -27,6 +29,8 @@
 #include <QStyle>
 #include <QScreen>
 #include <QGuiApplication>
+#include <QSignalBlocker>
+#include <QSpinBox>
 #include <QApplication>
 #include <QDir>
 #include <QTreeView>
@@ -64,6 +68,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupWidgets();
     setupDiagnosticsView();
+    setupAttributionPrivacyView();
     setupTray();
 
     loadSettings();
@@ -491,9 +496,98 @@ void MainWindow::onExportDiagnostics()
         return;
     }
 
-    file.write(diag->toJson().toUtf8());
+    // NG-036: destinations are redacted unless the user turned that off.
+    file.write(diag->toJson(ui->chkRedactDestinations->isChecked()).toUtf8());
     file.close();
     QMessageBox::information(this, "Export Successful", "Diagnostics exported successfully!");
+}
+
+void MainWindow::setupAttributionPrivacyView()
+{
+    const AttributionPrivacy::Store store;
+    const AttributionPrivacySettings settings = store.load();
+
+    // Set the stored values without treating them as user edits.
+    {
+        QSignalBlocker dns(ui->chkCollectDns);
+        QSignalBlocker tls(ui->chkCollectTlsSni);
+        QSignalBlocker quic(ui->chkCollectQuic);
+        QSignalBlocker redact(ui->chkRedactDestinations);
+        QSignalBlocker retention(ui->spinAttributionRetention);
+
+        ui->chkCollectDns->setChecked(settings.collectDns);
+        ui->chkCollectTlsSni->setChecked(settings.collectTlsSni);
+        ui->chkCollectQuic->setChecked(settings.collectQuic);
+        ui->chkRedactDestinations->setChecked(settings.redactDestinationsInExport);
+        ui->spinAttributionRetention->setValue(
+            qBound(1, settings.retentionSeconds / 60, 1440));
+    }
+
+    for (QCheckBox *box : {ui->chkCollectDns, ui->chkCollectTlsSni,
+                           ui->chkCollectQuic, ui->chkRedactDestinations}) {
+        connect(box, &QCheckBox::toggled, this, &MainWindow::applyAttributionPrivacy);
+    }
+    connect(ui->spinAttributionRetention, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &MainWindow::applyAttributionPrivacy);
+    connect(ui->btnClearAttribution, &QPushButton::clicked,
+            this, &MainWindow::onClearAttributionHistory);
+
+    applyAttributionPrivacy();
+}
+
+void MainWindow::applyAttributionPrivacy()
+{
+    AttributionPrivacySettings settings;
+    settings.collectDns = ui->chkCollectDns->isChecked();
+    settings.collectTlsSni = ui->chkCollectTlsSni->isChecked();
+    settings.collectQuic = ui->chkCollectQuic->isChecked();
+    settings.retentionSeconds = ui->spinAttributionRetention->value() * 60;
+    settings.redactDestinationsInExport = ui->chkRedactDestinations->isChecked();
+
+    const AttributionPrivacy::Store store;
+    store.save(settings);
+
+    if (m_netWidget) {
+        if (NetworkMonitor *monitor = m_netWidget->networkMonitor())
+            monitor->setAttributionPrivacy(settings);
+    }
+
+    refreshAttributionHistory();
+}
+
+void MainWindow::refreshAttributionHistory()
+{
+    NetworkMonitor *monitor = m_netWidget ? m_netWidget->networkMonitor() : nullptr;
+    const int records = monitor ? monitor->attributionRecordCount() : 0;
+
+    if (records == 0) {
+        ui->lblAttributionHistory->setText(
+            QStringLiteral("No attribution history is retained."));
+        return;
+    }
+
+    ui->lblAttributionHistory->setText(
+        QStringLiteral("%1 destination name record%2 retained (kept for %3).")
+            .arg(records)
+            .arg(records == 1 ? QString() : QStringLiteral("s"))
+            .arg(AttributionPrivacy::retentionDescription(
+                ui->spinAttributionRetention->value() * 60)));
+}
+
+void MainWindow::onClearAttributionHistory()
+{
+    const auto answer = QMessageBox::question(
+        this, "Clear attribution history",
+        "Delete the domain names observed for connections? Passive DNS and TLS "
+        "metadata will start collecting again immediately if it is enabled.");
+    if (answer != QMessageBox::Yes)
+        return;
+
+    if (m_netWidget) {
+        if (NetworkMonitor *monitor = m_netWidget->networkMonitor())
+            monitor->clearAttributionHistory();
+    }
+    refreshAttributionHistory();
 }
 
 void MainWindow::onClearDiagnostics()

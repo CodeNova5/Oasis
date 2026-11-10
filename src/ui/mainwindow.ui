@@ -546,6 +546,123 @@
          </widget>
         </item>
         <item>
+         <widget class="QGroupBox" name="groupBoxAttributionPrivacy">
+          <property name="title">
+           <string>Attribution privacy (DNS / TLS / QUIC metadata)</string>
+          </property>
+          <layout class="QVBoxLayout">
+           <property name="spacing">
+            <number>8</number>
+           </property>
+           <property name="margin" stdset="0">
+            <number>20</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="lblAttributionPrivacyNote">
+             <property name="text">
+              <string>Only metadata is observed: DNS names and addresses, visible TLS server names, and QUIC header fields. Packet payloads are never captured or stored by these observers.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="chkCollectDns">
+             <property name="text">
+              <string>Collect DNS request and response metadata</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="chkCollectTlsSni">
+             <property name="text">
+              <string>Collect visible TLS server names (SNI)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="chkCollectQuic">
+             <property name="text">
+              <string>Collect QUIC header metadata (never decrypts payloads)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout">
+             <item>
+              <widget class="QLabel" name="lblAttributionRetention">
+               <property name="text">
+                <string>Keep attribution metadata for</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QSpinBox" name="spinAttributionRetention">
+               <property name="suffix">
+                <string> min</string>
+               </property>
+               <property name="minimum">
+                <number>1</number>
+               </property>
+               <property name="maximum">
+                <number>1440</number>
+               </property>
+               <property name="value">
+                <number>60</number>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="attributionRetentionSpacer">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>0</width>
+                 <height>0</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="chkRedactDestinations">
+             <property name="text">
+              <string>Redact destinations in exported diagnostics (recommended)</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout">
+             <item>
+              <widget class="QLabel" name="lblAttributionHistory">
+               <property name="text">
+                <string>No attribution history.</string>
+               </property>
+               <property name="wordWrap">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnClearAttribution">
+               <property name="text">
+                <string>Clear attribution history</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
          <widget class="QGroupBox" name="groupBoxDiagnostics">
           <property name="title">
            <string>Diagnostics (capture gaps)</string>

@@ -140,7 +140,10 @@ public:
     QList<DiagnosticRecord> records() const;
 
     // Export the current diagnostics as versioned JSON (no packet payloads).
-    QString toJson() const;
+    // NG-036: destination addresses and host names inside the free-text fields
+    // are redacted by default; pass false only for an explicit, user-requested
+    // verbatim export.
+    QString toJson(bool redactDestinations = true) const;
 
 signals:
     // Emitted when a new record is added; the UI can react or filter

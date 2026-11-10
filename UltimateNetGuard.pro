@@ -55,6 +55,7 @@ SOURCES += \
     src/network/bandwidthlimitsdialog.cpp \
     src/network/policyreconcileplan.cpp \
     src/attribution/dnsobserver.cpp \
+    src/attribution/attributionprivacy.cpp \
     src/attribution/dnscorrelator.cpp \
     src/attribution/tlsobserver.cpp \
     src/attribution/quicobserver.cpp \
@@ -105,6 +106,7 @@ HEADERS += \
     src/network/policyreconcile.h \
     src/network/bandwidthlimitsdialog.h \
     src/attribution/dnsobserver.h \
+    src/attribution/attributionprivacy.h \
     src/attribution/dnscorrelator.h \
     src/attribution/tlsobserver.h \
     src/attribution/quicobserver.h \

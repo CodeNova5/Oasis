@@ -5,6 +5,7 @@
  */
 
 #include "diagnostics.h"
+#include "attribution/attributionprivacy.h"
 
 #include <QDebug>
 #include <QJsonArray>
@@ -350,7 +351,7 @@ QList<DiagnosticRecord> DiagnosticsModel::records() const
     return m_records;
 }
 
-QString DiagnosticsModel::toJson() const
+QString DiagnosticsModel::toJson(bool redactDestinations) const
 {
     QJsonObject summary;
     summary[QStringLiteral("records")]            = m_records.size();
@@ -370,8 +371,15 @@ QString DiagnosticsModel::toJson() const
         obj[QStringLiteral("directionStatus")]  = directionStatusName(rec.directionStatus);
         obj[QStringLiteral("adapterStatus")]    = adapterStatusName(rec.adapterStatus);
         obj[QStringLiteral("mappingStatus")]    = mappingStatusName(rec.mappingStatus);
-        obj[QStringLiteral("details")]          = rec.details;
-        obj[QStringLiteral("context")]          = rec.context;
+        // NG-036: diagnostics are what a user attaches to a support report, so
+        // destination addresses and host names in the free text are masked
+        // unless the caller explicitly asked for a verbatim export.
+        obj[QStringLiteral("details")]          = redactDestinations
+            ? AttributionPrivacy::redactDestinationText(rec.details)
+            : rec.details;
+        obj[QStringLiteral("context")]          = redactDestinations
+            ? AttributionPrivacy::redactDestinationText(rec.context)
+            : rec.context;
         obj[QStringLiteral("affectedPid")]      = static_cast<qint64>(rec.affectedPid);
         obj[QStringLiteral("affectedProcess")]  = rec.affectedProcess;
         records.append(obj);

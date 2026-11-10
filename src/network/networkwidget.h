@@ -94,6 +94,8 @@ public:
     void selectAdapterByIPOrAuto(const QString &ipOrAuto);
     QList<AdapterInfo> getAdapterList() const { return m_adapters; }
     DiagnosticsModel *diagnosticsModel() const { return m_diagnostics; }
+    // NG-036: attribution privacy controls and the history they bound.
+    NetworkMonitor *networkMonitor() const { return m_monitor; }
 
 private:
     void populateAdapterCombo();

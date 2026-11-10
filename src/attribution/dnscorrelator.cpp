@@ -36,7 +36,8 @@ DnsCorrelator::DnsCorrelator(int maximumTtlSeconds, int defaultTtlSeconds,
                              int maxAddresses)
     : m_maximumTtlSeconds(qMax(1, maximumTtlSeconds)),
       m_defaultTtlSeconds(qBound(1, defaultTtlSeconds, qMax(1, maximumTtlSeconds))),
-      m_maxAddresses(qMax(1, maxAddresses))
+      m_maxAddresses(qMax(1, maxAddresses)),
+      m_retentionSeconds(qMax(1, maximumTtlSeconds))
 {
 }
 
@@ -48,11 +49,11 @@ void DnsCorrelator::observe(const DnsEvent &event, const QDateTime &observedAt)
         return;
     }
 
+    QMutexLocker locker(&m_mutex);
     int ttl = event.ttlSeconds > 0 ? static_cast<int>(event.ttlSeconds)
                                    : m_defaultTtlSeconds;
-    ttl = qBound(1, ttl, m_maximumTtlSeconds);
-
-    QMutexLocker locker(&m_mutex);
+    // NG-036: retention is a hard ceiling on top of the DNS TTL.
+    ttl = qBound(1, ttl, qMin(m_maximumTtlSeconds, m_retentionSeconds));
     pruneLocked(observedAt);
 
     for (const QString &rawAddress : event.addresses) {
@@ -77,7 +78,7 @@ void DnsCorrelator::observeTls(const TlsObservation &observation,
     recordLocked(address, name, observation.pid, observation.processName,
                  observation.identityId, AttributionSource::TlsSni,
                  ApplicationIdentity::Confidence::StrongInference,
-                 observedAt, m_defaultTtlSeconds);
+                 observedAt, qMin(m_defaultTtlSeconds, m_retentionSeconds));
 }
 
 void DnsCorrelator::recordLocked(const QString &address, const QString &name,
@@ -225,8 +226,13 @@ QList<DomainAttribution> DnsCorrelator::lookup(const QString &address,
     const auto it = m_byAddress.constFind(key);
     if (it == m_byAddress.constEnd()) return result;
 
+    // Retention is checked alongside the TTL so lowering it takes effect
+    // immediately instead of only for records created afterwards.
     for (const DomainAttribution &record : it.value()) {
-        if (record.expiresAt > now) result.append(record);
+        if (record.expiresAt > now &&
+            record.lastSeen.addSecs(m_retentionSeconds) > now) {
+            result.append(record);
+        }
     }
 
     std::sort(result.begin(), result.end(),
@@ -244,7 +250,10 @@ void DnsCorrelator::pruneLocked(const QDateTime &now)
     for (auto it = m_byAddress.begin(); it != m_byAddress.end();) {
         QList<DomainAttribution> &records = it.value();
         for (int i = records.size() - 1; i >= 0; --i) {
-            if (records.at(i).expiresAt <= now) records.removeAt(i);
+            if (records.at(i).expiresAt <= now ||
+                records.at(i).lastSeen.addSecs(m_retentionSeconds) <= now) {
+                records.removeAt(i);
+            }
         }
         if (records.isEmpty()) {
             it = m_byAddress.erase(it);
@@ -252,6 +261,36 @@ void DnsCorrelator::pruneLocked(const QDateTime &now)
             ++it;
         }
     }
+}
+
+void DnsCorrelator::setRetentionSeconds(int seconds)
+{
+    const int retention = qMax(1, seconds);
+    QMutexLocker locker(&m_mutex);
+    m_retentionSeconds = retention;
+    if (m_defaultTtlSeconds > retention) m_defaultTtlSeconds = retention;
+    pruneLocked(QDateTime::currentDateTimeUtc());
+}
+
+int DnsCorrelator::retentionSeconds() const
+{
+    QMutexLocker locker(&m_mutex);
+    return m_retentionSeconds;
+}
+
+void DnsCorrelator::clear()
+{
+    QMutexLocker locker(&m_mutex);
+    m_byAddress.clear();
+}
+
+int DnsCorrelator::recordCount() const
+{
+    QMutexLocker locker(&m_mutex);
+    int count = 0;
+    for (const QList<DomainAttribution> &records : m_byAddress)
+        count += records.size();
+    return count;
 }
 
 void DnsCorrelator::evictAddressLocked()

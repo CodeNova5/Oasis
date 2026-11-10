@@ -23,6 +23,7 @@
 #include <QStringList>
 #include <QTimeZone>
 
+#include "attribution/attributionprivacy.h"
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
 #include "attribution/tlsobserver.h"
@@ -2556,6 +2557,177 @@ void testAttributionConfidence()
           QStringLiteral("a protected service category is confirmed"));
 }
 
+// ─── NG-036: attribution privacy controls ──────────────────────────────────
+// Collection is opt-out per source, retention bounds every record, clearing
+// forgets everything, and exported diagnostics mask destinations by default.
+void testAttributionPrivacy()
+{
+    using namespace AttributionPrivacy;
+
+    const AttributionPrivacySettings defaults;
+    check(defaults.collectDns && defaults.collectTlsSni && defaults.collectQuic,
+          QStringLiteral("all attribution observers are enabled by default"));
+    check(defaults.redactDestinationsInExport,
+          QStringLiteral("diagnostics redact destinations by default"));
+    checkEqual(defaults.retentionSeconds, kDefaultRetentionSeconds,
+               QStringLiteral("the default retention is one hour"));
+    checkEqual(clampedRetentionSeconds(5), kMinRetentionSeconds,
+               QStringLiteral("retention below the floor is clamped up"));
+    checkEqual(clampedRetentionSeconds(9999999), kMaxRetentionSeconds,
+               QStringLiteral("retention above the ceiling is clamped down"));
+    checkEqual(clampedRetentionSeconds(600), 600,
+               QStringLiteral("a supported retention is kept"));
+
+    // Persistence: fields round-trip, a newer schema is rejected as a whole,
+    // and malformed payloads fall back to the defaults instead of half-applying.
+    QSettings store(QSettings::IniFormat, QSettings::UserScope,
+                    QStringLiteral("UltimateNetGuardTests"),
+                    QStringLiteral("attribution_privacy"));
+    store.clear();
+
+    const AttributionPrivacy::Store privacyStore;
+    AttributionPrivacySettings custom;
+    custom.collectDns = false;
+    custom.collectTlsSni = true;
+    custom.collectQuic = false;
+    custom.retentionSeconds = 900;
+    custom.redactDestinationsInExport = false;
+
+    check(privacyStore.save(custom, store),
+          QStringLiteral("privacy settings save without a store error"));
+    const AttributionPrivacySettings loaded = privacyStore.load(store);
+    check(!loaded.collectDns && loaded.collectTlsSni && !loaded.collectQuic,
+          QStringLiteral("each collection flag round-trips"));
+    checkEqual(loaded.retentionSeconds, 900,
+               QStringLiteral("retention round-trips"));
+    check(!loaded.redactDestinationsInExport,
+          QStringLiteral("the redaction choice round-trips"));
+
+    bool ok = false;
+    const AttributionPrivacySettings parsed = Store::fromJson(Store::toJson(custom), &ok);
+    check(ok, QStringLiteral("a current privacy payload parses"));
+    checkEqual(parsed.retentionSeconds, 900,
+               QStringLiteral("the JSON form keeps the retention"));
+
+    QJsonObject newer = objectOf(Store::toJson(custom));
+    newer[QStringLiteral("schemaVersion")] = kSchemaVersion + 1;
+    ok = false;
+    const AttributionPrivacySettings rejected = Store::fromJson(
+        QString::fromUtf8(QJsonDocument(newer).toJson(QJsonDocument::Compact)), &ok);
+    check(!ok, QStringLiteral("a newer privacy schema is rejected"));
+    check(rejected.collectDns && rejected.retentionSeconds == kDefaultRetentionSeconds,
+          QStringLiteral("a newer privacy schema falls back to defaults"));
+
+    ok = true;
+    Store::fromJson(QStringLiteral("not json"), &ok);
+    check(!ok, QStringLiteral("a malformed privacy payload is rejected"));
+
+    custom.retentionSeconds = 1;
+    privacyStore.save(custom, store);
+    checkEqual(privacyStore.load(store).retentionSeconds, kMinRetentionSeconds,
+               QStringLiteral("a stored retention is clamped to the supported range"));
+
+    privacyStore.reset(store);
+    const AttributionPrivacySettings afterReset = privacyStore.load(store);
+    check(afterReset.collectDns && afterReset.collectTlsSni && afterReset.collectQuic &&
+              afterReset.redactDestinationsInExport &&
+              afterReset.retentionSeconds == kDefaultRetentionSeconds,
+          QStringLiteral("reset restores the defaults"));
+
+    // Redaction keeps the network part / TLD and drops the identifying part.
+    checkEqual(redactDestination(QStringLiteral("192.0.2.10")),
+               QStringLiteral("192.0.2.x"),
+               QStringLiteral("an IPv4 host octet is redacted"));
+    checkEqual(redactDestination(QStringLiteral("2001:db8:1::5")),
+               QStringLiteral("2001:db8:1::x"),
+               QStringLiteral("an IPv6 interface id is redacted"));
+    checkEqual(redactDestination(QStringLiteral("www.example.com")),
+               QStringLiteral("***.com"),
+               QStringLiteral("a host name keeps only its top-level label"));
+    checkEqual(redactDestination(QStringLiteral("www.example.com:443")),
+               QStringLiteral("***.com:443"),
+               QStringLiteral("host redaction keeps the port"));
+    checkEqual(redactDestination(QStringLiteral("chrome.exe")),
+               QStringLiteral("chrome.exe"),
+               QStringLiteral("a file name is not treated as a destination"));
+    check(isAddressLiteral(QStringLiteral("::1")) &&
+              !isAddressLiteral(QStringLiteral("example.com")),
+          QStringLiteral("address literals are distinguished from names"));
+
+    checkEqual(redactDestinationText(QStringLiteral("192.0.2.1 -> 198.51.100.1")),
+               QStringLiteral("192.0.2.x -> 198.51.100.x"),
+               QStringLiteral("every IPv4 literal in free text is redacted"));
+    checkEqual(redactDestinationText(QStringLiteral("connect to api.github.com:443 from chrome.exe")),
+               QStringLiteral("connect to ***.com:443 from chrome.exe"),
+               QStringLiteral("a host name in free text is redacted and file names survive"));
+    checkEqual(redactDestinationText(QStringLiteral("version 1.2.0 of notepad.exe")),
+               QStringLiteral("version 1.2.0 of notepad.exe"),
+               QStringLiteral("version numbers and file names are left alone"));
+
+    // Retention: lowering it hides existing records, and new DNS TTLs are capped.
+    // The clock is "now" because changing retention prunes against the current
+    // time as well as the supplied lookup time.
+    const QDateTime base = QDateTime::currentDateTimeUtc();
+    auto answer = [](const QString &name, const QString &address, quint32 ttl) {
+        DnsEvent event;
+        event.response = true;
+        event.name = name;
+        event.addresses = QStringList{address};
+        event.ttlSeconds = ttl;
+        return event;
+    };
+
+    DnsCorrelator correlator(3600, 300, 16);
+    correlator.observe(answer(QStringLiteral("example.com"),
+                              QStringLiteral("93.184.216.34"), 3600),
+                       base);
+    checkEqual(correlator.recordCount(), 1,
+               QStringLiteral("the correlator stores one answer record"));
+    correlator.setRetentionSeconds(60);
+    checkEqual(static_cast<int>(correlator.lookup(QStringLiteral("93.184.216.34"),
+                                                  base.addSecs(30)).size()), 1,
+               QStringLiteral("a record inside the retention window is visible"));
+    check(correlator.lookup(QStringLiteral("93.184.216.34"), base.addSecs(120)).isEmpty(),
+          QStringLiteral("lowering retention hides a record older than the window"));
+
+    DnsCorrelator capped(3600, 300, 16);
+    capped.setRetentionSeconds(60);
+    capped.observe(answer(QStringLiteral("example.com"),
+                          QStringLiteral("93.184.216.34"), 3000),
+                   base);
+    check(capped.lookup(QStringLiteral("93.184.216.34"), base.addSecs(90)).isEmpty(),
+          QStringLiteral("a DNS TTL cannot outlive the retention window"));
+
+    capped.clear();
+    checkEqual(capped.recordCount(), 0,
+               QStringLiteral("clear() forgets every attribution record"));
+    check(capped.lookup(QStringLiteral("93.184.216.34"), base.addSecs(1)).isEmpty(),
+          QStringLiteral("a cleared destination has no name"));
+
+    // Diagnostics export: redacted by default, verbatim only on request.
+    DiagnosticsModel model;
+    model.reportUnknownDirection(QStringLiteral("192.0.2.1 -> 198.51.100.1"),
+                                 QStringLiteral("connection to www.example.com"));
+    const QJsonArray records = objectOf(model.toJson())
+                                   .value(QStringLiteral("records")).toArray();
+    checkEqual(static_cast<int>(records.size()), 1,
+               QStringLiteral("the privacy test exports one diagnostic"));
+    const QJsonObject redactedRecord = records.at(0).toObject();
+    checkEqual(redactedRecord.value(QStringLiteral("details")).toString(),
+               QStringLiteral("192.0.2.x -> 198.51.100.x"),
+               QStringLiteral("the default export redacts IPv4 destinations"));
+    checkEqual(redactedRecord.value(QStringLiteral("context")).toString(),
+               QStringLiteral("connection to ***.com"),
+               QStringLiteral("the default export redacts host names"));
+
+    const QJsonObject verbatim = objectOf(model.toJson(false))
+                                     .value(QStringLiteral("records")).toArray()
+                                     .at(0).toObject();
+    checkEqual(verbatim.value(QStringLiteral("details")).toString(),
+               QStringLiteral("192.0.2.1 -> 198.51.100.1"),
+               QStringLiteral("an explicit verbatim export keeps destinations"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -2593,6 +2765,7 @@ int main(int argc, char *argv[])
     testQuicObserver();
     testEndpointCatalog();
     testAttributionConfidence();
+    testAttributionPrivacy();
 
     QSettings().clear();
 

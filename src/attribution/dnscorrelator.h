@@ -107,6 +107,19 @@ public:
         const QString &address,
         const QDateTime &now = QDateTime::currentDateTimeUtc()) const;
 
+    /// NG-036: bound how long a record may live, in seconds. New records are
+    /// capped to this window and records last seen outside it are dropped, so
+    /// lowering retention immediately shortens what was already stored.
+    void setRetentionSeconds(int seconds);
+    int retentionSeconds() const;
+
+    /// Drop every name -> address record. Used by "Clear attribution history";
+    /// no payload data exists to clear, because none is ever stored.
+    void clear();
+
+    /// Records currently held, including any not yet pruned.
+    int recordCount() const;
+
 private:
     void recordLocked(const QString &address, const QString &name, quint32 pid,
                       const QString &processName, const QString &identityId,
@@ -116,9 +129,10 @@ private:
     void pruneLocked(const QDateTime &now);
     void evictAddressLocked();
 
-    const int m_maximumTtlSeconds;
-    const int m_defaultTtlSeconds;
+    int m_maximumTtlSeconds;
+    int m_defaultTtlSeconds;
     const int m_maxAddresses;
+    mutable int m_retentionSeconds;
 
     mutable QMutex m_mutex;
     QHash<QString, QList<DomainAttribution>> m_byAddress;

@@ -159,6 +159,13 @@ NetworkMonitor::NetworkMonitor(QObject *parent) : QThread(parent)
     qRegisterMetaType<DnsEvent>("DnsEvent");
     qRegisterMetaType<TlsObservation>("TlsObservation");
     qRegisterMetaType<QuicObservation>("QuicObservation");
+
+    // NG-036: honour the persisted attribution privacy choices before the first
+    // packet is parsed, so a user who turned collection off never gets a brief
+    // enabled window at startup.
+    const AttributionPrivacy::Store privacyStore;
+    setAttributionPrivacy(privacyStore.load());
+
     m_speedTimer = new QTimer(this);
     m_speedTimer->setInterval(1000);
     connect(m_speedTimer, &QTimer::timeout, this, [this]() {
@@ -199,6 +206,37 @@ NetworkMonitor::~NetworkMonitor()
 QList<DomainAttribution> NetworkMonitor::attributionsForAddress(const QString &address) const
 {
     return m_dnsCorrelator.lookup(address);
+}
+
+void NetworkMonitor::setAttributionPrivacy(const AttributionPrivacySettings &settings)
+{
+    m_collectDns.store(settings.collectDns);
+    m_collectTlsSni.store(settings.collectTlsSni);
+    m_collectQuic.store(settings.collectQuic);
+    m_redactDestinationsInExport.store(settings.redactDestinationsInExport);
+    m_dnsCorrelator.setRetentionSeconds(
+        AttributionPrivacy::clampedRetentionSeconds(settings.retentionSeconds));
+}
+
+AttributionPrivacySettings NetworkMonitor::attributionPrivacy() const
+{
+    AttributionPrivacySettings settings;
+    settings.collectDns = m_collectDns.load();
+    settings.collectTlsSni = m_collectTlsSni.load();
+    settings.collectQuic = m_collectQuic.load();
+    settings.retentionSeconds = m_dnsCorrelator.retentionSeconds();
+    settings.redactDestinationsInExport = m_redactDestinationsInExport.load();
+    return settings;
+}
+
+void NetworkMonitor::clearAttributionHistory()
+{
+    m_dnsCorrelator.clear();
+}
+
+int NetworkMonitor::attributionRecordCount() const
+{
+    return m_dnsCorrelator.recordCount();
 }
 
 void NetworkMonitor::setAdapterIP(const QString &ip)
@@ -532,7 +570,7 @@ void NetworkMonitor::run()
             // NG-030: passive DNS. The raw datagram is still available here, so
             // a visible UDP/53 message is parsed and the payload discarded; the
             // resolved socket owner travels with the event.
-            if (pkt.protocol.startsWith(QStringLiteral("UDP")) &&
+            if (m_collectDns.load() && pkt.protocol.startsWith(QStringLiteral("UDP")) &&
                 (pkt.srcPort == 53 || pkt.dstPort == 53)) {
                 const QList<DnsEvent> events = DnsObserver::parseDatagram(
                     reinterpret_cast<const uint8_t *>(buf.constData()),
@@ -553,7 +591,7 @@ void NetworkMonitor::run()
             // NG-033: safe QUIC metadata. Only clear long-header facts are
             // parsed: the Initial payload holds an encrypted ClientHello, so
             // this reports unknown attribution rather than decrypting traffic.
-            if (pkt.protocol.startsWith(QStringLiteral("UDP"))) {
+            if (m_collectQuic.load() && pkt.protocol.startsWith(QStringLiteral("UDP"))) {
                 QuicObservation observation = QuicObserver::parseDatagram(
                     reinterpret_cast<const uint8_t *>(buf.constData()),
                     static_cast<quint32>(len));
@@ -572,7 +610,7 @@ void NetworkMonitor::run()
             // non-TLS traffic and server handshakes are ignored here, while a
             // split, encrypted, ECH, or malformed handshake is reported as
             // unavailable instead of being given a guessed name.
-            if (pkt.protocol.startsWith(QStringLiteral("TCP"))) {
+            if (m_collectTlsSni.load() && pkt.protocol.startsWith(QStringLiteral("TCP"))) {
                 TlsObservation observation = TlsObserver::parseDatagram(
                     reinterpret_cast<const uint8_t *>(buf.constData()),
                     static_cast<quint32>(len));

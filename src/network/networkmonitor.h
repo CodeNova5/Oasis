@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include "packetparser.h"
+#include "attribution/attributionprivacy.h"
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
 #include "attribution/tlsobserver.h"
@@ -84,6 +85,17 @@ public:
     // attribution source. Expired records are filtered, so a direct-IP
     // connection never inherits a stale name.
     QList<DomainAttribution> attributionsForAddress(const QString &address) const;
+
+    // NG-036: attribution privacy controls. The collection flags are read by
+    // the capture thread on every packet, so they are atomics rather than a
+    // mutex-guarded struct; retention is applied to the correlator under its
+    // own lock.
+    void setAttributionPrivacy(const AttributionPrivacySettings &settings);
+    AttributionPrivacySettings attributionPrivacy() const;
+    // Drop every name -> address record, keeping the two known destinations
+    // already shown in the tree from being applied to new connections.
+    void clearAttributionHistory();
+    int attributionRecordCount() const;
 
     bool    isCapturing()  const { return m_captureRunning.load(); }
 
@@ -167,6 +179,14 @@ private:
     // NG-031: bounded DNS answer -> destination cache, kept on the capture
     // thread and queried safely from the GUI thread.
     DnsCorrelator m_dnsCorrelator;
+
+    // NG-036: which attribution observers run, read per packet by the capture
+    // thread. Defaults match AttributionPrivacySettings; the application applies
+    // the persisted values when it starts.
+    std::atomic<bool> m_collectDns{true};
+    std::atomic<bool> m_collectTlsSni{true};
+    std::atomic<bool> m_collectQuic{true};
+    std::atomic<bool> m_redactDestinationsInExport{true};
 
     // NG-010: identity resolution for PIDs that own live connections. Kept on
     // the cache thread; failures are remembered so protected processes are not
