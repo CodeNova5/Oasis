@@ -24,6 +24,7 @@
 #include <QTimeZone>
 
 #include "attribution/activityclassifier.h"
+#include "attribution/recommendationengine.h"
 #include "attribution/attributionprivacy.h"
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
@@ -2923,6 +2924,185 @@ void testActivityClassifier()
           QStringLiteral("the user rule keeps its source"));
 }
 
+// ─── NG-042: deterministic recommendation engine ────────────────────────────
+// Every recommendation is advice: it carries evidence, confidence, an expected
+// effect, and a reversal action, and nothing is ever applied automatically.
+void testRecommendationEngine()
+{
+    ActivityClassifier classifier;
+    RecommendationEngine engine;
+
+    auto contextFor = [&classifier](const QString &executableName) {
+        RecommendationContext context;
+        context.observation.executableName = executableName;
+        context.observation.executablePath = QStringLiteral("C:/Apps/") + executableName;
+        context.activity = classifier.classify(context.observation);
+        return context;
+    };
+
+    // Background updates are throttled, with a rate derived from what was seen.
+    RecommendationContext chrome = contextFor(QStringLiteral("updater.exe"));
+    chrome.observation.publisher = QStringLiteral("Google LLC");
+    chrome.observation.product = QStringLiteral("Google Update");
+    chrome.activity = classifier.classify(chrome.observation);
+    chrome.bytesPerSecond = 4ULL * 1024ULL * 1024ULL;
+    const Recommendation throttle = engine.recommend(chrome);
+    check(throttle.action == RecommendationAction::Throttle,
+          QStringLiteral("a browser updater is throttled"));
+    check(throttle.hasSuggestedPolicy(),
+          QStringLiteral("a throttle recommendation offers a policy seed"));
+    checkEqual(static_cast<int>(throttle.suggestedPolicy.action), static_cast<int>(NetworkPolicy::Action::Throttle),
+               QStringLiteral("the seed is a throttle policy"));
+    checkEqual(throttle.suggestedPolicy.rateBitsPerSecond,
+               static_cast<quint64>(2ULL * 1024ULL * 1024ULL * 8ULL),
+               QStringLiteral("the seed uses half the observed rate"));
+    check(throttle.expectedEffect.contains(QStringLiteral("2.0 MiB/s")),
+          QStringLiteral("the expected effect states the suggested rate"));
+    check(throttle.requiresUserApproval && !throttle.enforcesAnything(),
+          QStringLiteral("a recommendation never enforces itself"));
+    checkEqual(throttle.confidenceName(),
+               QStringLiteral("Likely"),
+               QStringLiteral("the recommendation carries the activity confidence"));
+    check(!throttle.evidence.isEmpty() &&
+              throttle.evidence.join(QStringLiteral(" ")).contains(
+                  QStringLiteral("builtin-chrome-update")),
+          QStringLiteral("the recommendation carries the matched-rule evidence"));
+    check(!throttle.whatObserved.isEmpty() && !throttle.whyLikely.isEmpty(),
+          QStringLiteral("a recommendation says what it saw and why"));
+    check(!throttle.reversalAction.trimmed().isEmpty(),
+          QStringLiteral("a recommendation says how to reverse it"));
+    check(throttle.lines().join(QStringLiteral("\n")).contains(QStringLiteral("To reverse:")),
+          QStringLiteral("the text form includes the reversal action"));
+
+    RecommendationContext windowsUpdate;
+    windowsUpdate.observation.serviceName = QStringLiteral("wuauserv");
+    windowsUpdate.observation.service = true;
+    windowsUpdate.activity = classifier.classify(windowsUpdate.observation);
+    const Recommendation serviceThrottle = engine.recommend(windowsUpdate);
+    check(serviceThrottle.action == RecommendationAction::Throttle,
+          QStringLiteral("a Windows Update service is throttled"));
+    checkEqual(serviceThrottle.suggestedPolicy.scope, QStringLiteral("service"),
+               QStringLiteral("an unpathed service is scoped by service"));
+
+    RecommendationContext oneDrive = contextFor(QStringLiteral("OneDrive.exe"));
+    oneDrive.observation.publisher = QStringLiteral("Microsoft Corporation");
+    oneDrive.observation.product = QStringLiteral("Microsoft OneDrive");
+    oneDrive.activity = classifier.classify(oneDrive.observation);
+    const Recommendation schedule = engine.recommend(oneDrive);
+    check(schedule.action == RecommendationAction::Schedule,
+          QStringLiteral("cloud sync is scheduled rather than throttled"));
+    checkEqual(static_cast<int>(schedule.suggestedPolicy.action), static_cast<int>(NetworkPolicy::Action::Schedule),
+               QStringLiteral("the seed is a schedule policy"));
+    checkEqual(schedule.suggestedPolicy.schedule, QStringLiteral("overnight"),
+               QStringLiteral("the schedule uses the overnight window"));
+    check(schedule.suggestedPolicy.scheduleType == NetworkPolicy::ScheduleType::Recurring,
+          QStringLiteral("the schedule is recurring"));
+
+    const Recommendation pause = engine.recommend(contextFor(QStringLiteral("steam.exe")));
+    check(pause.action == RecommendationAction::Pause,
+          QStringLiteral("a game launcher is paused during play"));
+    check(pause.suggestedPolicy.action == NetworkPolicy::Action::Block,
+          QStringLiteral("pausing is a temporary block"));
+    check(pause.suggestedPolicy.expiration.isValid(),
+          QStringLiteral("the temporary block has an expiration"));
+    check(pause.reversalAction.contains(QStringLiteral("Policies")),
+          QStringLiteral("the reversal points at the policy list"));
+
+    const Recommendation developer =
+        engine.recommend(contextFor(QStringLiteral("code.exe")));
+    check(developer.action == RecommendationAction::ReviewSettings,
+          QStringLiteral("a developer tool is suggested for review"));
+    check(!developer.hasSuggestedPolicy(),
+          QStringLiteral("a review recommendation offers no policy"));
+    check(developer.expectedEffect.contains(QStringLiteral("Nothing is limited")),
+          QStringLiteral("a review recommendation says nothing changes"));
+
+    RecommendationContext npm;
+    npm.observation.domain = QStringLiteral("registry.npmjs.org");
+    npm.activity = classifier.classify(npm.observation);
+    check(engine.recommend(npm).action == RecommendationAction::Throttle,
+          QStringLiteral("a package registry download is throttled"));
+
+    // Foreground transfers are left alone (or reviewed on a metered link).
+    RecommendationContext download = contextFor(QStringLiteral("browser.exe"));
+    download.observation.foreground = true;
+    download.observation.bytesPerSecond = 2ULL * 1024ULL * 1024ULL;
+    download.foreground = true;
+    download.bytesPerSecond = download.observation.bytesPerSecond;
+    download.activity = classifier.classify(download.observation);
+    const Recommendation noAction = engine.recommend(download);
+    check(noAction.action == RecommendationAction::NoAction,
+          QStringLiteral("a foreground download gets a no-action recommendation"));
+    check(!noAction.hasSuggestedPolicy(),
+          QStringLiteral("no-action recommendations carry no policy"));
+
+    download.meteredConnection = true;
+    check(engine.recommend(download).action == RecommendationAction::ReviewSettings,
+          QStringLiteral("a foreground download on a metered link is reviewed"));
+
+    // A foreground activity that would otherwise be throttled becomes a review.
+    RecommendationContext foregroundUpdate = chrome;
+    foregroundUpdate.foreground = true;
+    check(engine.recommend(foregroundUpdate).action == RecommendationAction::ReviewSettings,
+          QStringLiteral("a foreground updater is not throttled silently"));
+
+    // Unknown activity is reviewable and still policy-creatable.
+    const Recommendation unknown =
+        engine.recommend(contextFor(QStringLiteral("notes.exe")));
+    check(unknown.action == RecommendationAction::ReviewSettings,
+          QStringLiteral("unknown activity is suggested for review"));
+    check(unknown.category == CatalogCategory::Unknown,
+          QStringLiteral("an unknown recommendation keeps the unknown category"));
+    check(unknown.evidence.join(QStringLiteral(" ")).contains(
+              QStringLiteral("No local rule matched")),
+          QStringLiteral("unknown activity keeps its explanation"));
+    checkEqual(unknown.confidenceName(), QStringLiteral("Unknown"),
+               QStringLiteral("unknown activity keeps unknown confidence"));
+
+    // An explicit user decision is never second-guessed.
+    RecommendationContext covered = chrome;
+    covered.explicitPolicyCovers = true;
+    const Recommendation coveredResult = engine.recommend(covered);
+    check(coveredResult.action == RecommendationAction::NoAction,
+          QStringLiteral("an existing policy suppresses the recommendation"));
+    check(!coveredResult.hasSuggestedPolicy(),
+          QStringLiteral("an existing policy produces no new policy seed"));
+    checkEqual(coveredResult.title, QStringLiteral("Already covered by your policy"),
+               QStringLiteral("the suppressed recommendation says why"));
+
+    RecommendationContext exempted = chrome;
+    exempted.exempt = true;
+    const Recommendation exemptResult = engine.recommend(exempted);
+    check(exemptResult.action == RecommendationAction::NoAction,
+          QStringLiteral("an exemption suppresses the recommendation"));
+    checkEqual(exemptResult.title, QStringLiteral("This app is exempt"),
+               QStringLiteral("the exempt recommendation says why"));
+
+    checkEqual(static_cast<int>(RecommendationEngine::recommendedActionFor(CatalogCategory::CloudSync)),
+               static_cast<int>(RecommendationAction::Schedule),
+               QStringLiteral("the category mapping is deterministic for cloud sync"));
+    checkEqual(static_cast<int>(RecommendationEngine::recommendedActionFor(CatalogCategory::Unknown)),
+               static_cast<int>(RecommendationAction::ReviewSettings),
+               QStringLiteral("the category mapping is deterministic for unknown activity"));
+
+    checkEqual(RecommendationEngine::suggestedRateBitsPerSecond(0),
+               static_cast<quint64>(1024ULL * 1024ULL * 8ULL),
+               QStringLiteral("an unknown rate uses a 1 MiB/s suggestion"));
+    checkEqual(RecommendationEngine::suggestedRateBitsPerSecond(1024),
+               static_cast<quint64>(256ULL * 1024ULL * 8ULL),
+               QStringLiteral("a small rate is clamped up to 256 KiB/s"));
+    checkEqual(RecommendationEngine::suggestedRateBitsPerSecond(100ULL * 1024ULL * 1024ULL),
+               static_cast<quint64>(4ULL * 1024ULL * 1024ULL * 8ULL),
+               QStringLiteral("a large rate is clamped down to 4 MiB/s"));
+
+    checkEqual(recommendationActionToken(RecommendationAction::Throttle),
+               QStringLiteral("throttle"),
+               QStringLiteral("the action has a stable token"));
+    checkEqual(recommendationActionDisplayName(RecommendationAction::ReviewSettings),
+               QStringLiteral("Review settings"),
+               QStringLiteral("the action has a plain label"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -2962,6 +3142,7 @@ int main(int argc, char *argv[])
     testAttributionConfidence();
     testAttributionPrivacy();
     testActivityClassifier();
+    testRecommendationEngine();
 
     QSettings().clear();
 

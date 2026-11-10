@@ -11,6 +11,7 @@
 #include <QTimer>
 #include <QIcon>
 #include <functional>
+#include "attribution/activityclassifier.h"
 #include "attribution/dnscorrelator.h"
 #include "packetparser.h"
 #include "network/policy.h"
@@ -59,6 +60,11 @@ struct ProcessNode
     QString  groupId;
     QString  groupName;
     ApplicationIdentity::Confidence groupConfidence = ApplicationIdentity::Confidence::Unknown;
+    // NG-040: rule-based activity classification, with the matched rules and
+    // evidence the Activity column's tooltip shows. Recomputed only when the
+    // evidence behind it changes (see refreshActivity()).
+    ActivityClassification activity;
+    QString  activitySignature;
     quint64  totalRxSpeed = 0;
     quint64  totalTxSpeed = 0;
     quint64  totalRxBytes = 0;
@@ -74,6 +80,7 @@ enum NetCol : int {
     COL_SRC,
     COL_DST,
     COL_DOMAIN,
+    COL_ACTIVITY,
     COL_SERVICE,
     COL_RX,
     COL_TX,
@@ -103,6 +110,9 @@ public:
     // only rows whose name, source, or confidence changed are refreshed.
     void setDomainResolver(std::function<QList<DomainAttribution>(const QString &)> resolver);
     void refreshDomains();
+    // NG-040: reclassify one process row when its identity, publisher, group, or
+    // service evidence changed. Cheap to call; it skips unchanged evidence.
+    void refreshActivity(int pRow);
     // NG-012: replace the PID -> services map and refresh the affected rows.
     void applyServiceSnapshot(const NetGuard::ServicePidMap &services);
     void clear();
@@ -121,5 +131,6 @@ private:
     QHash<QString, int>  m_procIdx;
     NetGuard::ServicePidMap m_servicesByPid; // NG-012 services per live PID
     std::function<QList<DomainAttribution>(const QString &)> m_domainResolver;
+    ActivityClassifier m_activityClassifier;
     QTimer              *m_ticker = nullptr;
 };

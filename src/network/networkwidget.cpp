@@ -250,16 +250,18 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     hv->setSectionResizeMode(1, QHeaderView::ResizeToContents);  // COL_SRC
     hv->setSectionResizeMode(2, QHeaderView::ResizeToContents);  // COL_DST
     hv->setSectionResizeMode(3, QHeaderView::Interactive);       // COL_DOMAIN
-    hv->setSectionResizeMode(4, QHeaderView::ResizeToContents);  // COL_SERVICE
-    hv->setSectionResizeMode(5, QHeaderView::Fixed);             // COL_RX
-    hv->setSectionResizeMode(6, QHeaderView::Fixed);             // COL_TX
-    hv->setSectionResizeMode(7, QHeaderView::ResizeToContents);  // COL_BYTES
-    hv->setSectionResizeMode(8, QHeaderView::Stretch);           // COL_PKTS
+    hv->setSectionResizeMode(4, QHeaderView::Interactive);       // COL_ACTIVITY
+    hv->setSectionResizeMode(5, QHeaderView::ResizeToContents);  // COL_SERVICE
+    hv->setSectionResizeMode(6, QHeaderView::Fixed);             // COL_RX
+    hv->setSectionResizeMode(7, QHeaderView::Fixed);             // COL_TX
+    hv->setSectionResizeMode(8, QHeaderView::ResizeToContents);  // COL_BYTES
+    hv->setSectionResizeMode(9, QHeaderView::Stretch);           // COL_PKTS
 
     hv->resizeSection(0, 260); // COL_NAME
     hv->resizeSection(3, 200); // COL_DOMAIN
-    hv->resizeSection(5, 110); // COL_RX
-    hv->resizeSection(6, 110); // COL_TX
+    hv->resizeSection(4, 170); // COL_ACTIVITY
+    hv->resizeSection(6, 110); // COL_RX
+    hv->resizeSection(7, 110); // COL_TX
     hv->setHighlightSections(false);
     hv->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
@@ -510,10 +512,10 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
         connect(actInfo, &QAction::triggered, this, [this, idx, pid, name]() {
             QString path = getExactProcessPath(pid, name);
 
-            QString rx = idx.siblingAtColumn(4).data().toString(); // COL_RX
-            QString tx = idx.siblingAtColumn(5).data().toString(); // COL_TX
-            QString total = idx.siblingAtColumn(6).data().toString(); // COL_BYTES
-            QString pkts = idx.siblingAtColumn(7).data().toString();  // COL_PKTS
+            QString rx = idx.siblingAtColumn(6).data().toString(); // COL_RX
+            QString tx = idx.siblingAtColumn(7).data().toString(); // COL_TX
+            QString total = idx.siblingAtColumn(8).data().toString(); // COL_BYTES
+            QString pkts = idx.siblingAtColumn(9).data().toString();  // COL_PKTS
 
             QVariant iconVar = idx.siblingAtColumn(0).data(Qt::DecorationRole); // COL_NAME
             QIcon icon;

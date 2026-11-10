@@ -57,6 +57,7 @@ SOURCES += \
     src/attribution/dnsobserver.cpp \
     src/attribution/attributionprivacy.cpp \
     src/attribution/activityclassifier.cpp \
+    src/attribution/recommendationengine.cpp \
     src/attribution/dnscorrelator.cpp \
     src/attribution/tlsobserver.cpp \
     src/attribution/quicobserver.cpp \
@@ -109,6 +110,7 @@ HEADERS += \
     src/attribution/dnsobserver.h \
     src/attribution/attributionprivacy.h \
     src/attribution/activityclassifier.h \
+    src/attribution/recommendationengine.h \
     src/attribution/dnscorrelator.h \
     src/attribution/tlsobserver.h \
     src/attribution/quicobserver.h \

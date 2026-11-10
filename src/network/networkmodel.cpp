@@ -34,10 +34,43 @@ QString signerRowText(const ProcessNode &p)
     return QStringLiteral("signature unavailable");
 }
 
+// NG-040: the tooltip behind the Activity column. It names the plain category
+// with its confidence, every matched rule and the criteria that matched, and the
+// manual policy scope the user can still choose.
+QStringList activityTooltip(const ActivityClassification &activity)
+{
+    QStringList lines;
+    lines << QStringLiteral("Activity: %1").arg(activity.summary());
+    if (!activity.matchedRules.isEmpty()) {
+        lines << QStringLiteral("Matched rules:");
+        for (const CatalogMatch &rule : activity.matchedRules) {
+            lines << QStringLiteral("  • %1 — %2").arg(rule.ruleId, rule.explanation);
+            if (!rule.matchedOn.isEmpty())
+                lines << QStringLiteral("      %1")
+                             .arg(rule.matchedOn.join(QStringLiteral("; ")));
+        }
+    }
+    for (const QString &item : activity.evidence)
+        lines << QStringLiteral("Evidence: %1").arg(item);
+    if (!activity.manualPolicyTargets.isEmpty()) {
+        lines << QStringLiteral("Manual policy scope: %1")
+                     .arg(activity.manualPolicyTargets.first().label);
+        lines << QStringLiteral("(Create policy... can scope it; nothing is applied "
+                                "automatically.)");
+    }
+    return lines;
+}
+
 } // namespace
 
 NetworkTreeModel::NetworkTreeModel(QObject *parent) : QAbstractItemModel(parent)
 {
+    // NG-040: the Activity column uses the same versioned catalog as the
+    // classifier, including any local rule edits the user saved.
+    EndpointCatalog catalog;
+    catalog.load();
+    m_activityClassifier.setCatalog(catalog);
+
     m_ticker = new QTimer(this);
     m_ticker->setInterval(1000);
     connect(m_ticker, &QTimer::timeout, this, &NetworkTreeModel::onTick);
@@ -116,6 +149,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             case COL_NAME:   return p.name;
             case COL_RX:     return static_cast<qulonglong>(p.totalRxSpeed);
             case COL_TX:     return static_cast<qulonglong>(p.totalTxSpeed);
+            case COL_ACTIVITY: return catalogCategoryToken(p.activity.category);
             case COL_BYTES:  return static_cast<qulonglong>(p.totalRxBytes + p.totalTxBytes);
             case COL_PKTS:   return static_cast<qulonglong>(p.totalPackets);
             default:         return QVariant();
@@ -149,6 +183,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             case COL_SRC:    return {};
             case COL_DST:    return {};
             case COL_DOMAIN: return {};
+            case COL_ACTIVITY: return p.activity.summary();
             case COL_SERVICE:return {};
             case COL_RX:     return "↓ " + formatSpeed(p.totalRxSpeed);
             case COL_TX:     return "↑ " + formatSpeed(p.totalTxSpeed);
@@ -185,6 +220,8 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             }
             return lines.join('\n');
         }
+        if (role == Qt::ToolTipRole && col == COL_ACTIVITY)
+            return activityTooltip(p.activity).join('\n');
         if (role == Qt::ForegroundRole) {
             if (col == COL_RX) return QColor("#3B82F6");
             if (col == COL_TX) return QColor("#10B981");
@@ -235,6 +272,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         if (role == Qt::DisplayRole) {
             switch (col) {
             case COL_NAME:    return s.displayName;
+            case COL_ACTIVITY:return p.activity.summary();
             case COL_SERVICE: return s.serviceName + "  —  " + NetGuard::serviceStateName(s.state);
             default:          return {};
             }
@@ -324,7 +362,7 @@ QVariant NetworkTreeModel::headerData(int s, Qt::Orientation o, int role) const
 {
     if (o != Qt::Horizontal || role != Qt::DisplayRole) return {};
     static const char *H[COL_COUNT] = {
-        "Application / Protocol", "Source", "Destination", "Domain",
+        "Application / Protocol", "Source", "Destination", "Domain", "Activity",
         "Service", "Download", "Upload", "Total Bytes", "Packets"
     };
     return QLatin1String(H[s]);
@@ -376,6 +414,11 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
             const QModelIndex nameIdx = index(pRow, COL_NAME);
             emit dataChanged(nameIdx, nameIdx, {Qt::ToolTipRole, Qt::UserRole + 7});
         }
+
+        // NG-040: reclassify when identity, publisher, group, or service
+        // evidence changed; refreshActivity() skips unchanged evidence, so this
+        // costs a string comparison per packet rather than a catalog match.
+        refreshActivity(pRow);
 
         const quint64 bytes  = pkt.wireLen ? pkt.wireLen : pkt.captureLen;
         const bool    isDown = pkt.isDownload;
@@ -464,6 +507,38 @@ void NetworkTreeModel::setDomainResolver(
     std::function<QList<DomainAttribution>(const QString &)> resolver)
 {
     m_domainResolver = std::move(resolver);
+}
+
+void NetworkTreeModel::refreshActivity(int pRow)
+{
+    if (pRow < 0 || pRow >= m_procs.size()) return;
+    ProcessNode &p = m_procs[pRow];
+
+    QStringList signature;
+    signature << p.name << p.identityId << p.identityName << p.publisher
+              << p.groupId << p.groupName << QString::number(p.services.size());
+    if (!p.services.isEmpty()) signature << p.services.first().serviceName;
+    const QString current = signature.join(QChar('\x1f'));
+    if (current == p.activitySignature) return;
+    p.activitySignature = current;
+
+    ActivityQuery query;
+    query.executableName = p.name;
+    query.displayName = p.identityName;
+    query.publisher = p.publisher;
+    query.publisherVerified = p.signerStatus == ApplicationIdentity::SignerStatus::Signed;
+    query.identityId = p.identityId;
+    query.groupId = p.groupId;
+    query.groupName = p.groupName;
+    if (!p.services.isEmpty()) {
+        query.serviceName = p.services.first().serviceName;
+        query.service = true;
+    }
+
+    p.activity = m_activityClassifier.classify(query);
+
+    const QModelIndex idx = index(pRow, COL_ACTIVITY);
+    emit dataChanged(idx, idx, {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole + 5});
 }
 
 void NetworkTreeModel::refreshDomains()
@@ -567,6 +642,9 @@ void NetworkTreeModel::applyServiceSnapshot(const NetGuard::ServicePidMap &servi
         if (newCount > 0)
             emit dataChanged(index(0, COL_NAME, pIdx), index(newCount - 1, COL_PKTS, pIdx),
                              {Qt::DisplayRole, Qt::ToolTipRole, Qt::ForegroundRole});
+
+        // NG-040: a hosted service can satisfy a catalog service criterion.
+        refreshActivity(pRow);
     }
 }
 
