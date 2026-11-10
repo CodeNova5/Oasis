@@ -39,6 +39,8 @@ struct Evidence
         VerifiedPublisher,
         Service,
         ActivityGroup,
+        /// A caller-supplied foreground/session signal (NG-041). Advisory only.
+        ForegroundActivity,
         UserOverride,
         ProtectedService,
         DirectAddress,

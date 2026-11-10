@@ -23,6 +23,7 @@
 #include <QStringList>
 #include <QTimeZone>
 
+#include "attribution/activityclassifier.h"
 #include "attribution/attributionprivacy.h"
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
@@ -2728,6 +2729,200 @@ void testAttributionPrivacy()
                QStringLiteral("an explicit verbatim export keeps destinations"));
 }
 
+// ─── NG-040: rule-based activity classifier ────────────────────────────────
+// Updates, sync, launchers, developer tools, and package managers come from the
+// versioned catalog; a foreground transfer with no rule is only a weak
+// inference; unclassified activity still yields manual-policy targets.
+void testActivityClassifier()
+{
+    auto queryFor = [](const QString &executableName) {
+        ActivityQuery query;
+        query.executableName = executableName;
+        query.executablePath = QStringLiteral("C:/Apps/") + executableName;
+        return query;
+    };
+
+    ActivityClassifier classifier;
+
+    ActivityQuery windowsUpdate = queryFor(QStringLiteral("svchost.exe"));
+    windowsUpdate.serviceName = QStringLiteral("wuauserv");
+    windowsUpdate.service = true;
+    const ActivityClassification update = classifier.classify(windowsUpdate);
+    check(update.isKnown(), QStringLiteral("the Windows Update service is classified"));
+    check(update.category == CatalogCategory::WindowsUpdate,
+          QStringLiteral("the Windows Update service gets the Windows Update category"));
+    checkEqual(static_cast<int>(update.matchedRules.size()), 1,
+               QStringLiteral("one Windows Update rule matched"));
+    checkEqual(update.matchedRules.value(0).ruleId,
+               QStringLiteral("builtin-windows-update-service"),
+               QStringLiteral("the matching rule id is exposed"));
+    check(update.assessment.confidence == ApplicationIdentity::Confidence::WeakInference,
+          QStringLiteral("a one-criterion rule match is only Possible"));
+    check(update.evidence.join(QStringLiteral(" ")).contains(
+              QStringLiteral("builtin-windows-update-service")),
+          QStringLiteral("the evidence names the matched rule"));
+
+    ActivityQuery chromeUpdate = queryFor(QStringLiteral("updater.exe"));
+    chromeUpdate.publisher = QStringLiteral("Google LLC");
+    chromeUpdate.product = QStringLiteral("Google Update");
+    chromeUpdate.publisherVerified = true;
+    const ActivityClassification chrome = classifier.classify(chromeUpdate);
+    check(chrome.category == CatalogCategory::BrowserUpdate,
+          QStringLiteral("a signed Google updater is a browser update"));
+    checkEqual(chrome.matchedRules.value(0).ruleId,
+               QStringLiteral("builtin-chrome-update"),
+               QStringLiteral("the Chrome updater rule is exposed"));
+    check(chrome.assessment.confidence == ApplicationIdentity::Confidence::StrongInference,
+          QStringLiteral("a two-criterion rule match is Likely"));
+
+    // The display name is product evidence when the caller has no product field.
+    ActivityQuery displayNameOnly = queryFor(QStringLiteral("updater.exe"));
+    displayNameOnly.publisher = QStringLiteral("Google LLC");
+    displayNameOnly.displayName = QStringLiteral("Google Update");
+    check(classifier.classify(displayNameOnly).category == CatalogCategory::BrowserUpdate,
+          QStringLiteral("the identity display name can satisfy a product criterion"));
+
+    ActivityQuery domainOnly;
+    domainOnly.domain = QStringLiteral("update.googleapis.com");
+    const ActivityClassification domainMatch = classifier.classify(domainOnly);
+    check(domainMatch.category == CatalogCategory::BrowserUpdate,
+          QStringLiteral("a known update endpoint is classified without a process"));
+    checkEqual(domainMatch.matchedRules.value(0).ruleId,
+               QStringLiteral("builtin-chrome-update-endpoint"),
+               QStringLiteral("the endpoint rule is exposed"));
+
+    ActivityQuery both = chromeUpdate;
+    both.domain = QStringLiteral("update.googleapis.com");
+    const ActivityClassification specific = classifier.classify(both);
+    checkEqual(static_cast<int>(specific.matchedRules.size()), 2,
+               QStringLiteral("both the process and the endpoint rule match"));
+    checkEqual(specific.matchedRules.value(0).ruleId,
+               QStringLiteral("builtin-chrome-update"),
+               QStringLiteral("the more specific rule is listed first"));
+    check(specific.evidence.join(QStringLiteral(" ")).contains(
+              QStringLiteral("Also matched")),
+          QStringLiteral("the runner-up rules are reported as evidence"));
+
+    ActivityQuery oneDrive = queryFor(QStringLiteral("OneDrive.exe"));
+    oneDrive.publisher = QStringLiteral("Microsoft Corporation");
+    oneDrive.product = QStringLiteral("Microsoft OneDrive");
+    check(classifier.classify(oneDrive).category == CatalogCategory::CloudSync,
+          QStringLiteral("a signed OneDrive client is cloud sync"));
+
+    check(classifier.classify(queryFor(QStringLiteral("steam.exe"))).category ==
+              CatalogCategory::GameLauncher,
+          QStringLiteral("a game launcher is classified by executable name"));
+    check(classifier.classify(queryFor(QStringLiteral("code.exe"))).category ==
+              CatalogCategory::DeveloperTool,
+          QStringLiteral("a developer tool is classified by executable name"));
+
+    ActivityQuery npm;
+    npm.domain = QStringLiteral("registry.npmjs.org");
+    check(classifier.classify(npm).category == CatalogCategory::PackageManager,
+          QStringLiteral("a package registry endpoint is a package manager"));
+
+    // Unknown activity keeps its identity evidence and stays policy-creatable.
+    ActivityQuery unknown = queryFor(QStringLiteral("notes.exe"));
+    unknown.identityId = QStringLiteral("sha1:notes");
+    unknown.groupId = QStringLiteral("group:notes");
+    unknown.groupName = QStringLiteral("Notes Suite");
+    const ActivityClassification unclassified = classifier.classify(unknown);
+    check(!unclassified.isKnown(),
+          QStringLiteral("an app with no rule stays unclassified"));
+    check(!unclassified.catalogMatched && unclassified.matchedRules.isEmpty(),
+          QStringLiteral("an unclassified app exposes no matched rules"));
+    check(unclassified.assessment.confidence == ApplicationIdentity::Confidence::Unknown,
+          QStringLiteral("an unclassified app has unknown confidence"));
+    check(unclassified.evidence.join(QStringLiteral(" ")).contains(
+              QStringLiteral("No local rule matched")),
+          QStringLiteral("the evidence says why nothing matched"));
+    checkEqual(static_cast<int>(unclassified.manualPolicyTargets.size()), 2,
+               QStringLiteral("path and group scopes remain available without a publisher"));
+    checkEqual(unclassified.preferredPolicyTarget().scope, QStringLiteral("path"),
+               QStringLiteral("the executable path is the preferred manual scope"));
+    checkEqual(unclassified.preferredPolicyTarget().targetId,
+               QStringLiteral("C:/Apps/notes.exe"),
+               QStringLiteral("the preferred manual scope carries the path"));
+    checkEqual(unclassified.summary(), QStringLiteral("Unknown activity (Unknown)"),
+               QStringLiteral("unknown activity is summarised honestly"));
+
+    ActivityQuery serviceOnly;
+    serviceOnly.serviceName = QStringLiteral("customsvc");
+    serviceOnly.service = true;
+    const ActivityClassification unknownService = classifier.classify(serviceOnly);
+    check(!unknownService.isKnown(),
+          QStringLiteral("an unrecognised service stays unclassified"));
+    checkEqual(unknownService.manualPolicyTargets.value(0).scope, QStringLiteral("service"),
+               QStringLiteral("an unclassified service can still be scoped manually"));
+
+    checkEqual(specific.summary(), QStringLiteral("Browser update (Likely)"),
+               QStringLiteral("a known classification names its confidence"));
+    checkEqual(specific.categoryName(), QStringLiteral("Browser update"),
+               QStringLiteral("the category has a plain label"));
+
+    // Foreground transfer with no rule is a weak inference; a catalog match wins.
+    ActivityQuery download = queryFor(QStringLiteral("browser.exe"));
+    download.foreground = true;
+    download.bytesPerSecond = 2ULL * 1024ULL * 1024ULL;
+    const ActivityClassification foreground = classifier.classify(download);
+    check(foreground.category == CatalogCategory::ForegroundDownload,
+          QStringLiteral("a foreground transfer with no rule is a foreground download"));
+    check(foreground.isForegroundDownload() && !foreground.catalogMatched,
+          QStringLiteral("the foreground download is marked as an inference, not a rule"));
+    check(foreground.assessment.confidence == ApplicationIdentity::Confidence::WeakInference,
+          QStringLiteral("a foreground download is only Possible"));
+    check(foreground.evidence.join(QStringLiteral(" ")).contains(QStringLiteral("foreground")),
+          QStringLiteral("the evidence explains the foreground inference"));
+
+    download.bytesPerSecond = 1024ULL;
+    check(classifier.classify(download).category == CatalogCategory::Unknown,
+          QStringLiteral("a low-rate foreground app stays unclassified"));
+
+    ActivityQuery foregroundSteam = queryFor(QStringLiteral("steam.exe"));
+    foregroundSteam.foreground = true;
+    foregroundSteam.bytesPerSecond = 2ULL * 1024ULL * 1024ULL;
+    check(classifier.classify(foregroundSteam).category == CatalogCategory::GameLauncher,
+          QStringLiteral("the foreground guess never overrides a matched rule"));
+
+    classifier.setForegroundDownloadThreshold(0);
+    ActivityQuery disabledForeground = queryFor(QStringLiteral("browser.exe"));
+    disabledForeground.foreground = true;
+    disabledForeground.bytesPerSecond = 2ULL * 1024ULL * 1024ULL;
+    check(classifier.classify(disabledForeground).category == CatalogCategory::Unknown,
+          QStringLiteral("a zero threshold disables the foreground rule"));
+
+    // The classifier follows the catalog: disabling a rule or adding a user rule
+    // changes the result without any code change.
+    EndpointCatalog catalog;
+    QString error;
+    check(catalog.setRuleEnabled(QStringLiteral("builtin-steam"), false, &error),
+          QStringLiteral("a bundled rule can be disabled"));
+    classifier.setCatalog(catalog);
+    check(classifier.classify(queryFor(QStringLiteral("steam.exe"))).category ==
+              CatalogCategory::Unknown,
+          QStringLiteral("disabling a catalog rule removes its classification"));
+
+    CatalogRule userRule;
+    userRule.id = QStringLiteral("user-cdn-downloads");
+    userRule.category = CatalogCategory::ForegroundDownload;
+    userRule.explanation = QStringLiteral("Known CDN download");
+    userRule.domainPatterns = QStringList{QStringLiteral("*.example.net")};
+    check(catalog.upsertRule(userRule, &error),
+          QStringLiteral("a user rule can be added to the catalog"));
+    classifier.setCatalog(catalog);
+
+    ActivityQuery cdn;
+    cdn.domain = QStringLiteral("cdn.example.net");
+    const ActivityClassification userMatch = classifier.classify(cdn);
+    check(userMatch.category == CatalogCategory::ForegroundDownload,
+          QStringLiteral("a user rule classifies a known download endpoint"));
+    checkEqual(userMatch.matchedRules.value(0).ruleId,
+               QStringLiteral("user-cdn-downloads"),
+               QStringLiteral("the user rule id is exposed"));
+    check(userMatch.matchedRules.value(0).source == CatalogRuleSource::User,
+          QStringLiteral("the user rule keeps its source"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -2766,6 +2961,7 @@ int main(int argc, char *argv[])
     testEndpointCatalog();
     testAttributionConfidence();
     testAttributionPrivacy();
+    testActivityClassifier();
 
     QSettings().clear();
 
