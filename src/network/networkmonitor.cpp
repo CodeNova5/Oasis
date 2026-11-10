@@ -157,6 +157,7 @@ int NetworkMonitor::recommendedAdapterIndex(const QList<AdapterInfo> &list)
 NetworkMonitor::NetworkMonitor(QObject *parent) : QThread(parent)
 {
     qRegisterMetaType<DnsEvent>("DnsEvent");
+    qRegisterMetaType<TlsObservation>("TlsObservation");
     m_speedTimer = new QTimer(this);
     m_speedTimer->setInterval(1000);
     connect(m_speedTimer, &QTimer::timeout, this, [this]() {
@@ -545,6 +546,25 @@ void NetworkMonitor::run()
                     // store bounds lifetime by the DNS TTL and keeps the owner.
                     m_dnsCorrelator.observe(event);
                     emit dnsObservation(event);
+                }
+            }
+
+            // NG-032: visible TLS. Only a ClientHello can name a destination;
+            // non-TLS traffic and server handshakes are ignored here, while a
+            // split, encrypted, ECH, or malformed handshake is reported as
+            // unavailable instead of being given a guessed name.
+            if (pkt.protocol.startsWith(QStringLiteral("TCP"))) {
+                TlsObservation observation = TlsObserver::parseDatagram(
+                    reinterpret_cast<const uint8_t *>(buf.constData()),
+                    static_cast<quint32>(len));
+                if (observation.status != TlsSniStatus::NotTls &&
+                    observation.status != TlsSniStatus::NotClientHello) {
+                    if (pid != 0) {
+                        observation.pid = pid;
+                        observation.processName = proc;
+                    }
+                    observation.identityId = identityId;
+                    emit tlsObservation(observation);
                 }
             }
 

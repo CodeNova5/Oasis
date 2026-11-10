@@ -25,6 +25,7 @@
 
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
+#include "attribution/tlsobserver.h"
 #include "firewall/rulenames.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
@@ -1558,6 +1559,217 @@ void testDnsCorrelator()
                QStringLiteral("an unknown attribution source is printable"));
 }
 
+void testTlsObserver()
+{
+    auto u16 = [](QByteArray &out, quint16 value) {
+        out.append(static_cast<char>((value >> 8) & 0xFF));
+        out.append(static_cast<char>(value & 0xFF));
+    };
+    auto u24 = [](QByteArray &out, quint32 value) {
+        out.append(static_cast<char>((value >> 16) & 0xFF));
+        out.append(static_cast<char>((value >> 8) & 0xFF));
+        out.append(static_cast<char>(value & 0xFF));
+    };
+    auto extension = [&](quint16 type, const QByteArray &body) {
+        QByteArray out;
+        u16(out, type);
+        u16(out, static_cast<quint16>(body.size()));
+        out += body;
+        return out;
+    };
+    auto sniExtension = [&](const QByteArray &name, quint8 nameType = 0) {
+        QByteArray entry;
+        entry.append(static_cast<char>(nameType));
+        u16(entry, static_cast<quint16>(name.size()));
+        entry += name;
+        QByteArray list;
+        u16(list, static_cast<quint16>(entry.size()));
+        list += entry;
+        return extension(0, list);
+    };
+    auto clientHello = [&](const QByteArray &extensions, quint8 contentType = 22,
+                           quint8 handshakeType = 1) {
+        QByteArray hello;
+        u16(hello, 0x0303); // legacy_version
+        hello += QByteArray(32, 'R');
+        hello.append(static_cast<char>(0)); // session id length
+        u16(hello, 2);
+        hello.append(static_cast<char>(0x13));
+        hello.append(static_cast<char>(0x01)); // TLS_AES_128_GCM_SHA256
+        hello.append(static_cast<char>(1));
+        hello.append(static_cast<char>(0)); // null compression
+        u16(hello, static_cast<quint16>(extensions.size()));
+        hello += extensions;
+
+        QByteArray handshake;
+        handshake.append(static_cast<char>(handshakeType));
+        u24(handshake, static_cast<quint32>(hello.size()));
+        handshake += hello;
+
+        QByteArray record;
+        record.append(static_cast<char>(contentType));
+        u16(record, 0x0301); // TLS 1.0 legacy record version, as TLS 1.3 uses
+        u16(record, static_cast<quint16>(handshake.size()));
+        record += handshake;
+        return record;
+    };
+    auto parse = [](const QByteArray &record) {
+        return TlsObserver::parseRecord(
+            reinterpret_cast<const uint8_t *>(record.constData()), record.size());
+    };
+
+    // A normal ClientHello exposes its SNI, normalized for comparison.
+    const QByteArray valid = clientHello(sniExtension(QByteArray("Example.COM.")));
+    const TlsObservation observed = parse(valid);
+    check(observed.status == TlsSniStatus::Available,
+          QStringLiteral("a ClientHello with SNI is available"));
+    checkEqual(observed.serverName, QStringLiteral("example.com"),
+               QStringLiteral("SNI is lower-cased without the trailing dot"));
+    check(observed.isAvailable(), QStringLiteral("the availability helper agrees"));
+    checkEqual(tlsSniStatusName(observed.status), QStringLiteral("available"),
+               QStringLiteral("the TLS status is printable"));
+
+    // Missing, unknown, and encrypted handshakes are unavailable, not guessed.
+    const TlsObservation noSni = parse(clientHello(QByteArray()));
+    check(noSni.status == TlsSniStatus::NoSni && noSni.serverName.isEmpty(),
+          QStringLiteral("a ClientHello without SNI is unavailable"));
+    checkEqual(tlsSniStatusName(noSni.status), QStringLiteral("no SNI"),
+               QStringLiteral("the no-SNI status is printable"));
+
+    const TlsObservation unknownType =
+        parse(clientHello(sniExtension(QByteArray("mail.example"), 7)));
+    check(unknownType.status == TlsSniStatus::NoSni && unknownType.serverName.isEmpty(),
+          QStringLiteral("a non-host_name SNI entry is unavailable"));
+
+    const TlsObservation encrypted = parse(clientHello(QByteArray(), 23));
+    check(encrypted.status == TlsSniStatus::Encrypted && encrypted.serverName.isEmpty(),
+          QStringLiteral("encrypted TLS application data yields no name"));
+
+    const TlsObservation ech = parse(clientHello(
+        sniExtension(QByteArray("public.example")) +
+        extension(0xFE0D, QByteArray())));
+    check(ech.status == TlsSniStatus::EchHidden && ech.serverName.isEmpty(),
+          QStringLiteral("ECH hides the destination name"));
+
+    const TlsObservation notClientHello = parse(clientHello(QByteArray(), 22, 2));
+    check(notClientHello.status == TlsSniStatus::NotClientHello,
+          QStringLiteral("a ServerHello is not treated as a ClientHello"));
+
+    // Split handshakes are reported as fragmented at both layers.
+    const TlsObservation truncatedRecord = parse(valid.left(valid.size() - 5));
+    check(truncatedRecord.status == TlsSniStatus::Fragmented &&
+              truncatedRecord.serverName.isEmpty(),
+          QStringLiteral("a ClientHello past the visible bytes is fragmented"));
+    check(parse(valid.left(3)).status == TlsSniStatus::Fragmented,
+          QStringLiteral("a partial TLS record header is fragmented"));
+
+    QByteArray splitHandshake = valid;
+    const int partialHandshake = 14; // 4-byte handshake header + 10 body bytes
+    splitHandshake.truncate(5 + partialHandshake);
+    splitHandshake[3] = static_cast<char>((partialHandshake >> 8) & 0xFF);
+    splitHandshake[4] = static_cast<char>(partialHandshake & 0xFF);
+    const TlsObservation fragmentedHandshake = parse(splitHandshake);
+    check(fragmentedHandshake.status == TlsSniStatus::Fragmented,
+          QStringLiteral("a ClientHello split across records is fragmented"));
+
+    // Malformed length fields and names never produce a partial SNI.
+    QByteArray shortHandshake;
+    shortHandshake.append(static_cast<char>(1));
+    u24(shortHandshake, 5);
+    shortHandshake += QByteArray(5, '\0');
+    QByteArray shortRecord;
+    shortRecord.append(static_cast<char>(22));
+    u16(shortRecord, 0x0301);
+    u16(shortRecord, static_cast<quint16>(shortHandshake.size()));
+    shortRecord += shortHandshake;
+    check(parse(shortRecord).status == TlsSniStatus::Malformed,
+          QStringLiteral("a ClientHello shorter than its fields is malformed"));
+
+    QByteArray badList;
+    u16(badList, 5); // list claims five bytes, only one follows
+    badList.append(static_cast<char>(0));
+    check(parse(clientHello(extension(0, badList))).status == TlsSniStatus::Malformed,
+          QStringLiteral("an over-long SNI list is malformed"));
+
+    QByteArray badExtension;
+    u16(badExtension, 0);
+    u16(badExtension, 50); // no extension body follows
+    check(parse(clientHello(badExtension)).status == TlsSniStatus::Malformed,
+          QStringLiteral("an over-long extension is malformed"));
+
+    const QByteArray nulName("bad\0name", 8);
+    check(parse(clientHello(sniExtension(nulName))).status == TlsSniStatus::Malformed,
+          QStringLiteral("an SNI name containing NUL is malformed"));
+
+    // Non-TLS traffic is cheaply ignored rather than classified.
+    const QByteArray http("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n");
+    const TlsObservation notTls = TlsObserver::parseRecord(
+        reinterpret_cast<const uint8_t *>(http.constData()), http.size());
+    check(notTls.status == TlsSniStatus::NotTls,
+          QStringLiteral("plain HTTP is not a TLS handshake"));
+    checkEqual(tlsSniStatusName(notTls.status), QStringLiteral("not TLS"),
+               QStringLiteral("the not-TLS status is printable"));
+    check(parse(clientHello(QByteArray(), 21)).status == TlsSniStatus::NotTls,
+          QStringLiteral("a TLS alert is not a handshake"));
+
+    // IP and TCP framing are skipped for both address families.
+    auto tcpFrame = [&](const QByteArray &payload) {
+        QByteArray tcp;
+        u16(tcp, 40000);
+        u16(tcp, 443);
+        tcp += QByteArray(8, '\0'); // sequence and acknowledgement numbers
+        tcp.append(static_cast<char>(0x50)); // data offset 5 (20 bytes)
+        tcp.append(static_cast<char>(0x18)); // PSH + ACK
+        u16(tcp, 65535);
+        u16(tcp, 0);
+        u16(tcp, 0);
+        tcp += payload;
+        return tcp;
+    };
+
+    const QByteArray tcp = tcpFrame(valid);
+    QByteArray ipv4(20, '\0');
+    ipv4[0] = static_cast<char>(0x45);
+    ipv4[9] = 6;
+    ipv4 += tcp;
+    check(TlsObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(ipv4.constData()), ipv4.size())
+                  .status == TlsSniStatus::Available,
+          QStringLiteral("an IPv4 TLS ClientHello is parsed"));
+
+    QByteArray ipv6(40, '\0');
+    ipv6[0] = static_cast<char>(0x60);
+    ipv6[6] = 6;
+    ipv6 += tcp;
+    check(TlsObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(ipv6.constData()), ipv6.size())
+                  .status == TlsSniStatus::Available,
+          QStringLiteral("an IPv6 TLS ClientHello is parsed"));
+
+    QByteArray udp = ipv4;
+    udp[9] = 17; // not TCP
+    check(TlsObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(udp.constData()), udp.size())
+                  .status == TlsSniStatus::NotTls,
+          QStringLiteral("a UDP datagram is not TLS-over-TCP"));
+
+    QByteArray shortTcp = ipv4;
+    shortTcp.truncate(20 + 10);
+    check(TlsObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(shortTcp.constData()), shortTcp.size())
+                  .status == TlsSniStatus::NotTls,
+          QStringLiteral("a truncated TCP header is ignored"));
+
+    QByteArray badOffset = ipv4;
+    badOffset[20 + 12] = static_cast<char>(0x40); // data offset 4 (16 bytes)
+    check(TlsObserver::parseDatagram(
+              reinterpret_cast<const uint8_t *>(badOffset.constData()), badOffset.size())
+                  .status == TlsSniStatus::NotTls,
+          QStringLiteral("a TCP header shorter than 20 bytes is ignored"));
+    check(TlsObserver::parseDatagram(nullptr, 0).status == TlsSniStatus::NotTls,
+          QStringLiteral("an empty datagram is ignored"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -1591,6 +1803,7 @@ int main(int argc, char *argv[])
     testFirewallRuleNames();
     testDnsObserverParse();
     testDnsCorrelator();
+    testTlsObserver();
 
     QSettings().clear();
 

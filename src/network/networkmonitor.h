@@ -16,6 +16,7 @@
 #include "packetparser.h"
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
+#include "attribution/tlsobserver.h"
 #include "identity/applicationidentity.h"
 #include "identity/serviceresolver.h"
 #include "identity/processlineage.h"
@@ -121,6 +122,10 @@ signals:
     // discarded; the event carries the question, answers, confidence, and the
     // owning process when the socket could be resolved.
     void dnsObservation(const DnsEvent &event);
+    // NG-032: a visible TLS ClientHello. `serverName` is set only when SNI was
+    // actually parsed; fragmented, encrypted, ECH-hidden, and malformed
+    // handshakes arrive with an unavailable status and no name.
+    void tlsObservation(const TlsObservation &observation);
 
 protected:
     void run() override;

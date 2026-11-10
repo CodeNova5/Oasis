@@ -56,6 +56,7 @@ SOURCES += \
     src/network/policyreconcileplan.cpp \
     src/attribution/dnsobserver.cpp \
     src/attribution/dnscorrelator.cpp \
+    src/attribution/tlsobserver.cpp \
     src/identity/applicationidentity.cpp \
     src/identity/publisherresolver.cpp \
     src/identity/serviceresolver.cpp \
@@ -102,6 +103,7 @@ HEADERS += \
     src/network/bandwidthlimitsdialog.h \
     src/attribution/dnsobserver.h \
     src/attribution/dnscorrelator.h \
+    src/attribution/tlsobserver.h \
     src/identity/applicationidentity.h \
     src/identity/publisherresolver.h \
     src/identity/serviceresolver.h \
