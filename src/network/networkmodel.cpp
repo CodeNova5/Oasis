@@ -267,6 +267,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                                   NetGuard::groupConfidenceName(p.groupConfidence));
             lines << (s.acceptsStop ? "Can be stopped from Services"
                                     : "Protected service (not user-stoppable)");
+            lines << activityTooltip(p.activity);
             return lines.join('\n');
         }
         if (role == Qt::DisplayRole) {
@@ -295,6 +296,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         switch (col) {
         case COL_NAME:   return c.key.protocol;
         case COL_DOMAIN: return c.domain;
+        case COL_ACTIVITY: return catalogCategoryToken(p.activity.category);
         case COL_RX:     return static_cast<qulonglong>(c.rxSpeed);
         case COL_TX:     return static_cast<qulonglong>(c.txSpeed);
         case COL_BYTES:  return static_cast<qulonglong>(c.rxBytes + c.txBytes);
@@ -313,6 +315,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                 ? QString()
                 : AttributionConfidenceModel::qualifiedText(c.domain,
                                                             c.domainConfidence);
+        case COL_ACTIVITY: return p.activity.summary();
         case COL_SERVICE: return c.service;
         case COL_RX:      return "↓ " + formatSpeed(c.rxSpeed);
         case COL_TX:      return "↑ " + formatSpeed(c.txSpeed);
@@ -342,6 +345,20 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         if (c.domainExpiresAt.isValid()) {
             lines << QStringLiteral("Valid until: %1")
                          .arg(c.domainExpiresAt.toLocalTime().toString("HH:mm:ss"));
+        }
+        return lines.join('\n');
+    }
+
+    if (role == Qt::ToolTipRole && col == COL_ACTIVITY) {
+        // A connection row shows the classification of the process that owns
+        // it, with the same matched rules and confidence as the process row.
+        QStringList lines;
+        lines << QStringLiteral("Owning process: %1 (PID %2)").arg(p.name).arg(p.pid);
+        lines << activityTooltip(p.activity);
+        if (!c.domain.isEmpty()) {
+            lines << QStringLiteral("This connection's destination: %1 (%2)")
+                         .arg(c.domain,
+                              AttributionConfidenceModel::displayName(c.domainConfidence));
         }
         return lines.join('\n');
     }
@@ -539,6 +556,16 @@ void NetworkTreeModel::refreshActivity(int pRow)
 
     const QModelIndex idx = index(pRow, COL_ACTIVITY);
     emit dataChanged(idx, idx, {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole + 5});
+
+    // Service and connection rows show the owning process's classification, so
+    // they refresh with it.
+    const int childCount = p.services.size() + p.conns.size();
+    if (childCount > 0) {
+        const QModelIndex pIdx = index(pRow, 0);
+        emit dataChanged(index(0, COL_ACTIVITY, pIdx),
+                         index(childCount - 1, COL_ACTIVITY, pIdx),
+                         {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole + 5});
+    }
 }
 
 void NetworkTreeModel::refreshDomains()
