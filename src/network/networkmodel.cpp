@@ -4,6 +4,7 @@
  * @author  Ali Sakkaf
  */
 #include "networkmodel.h"
+#include "attribution/attributionconfidence.h"
 #include "networkmonitor.h"
 #include "identity/processlineage.h"
 #include "identity/processgroupmanager.h"
@@ -269,7 +270,11 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         case COL_NAME:    return c.key.protocol;
         case COL_SRC:     return QString("%1 : %2").arg(c.key.srcIP).arg(c.key.srcPort);
         case COL_DST:     return QString("%1 : %2").arg(c.key.dstIP).arg(c.key.dstPort);
-        case COL_DOMAIN:  return c.domain;
+        case COL_DOMAIN:
+            return c.domain.isEmpty()
+                ? QString()
+                : AttributionConfidenceModel::qualifiedText(c.domain,
+                                                            c.domainConfidence);
         case COL_SERVICE: return c.service;
         case COL_RX:      return "↓ " + formatSpeed(c.rxSpeed);
         case COL_TX:      return "↑ " + formatSpeed(c.txSpeed);
@@ -287,9 +292,14 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         lines << (c.domains.size() > 1 ? QStringLiteral("DNS names for this endpoint:")
                                        : QStringLiteral("DNS name for this endpoint:"));
         for (const QString &name : c.domains) lines << "  " + name;
+        lines << QStringLiteral("Confidence: %1 (%2)")
+                     .arg(AttributionConfidenceModel::displayName(c.domainConfidence),
+                          AttributionConfidenceModel::technicalName(c.domainConfidence));
+        if (!c.domainEvidence.isEmpty()) {
+            lines << QStringLiteral("Evidence:");
+            for (const QString &item : c.domainEvidence) lines << "  " + item;
+        }
         lines << QStringLiteral("Source: %1").arg(attributionSourceName(c.domainSource));
-        lines << QStringLiteral("Confidence: %1")
-                     .arg(NetGuard::groupConfidenceName(c.domainConfidence));
         if (c.domainExpiresAt.isValid()) {
             lines << QStringLiteral("Valid until: %1")
                          .arg(c.domainExpiresAt.toLocalTime().toString("HH:mm:ss"));
@@ -420,6 +430,7 @@ void NetworkTreeModel::onTick()
                 c.domains.clear();
                 c.domainSource = AttributionSource::Unknown;
                 c.domainConfidence = ApplicationIdentity::Confidence::Unknown;
+                c.domainEvidence.clear();
                 c.domainExpiresAt = QDateTime();
             }
             quint64 rawRx = (c.rxBytes > c.prevRx) ? (c.rxBytes - c.prevRx) : 0;
@@ -473,20 +484,32 @@ void NetworkTreeModel::refreshDomains()
             ApplicationIdentity::Confidence confidence =
                 ApplicationIdentity::Confidence::Unknown;
             QDateTime expiresAt;
+            QStringList evidence;
             if (!records.isEmpty()) {
                 // lookup() returns the most recently seen name first; keep the
                 // rest for the tooltip without claiming they all arrived now.
                 domain = records.first().name;
                 source = records.first().source;
-                confidence = records.first().confidence;
                 expiresAt = records.first().expiresAt;
                 for (const DomainAttribution &record : records) {
                     if (!names.contains(record.name)) names << record.name;
                 }
+
+                // NG-035: a DNS answer is a strong inference, not a fact. The
+                // model also supplies the evidence text shown in the tooltip.
+                AttributionConfidenceModel::DomainEvidence domainEvidence;
+                domainEvidence.name = domain;
+                domainEvidence.address = c.remoteAddress;
+                domainEvidence.dnsAnswer = true;
+                const AttributionConfidenceModel::Assessment assessment =
+                    AttributionConfidenceModel::forDomain(domainEvidence);
+                confidence = assessment.confidence;
+                evidence = assessment.descriptions();
             }
 
             if (c.domain == domain && c.domains == names
                 && c.domainSource == source && c.domainConfidence == confidence
+                && c.domainEvidence == evidence
                 && c.domainExpiresAt == expiresAt) {
                 continue;
             }
@@ -495,6 +518,7 @@ void NetworkTreeModel::refreshDomains()
             c.domains = names;
             c.domainSource = source;
             c.domainConfidence = confidence;
+            c.domainEvidence = evidence;
             c.domainExpiresAt = expiresAt;
             emit dataChanged(index(cRow, COL_DOMAIN, pIdx),
                              index(cRow, COL_DOMAIN, pIdx),

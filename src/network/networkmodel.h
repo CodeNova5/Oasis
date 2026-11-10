@@ -33,6 +33,8 @@ struct ConnectionStat
     QStringList domains;
     AttributionSource domainSource = AttributionSource::Unknown;
     ApplicationIdentity::Confidence domainConfidence = ApplicationIdentity::Confidence::Unknown;
+    // NG-035: the evidence behind the domain confidence, shown in the tooltip.
+    QStringList domainEvidence;
     QDateTime domainExpiresAt;
 };
 

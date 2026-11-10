@@ -5,6 +5,7 @@
 #include "groupdetaildialog.h"
 #include "bandwidthguard.h"
 #include "networkmonitor.h"
+#include "attribution/attributionconfidence.h"
 
 #include "stylemanager.h"
 #include "apptheme.h"
@@ -316,6 +317,14 @@ void GroupDetailDialog::refreshSummary()
     const ProcessCategory category = m_bandwidthGuard
         ? m_bandwidthGuard->groupCategory(m_groupId)
         : ProcessCategory::Unknown;
+    // A category learned from group activity is only a possibility, never a
+    // confirmed fact, so the summary labels it as such (NG-035).
+    const QString categoryText = category == ProcessCategory::Unknown
+        ? QStringLiteral("not classified (Unknown)")
+        : AttributionConfidenceModel::qualifiedText(
+              BandwidthGuard::categoryDisplayName(category),
+              ApplicationIdentity::Confidence::WeakInference)
+              + QStringLiteral(" (learned from group activity)");
     m_summary->setText(QStringLiteral("%1 %2 · %3 running now · %4 · %5 · Data Saver: %6")
                            .arg(members)
                            .arg(members == 1 ? QStringLiteral("member")
@@ -323,9 +332,7 @@ void GroupDetailDialog::refreshSummary()
                            .arg(m_group.liveProcessCount())
                            .arg(NetGuard::groupConfidenceName(m_group.confidence))
                            .arg(origin)
-                           .arg(category == ProcessCategory::Unknown
-                                    ? QStringLiteral("not classified yet")
-                                    : BandwidthGuard::categoryDisplayName(category)));
+                           .arg(categoryText));
     if (!m_active)
         m_status->setText(QStringLiteral("This group is not active right now; the members below "
                                          "are the last known ones."));
@@ -386,17 +393,22 @@ QString GroupDetailDialog::memberCategoryText(const NetGuard::GroupMember &membe
     evidence.isService = member.type == NetGuard::GroupMemberType::Service;
 
     const ProcessCategory own = BandwidthGuard::classifyProcess(evidence);
-    const ProcessCategory category = m_bandwidthGuard ? m_bandwidthGuard->memberCategory(evidence)
-                                                      : own;
-    if (category == ProcessCategory::Unknown)
-        return QStringLiteral("no category yet");
+    const ProcessClassification classification = m_bandwidthGuard
+        ? m_bandwidthGuard->memberClassification(evidence)
+        : BandwidthGuard::classifyWithEvidence(evidence);
+    if (classification.category == ProcessCategory::Unknown)
+        return QStringLiteral("not classified (Unknown)");
 
+    QString text = AttributionConfidenceModel::qualifiedText(
+        BandwidthGuard::categoryDisplayName(classification.category),
+        classification.confidence);
     // Say so when the category came from the group rather than from this file,
     // because that is what makes an unnamed helper actionable.
-    if (own == ProcessCategory::Unknown && category != ProcessCategory::Unknown)
-        return BandwidthGuard::categoryDisplayName(category)
-               + QStringLiteral(" (learned from this group)");
-    return BandwidthGuard::categoryDisplayName(category);
+    if (own == ProcessCategory::Unknown)
+        text += QStringLiteral(" (learned from this group)");
+    if (!classification.evidence.isEmpty())
+        text += QStringLiteral(" — ") + classification.evidence.join(QStringLiteral("; "));
+    return text;
 }
 
 void GroupDetailDialog::onMemberSelectionChanged()

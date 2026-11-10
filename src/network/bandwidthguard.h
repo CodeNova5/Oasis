@@ -43,6 +43,16 @@ struct ClassificationEvidence
     bool isService = false;
 };
 
+// NG-035: the category plus the confidence and evidence behind it. Callers use
+// this to qualify a category as Likely or Possible instead of stating it as a
+// fact when the evidence is only a name or a learned group.
+struct ProcessClassification
+{
+    ProcessCategory category = ProcessCategory::Unknown;
+    ApplicationIdentity::Confidence confidence = ApplicationIdentity::Confidence::Unknown;
+    QStringList evidence;
+};
+
 struct BandwidthEvent
 {
     QString processName;
@@ -50,6 +60,10 @@ struct BandwidthEvent
     quint32 pid = 0;
     quint64 totalBytes = 0;
     ProcessCategory category = ProcessCategory::Unknown;
+    // NG-035: confidence in the category and the evidence that produced it.
+    ApplicationIdentity::Confidence categoryConfidence =
+        ApplicationIdentity::Confidence::Unknown;
+    QStringList categoryEvidence;
     // NG-015: where the category came from, so the alert can say that it was
     // learned from the process's activity group rather than from a rule.
     QString groupId;
@@ -86,6 +100,8 @@ public:
     // Group evidence is applied by the guard itself, because it needs the
     // categories of the group's other members.
     static ProcessCategory classifyProcess(const ClassificationEvidence &evidence);
+    // Same decision with the confidence and evidence needed to explain it.
+    static ProcessClassification classifyWithEvidence(const ClassificationEvidence &evidence);
 
     // Text the UI shows for a category. Kept in one place so the bandwidth alert
     // and the activity group view describe the same decision the same way.
@@ -100,6 +116,7 @@ public:
     // its group has learned. Read-only — inspecting a member never changes the
     // group's category.
     ProcessCategory memberCategory(const ClassificationEvidence &evidence) const;
+    ProcessClassification memberClassification(const ClassificationEvidence &evidence) const;
 
 signals:
     void sustainedBandwidthExceeded(const BandwidthEvent &event);
@@ -128,7 +145,9 @@ private:
     static int categoryRank(ProcessCategory category);
     bool isExempt(const QString &processName);
     ProcessCategory resolveCategory(const ProcessWindow &window, quint32 pid,
-                                   bool *fromGroup = nullptr);
+                                   bool *fromGroup = nullptr,
+                                   ApplicationIdentity::Confidence *confidence = nullptr,
+                                   QStringList *evidenceOut = nullptr);
     void loadPersistentState();
     void savePersistentState() const;
 

@@ -1,5 +1,6 @@
 #include "bandwidthguard.h"
 #include "networkmonitor.h"
+#include "attribution/attributionconfidence.h"
 
 #include <QDateTime>
 #include <QSettings>
@@ -49,7 +50,9 @@ void BandwidthGuard::observe(const QList<CapturedPacketInfo> &batch)
             event.executablePath = window.executablePath;
             event.pid = info.pid;
             event.totalBytes = window.totalBytes;
-            event.category = resolveCategory(window, info.pid, &event.categoryFromGroup);
+            event.category = resolveCategory(window, info.pid, &event.categoryFromGroup,
+                                             &event.categoryConfidence,
+                                             &event.categoryEvidence);
             event.groupId = window.groupId;
             event.groupName = window.groupName;
             emit sustainedBandwidthExceeded(event);
@@ -111,13 +114,25 @@ bool BandwidthGuard::isExempt(const QString &processName)
 }
 
 ProcessCategory BandwidthGuard::resolveCategory(const ProcessWindow &window, quint32 pid,
-                                               bool *fromGroup)
+                                               bool *fromGroup,
+                                               ApplicationIdentity::Confidence *confidence,
+                                               QStringList *evidenceOut)
 {
     if (fromGroup) *fromGroup = false;
+    if (confidence) *confidence = ApplicationIdentity::Confidence::Unknown;
+    if (evidenceOut) evidenceOut->clear();
 
     const QString key = normalizeProcessName(window.name);
     const auto overrideIt = m_categoryOverrides.constFind(key);
-    if (overrideIt != m_categoryOverrides.constEnd()) return overrideIt.value();
+    if (overrideIt != m_categoryOverrides.constEnd()) {
+        if (confidence) {
+            *confidence = ApplicationIdentity::Confidence::StrongInference;
+        }
+        if (evidenceOut) {
+            *evidenceOut << QStringLiteral("A local user override selected this category.");
+        }
+        return overrideIt.value();
+    }
 
     ClassificationEvidence evidence;
     evidence.pid = pid;
@@ -131,7 +146,10 @@ ProcessCategory BandwidthGuard::resolveCategory(const ProcessWindow &window, qui
     evidence.groupName = window.groupName;
     evidence.isService = window.isService;
 
-    ProcessCategory category = classifyProcess(evidence);
+    const ProcessClassification classified = classifyWithEvidence(evidence);
+    ProcessCategory category = classified.category;
+    if (confidence) *confidence = classified.confidence;
+    if (evidenceOut) *evidenceOut = classified.evidence;
     if (window.groupId.isEmpty()) return category;
 
     // NG-015 group evidence: a member with no rule of its own behaves like the
@@ -142,6 +160,15 @@ ProcessCategory BandwidthGuard::resolveCategory(const ProcessWindow &window, qui
         if (groupIt != m_groupCategories.constEnd()) {
             category = groupIt.value();
             if (fromGroup) *fromGroup = true;
+            if (confidence) {
+                *confidence = ApplicationIdentity::Confidence::WeakInference;
+            }
+            if (evidenceOut) {
+                evidenceOut->clear();
+                *evidenceOut << (window.groupName.isEmpty()
+                    ? QStringLiteral("The category was learned from an activity group.")
+                    : QStringLiteral("The category was learned from activity group \"%1\"").arg(window.groupName));
+            }
         }
     }
 
@@ -293,23 +320,49 @@ ProcessCategory BandwidthGuard::classifyProcess(const QString &processName,
 
 ProcessCategory BandwidthGuard::classifyProcess(const ClassificationEvidence &evidence)
 {
-    if (evidence.pid == 4 || evidence.isService) return ProcessCategory::Protected;
+    return classifyWithEvidence(evidence).category;
+}
 
-    const ProcessCategory byName = categoryForName(evidence.processName);
-    if (byName != ProcessCategory::Unknown) return byName;
+ProcessClassification BandwidthGuard::classifyWithEvidence(
+    const ClassificationEvidence &evidence)
+{
+    ProcessClassification result;
+    AttributionConfidenceModel::CategoryEvidence categoryEvidence;
 
-    return categoryForIdentity(evidence);
+    if (evidence.pid == 4 || evidence.isService) {
+        result.category = ProcessCategory::Protected;
+        categoryEvidence.protectedService = true;
+    } else {
+        const ProcessCategory byName = categoryForName(evidence.processName);
+        if (byName != ProcessCategory::Unknown) {
+            result.category = byName;
+            categoryEvidence.executableNameRule = true;
+        } else {
+            const ProcessCategory byIdentity = categoryForIdentity(evidence);
+            if (byIdentity != ProcessCategory::Unknown) {
+                result.category = byIdentity;
+                categoryEvidence.verifiedPublisher = true;
+                categoryEvidence.productMatched = true;
+            }
+        }
+    }
+
+    const AttributionConfidenceModel::Assessment assessment =
+        AttributionConfidenceModel::forCategory(categoryEvidence);
+    result.confidence = assessment.confidence;
+    result.evidence = assessment.descriptions();
+    return result;
 }
 
 QString BandwidthGuard::categoryDisplayName(ProcessCategory category)
 {
     switch (category) {
     case ProcessCategory::Protected:     return QStringLiteral("Protected service");
-    case ProcessCategory::AskFirst:      return QStringLiteral("Possible active download");
-    case ProcessCategory::AutoCandidate: return QStringLiteral("Background updater candidate");
+    case ProcessCategory::AskFirst:      return QStringLiteral("Active download");
+    case ProcessCategory::AutoCandidate: return QStringLiteral("Background updater");
     case ProcessCategory::Unknown:       break;
     }
-    return QStringLiteral("Background data activity");
+    return QStringLiteral("Unclassified activity");
 }
 
 ProcessCategory BandwidthGuard::groupCategory(const QString &groupId) const
@@ -320,15 +373,37 @@ ProcessCategory BandwidthGuard::groupCategory(const QString &groupId) const
 
 ProcessCategory BandwidthGuard::memberCategory(const ClassificationEvidence &evidence) const
 {
+    return memberClassification(evidence).category;
+}
+
+ProcessClassification BandwidthGuard::memberClassification(
+    const ClassificationEvidence &evidence) const
+{
     const auto overrideIt =
         m_categoryOverrides.constFind(normalizeProcessName(evidence.processName));
-    if (overrideIt != m_categoryOverrides.constEnd()) return overrideIt.value();
+    if (overrideIt != m_categoryOverrides.constEnd()) {
+        ProcessClassification result;
+        result.category = overrideIt.value();
+        result.confidence = ApplicationIdentity::Confidence::StrongInference;
+        result.evidence << QStringLiteral("A local user override selected this category.");
+        return result;
+    }
 
-    const ProcessCategory category = classifyProcess(evidence);
-    if (category != ProcessCategory::Unknown) return category;
+    ProcessClassification result = classifyWithEvidence(evidence);
+    if (result.category != ProcessCategory::Unknown) return result;
 
     // A member with no rule of its own is shown with the category its group has
     // learned, which is what it is acted on as when its traffic crosses the
     // threshold.
-    return groupCategory(evidence.groupId);
+    const ProcessCategory category = groupCategory(evidence.groupId);
+    if (category != ProcessCategory::Unknown) {
+        result.category = category;
+        result.confidence = ApplicationIdentity::Confidence::WeakInference;
+        result.evidence.clear();
+        result.evidence << (evidence.groupName.isEmpty()
+            ? QStringLiteral("The category was learned from an activity group.")
+            : QStringLiteral("The category was learned from activity group \"%1\"")
+                  .arg(evidence.groupName));
+    }
+    return result;
 }

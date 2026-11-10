@@ -41,6 +41,7 @@ SOURCES += \
     ../src/attribution/tlsobserver.cpp \
     ../src/attribution/quicobserver.cpp \
     ../src/attribution/endpointcatalog.cpp \
+    ../src/attribution/attributionconfidence.cpp \
     ../src/firewall/rulenames.cpp
 
 HEADERS += \
@@ -57,6 +58,7 @@ HEADERS += \
     ../src/attribution/tlsobserver.h \
     ../src/attribution/quicobserver.h \
     ../src/attribution/endpointcatalog.h \
+    ../src/attribution/attributionconfidence.h \
     ../src/firewall/rulenames.h
 
 win32: LIBS += -lws2_32

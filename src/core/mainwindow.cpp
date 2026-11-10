@@ -14,6 +14,7 @@
 #include "windowsicon.h"
 #include "network/networkwidget.h"
 #include "network/bandwidthguard.h"
+#include "attribution/attributionconfidence.h"
 #include "network/diagnostics.h"
 #include "firewall/firewallwidget.h"
 #include "hardware/hardwarewidget.h"
@@ -804,16 +805,27 @@ void MainWindow::onNetworkSpeed(quint64 rxBps, quint64 txBps)
 void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
 {
     const QString category = BandwidthGuard::categoryDisplayName(event.category);
-    // NG-015: the category may be the one the process's activity group learned
-    // rather than one a rule names, and the alert says so.
-    const QString classifiedAs = event.categoryFromGroup
-        ? (event.groupName.isEmpty()
-               ? QStringLiteral("Classified as: %1 (learned from its activity group).").arg(category)
-               : QStringLiteral("Classified as: %1 (learned from activity group \"%2\").")
-                     .arg(category, event.groupName))
-        : QStringLiteral("Classified as: %1.").arg(category);
+    const QString categoryWithConfidence = AttributionConfidenceModel::qualifiedText(
+        category, event.categoryConfidence);
+    const QString confidenceText = QStringLiteral("%1 (%2)")
+        .arg(AttributionConfidenceModel::displayName(event.categoryConfidence),
+             AttributionConfidenceModel::technicalName(event.categoryConfidence));
+    const QString evidenceText = event.categoryEvidence.isEmpty()
+        ? QStringLiteral("No category evidence was recorded.")
+        : event.categoryEvidence.join(QStringLiteral("; "));
 
-    QString title = category;
+    // NG-015: the category may be the one the process's activity group learned
+    // rather than one a rule names, and the alert says so. NG-035: the label is
+    // qualified when it is only Likely or Possible, and the evidence is shown.
+    const QString origin = event.categoryFromGroup
+        ? (event.groupName.isEmpty()
+               ? QStringLiteral(" (learned from its activity group)")
+               : QStringLiteral(" (learned from activity group \"%1\")").arg(event.groupName))
+        : QString();
+    const QString classifiedAs = QStringLiteral("Category: %1; confidence: %2%3.\nEvidence: %4")
+        .arg(categoryWithConfidence, confidenceText, origin, evidenceText);
+
+    QString title = categoryWithConfidence;
     QString action;
     if (event.throttleAttempted) {
         if (event.throttled) {
@@ -864,7 +876,7 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         ui->tableDataSaverDetections->setItem(row, 0, new QTableWidgetItem(event.processName));
         ui->tableDataSaverDetections->setItem(row, 1, new QTableWidgetItem(event.executablePath));
         ui->tableDataSaverDetections->setItem(row, 2, new QTableWidgetItem(fmtBytes(event.totalBytes)));
-        auto *categoryItem = new QTableWidgetItem(category);
+        auto *categoryItem = new QTableWidgetItem(categoryWithConfidence);
         categoryItem->setToolTip(classifiedAs);
         ui->tableDataSaverDetections->setItem(row, 3, categoryItem);
         ui->tableDataSaverDetections->setItem(row, 4, new QTableWidgetItem(action));

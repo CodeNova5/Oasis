@@ -28,6 +28,7 @@
 #include "attribution/tlsobserver.h"
 #include "attribution/quicobserver.h"
 #include "attribution/endpointcatalog.h"
+#include "attribution/attributionconfidence.h"
 #include "firewall/rulenames.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
@@ -2297,6 +2298,179 @@ void testEndpointCatalog()
     QSettings().clear();
 }
 
+void testAttributionConfidence()
+{
+    using namespace AttributionConfidenceModel;
+
+    checkEqual(displayName(Confidence::Confirmed), QStringLiteral("Confirmed"),
+               QStringLiteral("confirmed confidence has a plain label"));
+    checkEqual(displayName(Confidence::StrongInference), QStringLiteral("Likely"),
+               QStringLiteral("strong inference is labelled Likely"));
+    checkEqual(displayName(Confidence::WeakInference), QStringLiteral("Possible"),
+               QStringLiteral("weak inference is labelled Possible"));
+    checkEqual(displayName(Confidence::Unknown), QStringLiteral("Unknown"),
+               QStringLiteral("unknown confidence has a plain label"));
+    checkEqual(technicalName(Confidence::StrongInference),
+               QStringLiteral("strong inference"),
+               QStringLiteral("technical names are retained for diagnostics"));
+    check(isCertain(Confidence::Confirmed) && !isCertain(Confidence::StrongInference) &&
+              !isCertain(Confidence::WeakInference),
+          QStringLiteral("only confirmed evidence may be treated as fact"));
+    checkEqual(qualifiedText(QStringLiteral("example.com"), Confidence::Confirmed),
+               QStringLiteral("example.com"),
+               QStringLiteral("a confirmed name is shown without a qualifier"));
+    checkEqual(qualifiedText(QStringLiteral("example.com"), Confidence::WeakInference),
+               QStringLiteral("Possible: example.com"),
+               QStringLiteral("a weak name is not presented as fact"));
+    checkEqual(qualifiedText(QStringLiteral("example.com"), Confidence::StrongInference),
+               QStringLiteral("Likely: example.com"),
+               QStringLiteral("a strong inference is qualified"));
+
+    // Domain evidence: independent DNS and TLS observations confirm a name.
+    DomainEvidence domain;
+    domain.name = QStringLiteral("example.com");
+    domain.address = QStringLiteral("93.184.216.34");
+    domain.dnsAnswer = true;
+    Assessment assessment = forDomain(domain);
+    check(assessment.confidence == Confidence::StrongInference,
+          QStringLiteral("a DNS answer alone is a strong inference"));
+    check(assessment.descriptions().join(QStringLiteral(" "))
+              .contains(QStringLiteral("DNS answer")),
+          QStringLiteral("the DNS evidence is explained"));
+
+    domain.dnsAnswer = false;
+    domain.tlsSni = true;
+    assessment = forDomain(domain);
+    check(assessment.confidence == Confidence::StrongInference &&
+              assessment.descriptions().join(QStringLiteral(" "))
+                  .contains(QStringLiteral("TLS")),
+          QStringLiteral("a visible TLS SNI alone is explained and strong"));
+
+    domain.dnsAnswer = true;
+    assessment = forDomain(domain);
+    check(assessment.confidence == Confidence::Confirmed,
+          QStringLiteral("matching DNS and TLS observations confirm the name"));
+    check(assessment.descriptions().size() >= 2,
+          QStringLiteral("both independent domain observations are retained"));
+
+    DomainEvidence catalogOnly;
+    catalogOnly.name = QStringLiteral("updates.example");
+    catalogOnly.endpointCatalogMatch = true;
+    assessment = forDomain(catalogOnly);
+    check(assessment.confidence == Confidence::WeakInference,
+          QStringLiteral("an endpoint rule without an observed name is weak"));
+
+    DomainEvidence unnamed;
+    unnamed.address = QStringLiteral("203.0.113.9");
+    assessment = forDomain(unnamed);
+    check(assessment.confidence == Confidence::Unknown &&
+              assessment.summary().contains(QStringLiteral("destination address")),
+          QStringLiteral("a direct address stays unknown and says why"));
+
+    DomainEvidence hidden;
+    hidden.metadataUnavailable = true;
+    hidden.unavailableReason = QStringLiteral("ECH hid the ClientHello name.");
+    assessment = forDomain(hidden);
+    check(assessment.confidence == Confidence::Unknown &&
+              assessment.summary().contains(QStringLiteral("ECH")),
+          QStringLiteral("unavailable metadata is reported without a guess"));
+
+    // Category evidence: service identity is direct, catalog rules scale with
+    // the number of matched criteria, name-only and group evidence stay weak.
+    CategoryEvidence categoryEvidence;
+    categoryEvidence.protectedService = true;
+    assessment = forCategory(categoryEvidence);
+    check(assessment.confidence == Confidence::Confirmed &&
+              assessment.summary().contains(QStringLiteral("protected")),
+          QStringLiteral("a protected service category is confirmed"));
+
+    categoryEvidence = CategoryEvidence();
+    categoryEvidence.catalogMatch = true;
+    categoryEvidence.catalogCriteria = 1;
+    categoryEvidence.catalogRuleId = QStringLiteral("builtin-steam");
+    assessment = forCategory(categoryEvidence);
+    check(assessment.confidence == Confidence::WeakInference &&
+              assessment.summary().contains(QStringLiteral("builtin-steam")),
+          QStringLiteral("a one-criterion catalog match is possible, not fact"));
+
+    categoryEvidence.catalogCriteria = 2;
+    assessment = forCategory(categoryEvidence);
+    check(assessment.confidence == Confidence::StrongInference,
+          QStringLiteral("two catalog criteria raise the category to likely"));
+
+    categoryEvidence = CategoryEvidence();
+    categoryEvidence.catalogMatch = true;
+    categoryEvidence.catalogCriteria = 1;
+    categoryEvidence.exactExecutable = true;
+    categoryEvidence.verifiedPublisher = true;
+    check(forCategory(categoryEvidence).confidence == Confidence::StrongInference,
+          QStringLiteral("an exact executable and verified publisher are strong"));
+
+    CategoryEvidence named;
+    named.executableNameRule = true;
+    assessment = forCategory(named);
+    check(assessment.confidence == Confidence::WeakInference &&
+              assessment.summary().startsWith(QStringLiteral("Possible:")),
+          QStringLiteral("a name-only category is displayed as Possible"));
+
+    CategoryEvidence grouped;
+    grouped.activityGroup = true;
+    grouped.activityGroupName = QStringLiteral("Contoso Sync");
+    assessment = forCategory(grouped);
+    check(assessment.confidence == Confidence::WeakInference &&
+              assessment.summary().contains(QStringLiteral("Contoso Sync")),
+          QStringLiteral("a learned group category names the group as evidence"));
+
+    CategoryEvidence overrideEvidence;
+    overrideEvidence.userOverride = true;
+    assessment = forCategory(overrideEvidence);
+    check(assessment.confidence == Confidence::StrongInference,
+          QStringLiteral("a user override is strong but not an observed fact"));
+
+    assessment = forCategory(CategoryEvidence());
+    check(assessment.confidence == Confidence::Unknown &&
+              assessment.summary().contains(QStringLiteral("No category evidence")),
+          QStringLiteral("a category without evidence stays Unknown"));
+
+    Evidence weakEvidence;
+    weakEvidence.strength = Confidence::WeakInference;
+    weakEvidence.detail = QStringLiteral("one weak clue");
+    Evidence strongEvidence;
+    strongEvidence.strength = Confidence::StrongInference;
+    strongEvidence.detail = QStringLiteral("one strong clue");
+    assessment = aggregate({ weakEvidence, strongEvidence });
+    check(assessment.confidence == Confidence::StrongInference &&
+              assessment.descriptions().size() == 2,
+          QStringLiteral("aggregation keeps the strongest clue and all evidence"));
+
+    // The Data Saver classifier exposes the same confidence and evidence.
+    ClassificationEvidence processEvidence;
+    processEvidence.processName = QStringLiteral("chrome.exe");
+    ProcessClassification classified = BandwidthGuard::classifyWithEvidence(processEvidence);
+    check(classified.category == ProcessCategory::AskFirst &&
+              classified.confidence == Confidence::WeakInference &&
+              !classified.evidence.isEmpty(),
+          QStringLiteral("a name-only process category is Possible with evidence"));
+
+    processEvidence = ClassificationEvidence();
+    processEvidence.processName = QStringLiteral("googleupdater.exe");
+    processEvidence.publisher = QStringLiteral("Google LLC");
+    processEvidence.displayName = QStringLiteral("Google Update");
+    classified = BandwidthGuard::classifyWithEvidence(processEvidence);
+    check(classified.category == ProcessCategory::AutoCandidate &&
+              classified.confidence == Confidence::StrongInference &&
+              !classified.evidence.isEmpty(),
+          QStringLiteral("a verified publisher raises the category to Likely"));
+
+    processEvidence = ClassificationEvidence();
+    processEvidence.processName = QStringLiteral("svchost.exe");
+    processEvidence.isService = true;
+    classified = BandwidthGuard::classifyWithEvidence(processEvidence);
+    check(classified.category == ProcessCategory::Protected &&
+              classified.confidence == Confidence::Confirmed,
+          QStringLiteral("a protected service category is confirmed"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -2333,6 +2507,7 @@ int main(int argc, char *argv[])
     testTlsObserver();
     testQuicObserver();
     testEndpointCatalog();
+    testAttributionConfidence();
 
     QSettings().clear();
 
