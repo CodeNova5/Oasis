@@ -14,6 +14,8 @@
 #include <atomic>
 #include <chrono>
 #include "packetparser.h"
+#include "attribution/dnsobserver.h"
+#include "attribution/dnscorrelator.h"
 #include "identity/applicationidentity.h"
 #include "identity/serviceresolver.h"
 #include "identity/processlineage.h"
@@ -75,6 +77,11 @@ public:
     bool removeProcessGroupMember(const QString &groupId, NetGuard::GroupMemberType type,
                                   const QString &value);
 
+    // NG-031: names recently resolved to a destination address, with the
+    // querying process/identity and the attribution source. Expired records are
+    // filtered, so a direct-IP connection never inherits a stale name.
+    QList<DomainAttribution> attributionsForAddress(const QString &address) const;
+
     bool    isCapturing()  const { return m_captureRunning.load(); }
 
 signals:
@@ -110,6 +117,10 @@ signals:
     // NG-016: the activity group set changed (membership, name, confidence, or
     // a live PID). Sent only when something visible actually changed.
     void groupSnapshotReady(const QList<NetGuard::ProcessGroup> &groups);
+    // NG-030: metadata from a visible DNS message. The payload is parsed and
+    // discarded; the event carries the question, answers, confidence, and the
+    // owning process when the socket could be resolved.
+    void dnsObservation(const DnsEvent &event);
 
 protected:
     void run() override;
@@ -141,6 +152,10 @@ private:
     QHash<quint16, quint32> m_tcpListenCache;
     QHash<quint16, quint32> m_udpAnyCache;
     QHash<quint32, QString> m_procCache;
+
+    // NG-031: bounded DNS answer -> destination cache, kept on the capture
+    // thread and queried safely from the GUI thread.
+    DnsCorrelator m_dnsCorrelator;
 
     // NG-010: identity resolution for PIDs that own live connections. Kept on
     // the cache thread; failures are remembered so protected processes are not

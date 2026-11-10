@@ -23,6 +23,8 @@
 #include <QStringList>
 #include <QTimeZone>
 
+#include "attribution/dnsobserver.h"
+#include "attribution/dnscorrelator.h"
 #include "firewall/rulenames.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
@@ -1191,6 +1193,371 @@ void testFirewallRuleNames()
           QStringLiteral("shortening the base name keeps distinct paths distinct"));
 }
 
+void testDnsObserverParse()
+{
+    auto u16 = [](QByteArray &out, quint16 value) {
+        out.append(static_cast<char>((value >> 8) & 0xFF));
+        out.append(static_cast<char>(value & 0xFF));
+    };
+    auto u32 = [](QByteArray &out, quint32 value) {
+        out.append(static_cast<char>((value >> 24) & 0xFF));
+        out.append(static_cast<char>((value >> 16) & 0xFF));
+        out.append(static_cast<char>((value >> 8) & 0xFF));
+        out.append(static_cast<char>(value & 0xFF));
+    };
+    auto encodedName = [](const QString &name) {
+        QByteArray out;
+        const QStringList labels = name.split(QLatin1Char('.'));
+        for (const QString &label : labels) {
+            if (label.isEmpty()) continue;
+            out.append(static_cast<char>(label.size()));
+            out.append(label.toLatin1());
+        }
+        out.append('\0');
+        return out;
+    };
+    auto header = [&](quint16 id, quint16 flags, quint16 questions, quint16 answers) {
+        QByteArray out;
+        u16(out, id);
+        u16(out, flags);
+        u16(out, questions);
+        u16(out, answers);
+        u16(out, 0);
+        u16(out, 0);
+        return out;
+    };
+    auto question = [&](const QString &name, quint16 type) {
+        QByteArray out = encodedName(name);
+        u16(out, type);
+        u16(out, 1);
+        return out;
+    };
+
+    // A visible query: lower-cased name, type, no addresses yet.
+    QByteArray query = header(0x1234, 0x0100, 1, 0);
+    query += question(QStringLiteral("Ads.Example.COM"), 1);
+    const QList<DnsEvent> queries = DnsObserver::parseMessage(
+        reinterpret_cast<const uint8_t *>(query.constData()), query.size());
+    checkEqual(static_cast<int>(queries.size()), 1,
+               QStringLiteral("DNS query produces one event"));
+    if (queries.size() == 1) {
+        const DnsEvent &event = queries.first();
+        checkEqual(event.name, QStringLiteral("ads.example.com"),
+                   QStringLiteral("DNS names are lower-cased without the root dot"));
+        checkEqual(event.recordTypeName, QStringLiteral("A"),
+                   QStringLiteral("the query record type is reported"));
+        check(!event.response, QStringLiteral("a query is not marked as a response"));
+        check(event.addresses.isEmpty(), QStringLiteral("a query carries no addresses"));
+        check(event.confidence == ApplicationIdentity::Confidence::Unknown,
+              QStringLiteral("a bare query has unknown attribution confidence"));
+        checkEqual(event.transactionId, QStringLiteral("1234"),
+                   QStringLiteral("the DNS transaction id is retained"));
+    }
+
+    // A response with a compressed owner name, a CNAME, one A, and one AAAA.
+    QByteArray response = header(0xbeef, 0x8180, 1, 3);
+    response += question(QStringLiteral("ads.example.com"), 1);
+    response.append(static_cast<char>(0xC0));
+    response.append(static_cast<char>(0x0C)); // owner: pointer to offset 12
+    u16(response, 5);
+    u16(response, 1);
+    u32(response, 300);
+    const QByteArray alias = encodedName(QStringLiteral("edge.example.net"));
+    u16(response, static_cast<quint16>(alias.size()));
+    response += alias;
+    response.append(static_cast<char>(0xC0));
+    response.append(static_cast<char>(0x0C));
+    u16(response, 1);
+    u16(response, 1);
+    u32(response, 60);
+    u16(response, 4);
+    response += QByteArray::fromHex("5db8d822"); // 93.184.216.34
+    response.append(static_cast<char>(0xC0));
+    response.append(static_cast<char>(0x0C));
+    u16(response, 28);
+    u16(response, 1);
+    u32(response, 120);
+    u16(response, 16);
+    response += QByteArray::fromHex("26062800022000010248189325c81946");
+
+    const QList<DnsEvent> answers = DnsObserver::parseMessage(
+        reinterpret_cast<const uint8_t *>(response.constData()), response.size());
+    checkEqual(static_cast<int>(answers.size()), 1,
+               QStringLiteral("DNS response produces one event"));
+    if (answers.size() == 1) {
+        const DnsEvent &event = answers.first();
+        check(event.response, QStringLiteral("the response flag is reported"));
+        checkEqual(event.name, QStringLiteral("ads.example.com"),
+                   QStringLiteral("the question name is used for the response"));
+        checkEqual(event.recordTypeName, QStringLiteral("A"),
+                   QStringLiteral("the response record type follows the question"));
+        check(event.addresses.contains(QStringLiteral("93.184.216.34")),
+              QStringLiteral("an A answer is exposed as an address"));
+        check(event.addresses.contains(
+                  QStringLiteral("2606:2800:0220:0001:0248:1893:25c8:1946")),
+              QStringLiteral("an AAAA answer is exposed as an address"));
+        checkEqual(event.aliases, QStringList{QStringLiteral("edge.example.net")},
+                   QStringLiteral("a CNAME target is reported"));
+        checkEqual(event.ttlSeconds, quint32(60),
+                   QStringLiteral("the event carries the smallest answer TTL"));
+        checkEqual(event.transactionId, QStringLiteral("beef"),
+                   QStringLiteral("a response keeps its transaction id"));
+        check(event.confidence == ApplicationIdentity::Confidence::StrongInference,
+              QStringLiteral("an answered name is a strong inference"));
+    }
+
+    // An AAAA question names its type, and an unknown type stays printable.
+    QByteArray aaaaQuery = header(1, 0x0100, 1, 0);
+    aaaaQuery += question(QStringLiteral("v6.example"), 28);
+    const QList<DnsEvent> aaaa = DnsObserver::parseMessage(
+        reinterpret_cast<const uint8_t *>(aaaaQuery.constData()), aaaaQuery.size());
+    check(aaaa.size() == 1 && aaaa.first().recordTypeName == QStringLiteral("AAAA"),
+          QStringLiteral("an AAAA question reports its record type"));
+    checkEqual(DnsObserver::recordTypeName(99), QStringLiteral("TYPE99"),
+               QStringLiteral("an unknown record type stays printable"));
+
+    // Malformed messages are ignored instead of trusted or crashed on.
+    auto parseEmpty = [](const QByteArray &message) {
+        return DnsObserver::parseMessage(
+                   reinterpret_cast<const uint8_t *>(message.constData()), message.size())
+            .isEmpty();
+    };
+    check(parseEmpty(QByteArray(11, '\0')), QStringLiteral("a truncated header is ignored"));
+    check(parseEmpty(header(1, 0x0100, 1, 0)),
+          QStringLiteral("a missing question is ignored"));
+
+    QByteArray longLabel = header(2, 0x0100, 1, 0);
+    longLabel.append(static_cast<char>(64));
+    longLabel += QByteArray(64, 'a');
+    longLabel.append('\0');
+    check(parseEmpty(longLabel), QStringLiteral("a label over 63 bytes is ignored"));
+
+    QByteArray pointerLoop = header(3, 0x0100, 1, 0);
+    pointerLoop.append(static_cast<char>(0xC0));
+    pointerLoop.append(static_cast<char>(0x0C));
+    pointerLoop.append('\0');
+    u16(pointerLoop, 1);
+    u16(pointerLoop, 1);
+    check(parseEmpty(pointerLoop), QStringLiteral("a self-referencing name pointer is ignored"));
+
+    QByteArray overrun = header(4, 0x8100, 1, 1);
+    overrun += question(QStringLiteral("short.example"), 1);
+    overrun.append(static_cast<char>(0xC0));
+    overrun.append(static_cast<char>(0x0C));
+    u16(overrun, 1);
+    u16(overrun, 1);
+    u32(overrun, 60);
+    u16(overrun, 4);
+    overrun += QByteArray(2, '\x7f');
+    check(parseEmpty(overrun), QStringLiteral("an answer past the message end is ignored"));
+
+    QByteArray otherOpcode = header(5, 0x0900, 1, 0);
+    otherOpcode += question(QStringLiteral("example.com"), 1);
+    check(parseEmpty(otherOpcode),
+          QStringLiteral("a non-standard DNS opcode is ignored"));
+
+    // Datagram framing: IP + UDP headers are skipped and a non-53 port is not DNS.
+    QByteArray udp;
+    u16(udp, 53);
+    u16(udp, 49152);
+    u16(udp, static_cast<quint16>(8 + query.size()));
+    u16(udp, 0);
+    udp += query;
+
+    QByteArray ipv4(20, '\0');
+    ipv4[0] = static_cast<char>(0x45);
+    ipv4[9] = 17;
+    ipv4 += udp;
+    const QList<DnsEvent> framed = DnsObserver::parseDatagram(
+        reinterpret_cast<const uint8_t *>(ipv4.constData()), ipv4.size());
+    check(framed.size() == 1 && framed.first().name == QStringLiteral("ads.example.com"),
+          QStringLiteral("an IPv4 UDP/53 datagram is parsed"));
+
+    QByteArray otherPort = ipv4;
+    otherPort[20] = static_cast<char>(0x01);
+    otherPort[21] = static_cast<char>(0xBB); // source 443, destination 49152
+    check(DnsObserver::parseDatagram(reinterpret_cast<const uint8_t *>(otherPort.constData()),
+                                     otherPort.size()).isEmpty(),
+          QStringLiteral("a UDP datagram that is not port 53 is not DNS"));
+
+    QByteArray ipv6(40, '\0');
+    ipv6[0] = static_cast<char>(0x60);
+    ipv6[6] = 17;
+    ipv6 += udp;
+    check(DnsObserver::parseDatagram(reinterpret_cast<const uint8_t *>(ipv6.constData()),
+                                     ipv6.size()).size() == 1,
+          QStringLiteral("an IPv6 UDP/53 datagram is parsed"));
+    check(DnsObserver::parseDatagram(nullptr, 0).isEmpty(),
+          QStringLiteral("an empty datagram is ignored"));
+}
+
+void testDnsCorrelator()
+{
+    const QDateTime base = QDateTime::fromString(
+        QStringLiteral("2026-01-01T00:00:00Z"), Qt::ISODate);
+    check(base.isValid(), QStringLiteral("the correlator test clock is valid"));
+
+    auto answer = [](const QString &name, const QString &address, quint32 ttl,
+                     quint32 pid) {
+        DnsEvent event;
+        event.response = true;
+        event.name = name;
+        event.addresses = QStringList{address};
+        event.ttlSeconds = ttl;
+        event.pid = pid;
+        if (pid != 0) {
+            event.processName = QStringLiteral("browser.exe");
+            event.identityId = QStringLiteral("sha256:browser");
+        }
+        event.confidence = ApplicationIdentity::Confidence::StrongInference;
+        return event;
+    };
+
+    // A response creates a record with its owner and source, and the TTL bounds
+    // how long a later connection may use it.
+    DnsCorrelator correlator;
+    correlator.observe(answer(QStringLiteral("example.com"),
+                              QStringLiteral("93.184.216.34"), 60, 123),
+                       base);
+    const QList<DomainAttribution> fresh =
+        correlator.lookup(QStringLiteral("93.184.216.34"), base.addSecs(59));
+    checkEqual(static_cast<int>(fresh.size()), 1,
+               QStringLiteral("a DNS answer is available before its TTL"));
+    if (!fresh.isEmpty()) {
+        const DomainAttribution &record = fresh.first();
+        checkEqual(record.name, QStringLiteral("example.com"),
+                   QStringLiteral("the answer name is stored"));
+        checkEqual(record.pid, quint32(123),
+                   QStringLiteral("the querying PID is stored"));
+        checkEqual(record.identityId, QStringLiteral("sha256:browser"),
+                   QStringLiteral("the querying identity is stored"));
+        check(record.confidence == ApplicationIdentity::Confidence::StrongInference,
+              QStringLiteral("the answer confidence is stored"));
+        check(record.source == AttributionSource::DnsAnswer,
+              QStringLiteral("the attribution source is a DNS answer"));
+        checkEqual(attributionSourceName(record.source), QStringLiteral("DNS answer"),
+                   QStringLiteral("the attribution source is printable"));
+        checkEqual(record.firstSeen, base,
+                   QStringLiteral("first seen is the observation time"));
+        checkEqual(record.expiresAt, base.addSecs(60),
+                   QStringLiteral("the record expires at the DNS TTL"));
+    }
+    check(correlator.lookup(QStringLiteral("93.184.216.34"), base.addSecs(60)).isEmpty(),
+          QStringLiteral("an answer expires exactly at its TTL"));
+    check(correlator.lookup(QStringLiteral("  93.184.216.34  "), base.addSecs(1)).size() == 1,
+          QStringLiteral("address lookup ignores surrounding whitespace"));
+
+    // Several names can share an address; the most recent is returned first and
+    // a repeated name refreshes its lifetime without losing the first sighting.
+    DnsCorrelator multi;
+    multi.observe(answer(QStringLiteral("a.example"), QStringLiteral("203.0.113.7"),
+                         100, 11), base);
+    multi.observe(answer(QStringLiteral("b.example"), QStringLiteral("203.0.113.7"),
+                         100, 11), base.addSecs(10));
+    const QList<DomainAttribution> shared =
+        multi.lookup(QStringLiteral("203.0.113.7"), base.addSecs(11));
+    checkEqual(static_cast<int>(shared.size()), 2,
+               QStringLiteral("one address keeps multiple names"));
+    if (shared.size() == 2) {
+        checkEqual(shared.at(0).name, QStringLiteral("b.example"),
+                   QStringLiteral("the most recently seen name comes first"));
+        checkEqual(shared.at(1).name, QStringLiteral("a.example"),
+                   QStringLiteral("the older name is still available"));
+    }
+    multi.observe(answer(QStringLiteral("a.example"), QStringLiteral("203.0.113.7"),
+                         300, 22), base.addSecs(20));
+    const QList<DomainAttribution> refreshed =
+        multi.lookup(QStringLiteral("203.0.113.7"), base.addSecs(21));
+    checkEqual(static_cast<int>(refreshed.size()), 2,
+               QStringLiteral("refreshing a name does not duplicate it"));
+    if (!refreshed.isEmpty()) {
+        const DomainAttribution &record = refreshed.first();
+        checkEqual(record.name, QStringLiteral("a.example"),
+                   QStringLiteral("a refreshed name becomes the most recent"));
+        checkEqual(record.firstSeen, base,
+                   QStringLiteral("refreshing keeps the first-seen time"));
+        checkEqual(record.lastSeen, base.addSecs(20),
+                   QStringLiteral("refreshing moves the last-seen time"));
+        checkEqual(record.expiresAt, base.addSecs(320),
+                   QStringLiteral("refreshing applies the new TTL"));
+        checkEqual(record.pid, quint32(22),
+                   QStringLiteral("refreshing replaces the owner PID"));
+    }
+
+    // An unresolved refresh must not erase the owner learned earlier.
+    DnsCorrelator identity;
+    identity.observe(answer(QStringLiteral("keep.example"), QStringLiteral("192.0.2.8"),
+                            300, 77), base);
+    identity.observe(answer(QStringLiteral("keep.example"), QStringLiteral("192.0.2.8"),
+                            300, 0), base.addSecs(1));
+    const QList<DomainAttribution> kept =
+        identity.lookup(QStringLiteral("192.0.2.8"), base.addSecs(2));
+    check(kept.size() == 1 && kept.first().pid == 77 &&
+              kept.first().identityId == QStringLiteral("sha256:browser"),
+          QStringLiteral("an unresolved refresh keeps the earlier identity"));
+
+    // Queries and nameless events never create a mapping.
+    DnsEvent query = answer(QStringLiteral("query.example"),
+                            QStringLiteral("192.0.2.9"), 300, 5);
+    query.response = false;
+    identity.observe(query, base);
+    check(identity.lookup(QStringLiteral("192.0.2.9"), base).isEmpty(),
+          QStringLiteral("a DNS query does not create a destination mapping"));
+    identity.observe(answer(QString(), QStringLiteral("192.0.2.10"), 300, 5), base);
+    check(identity.lookup(QStringLiteral("192.0.2.10"), base).isEmpty(),
+          QStringLiteral("an answer without a name is ignored"));
+
+    // Per-address names and per-store addresses are capped, evicting the least
+    // recently seen entries first.
+    DnsCorrelator names(3600, 300, 16);
+    for (int i = 0; i < 10; ++i) {
+        names.observe(answer(QStringLiteral("n%1.example").arg(i),
+                             QStringLiteral("198.51.100.9"), 300, 1),
+                      base.addSecs(i));
+    }
+    const QList<DomainAttribution> capped =
+        names.lookup(QStringLiteral("198.51.100.9"), base.addSecs(10));
+    checkEqual(static_cast<int>(capped.size()), 8,
+               QStringLiteral("an address keeps at most eight names"));
+    if (capped.size() == 8) {
+        checkEqual(capped.first().name, QStringLiteral("n9.example"),
+                   QStringLiteral("the newest name survives the name cap"));
+        check(capped.first().name != QStringLiteral("n0.example"),
+              QStringLiteral("the oldest name is evicted first"));
+    }
+
+    DnsCorrelator addresses(3600, 300, 2);
+    addresses.observe(answer(QStringLiteral("one.example"), QStringLiteral("192.0.2.1"),
+                             300, 1), base);
+    addresses.observe(answer(QStringLiteral("two.example"), QStringLiteral("192.0.2.2"),
+                             300, 1), base.addSecs(1));
+    addresses.observe(answer(QStringLiteral("three.example"), QStringLiteral("192.0.2.3"),
+                             300, 1), base.addSecs(2));
+    check(addresses.lookup(QStringLiteral("192.0.2.1"), base.addSecs(3)).isEmpty(),
+          QStringLiteral("the least recently seen address is evicted"));
+    check(addresses.lookup(QStringLiteral("192.0.2.2"), base.addSecs(3)).size() == 1,
+          QStringLiteral("the retained addresses still resolve"));
+    check(addresses.lookup(QStringLiteral("192.0.2.3"), base.addSecs(3)).size() == 1,
+          QStringLiteral("the newest address is retained"));
+
+    // Lifetime is bounded above and falls back when the DNS TTL is missing.
+    DnsCorrelator lifetime;
+    lifetime.observe(answer(QStringLiteral("long.example"), QStringLiteral("192.0.2.20"),
+                            7200, 1), base);
+    lifetime.observe(answer(QStringLiteral("default.example"), QStringLiteral("192.0.2.21"),
+                            0, 1), base);
+    const QList<DomainAttribution> longLived =
+        lifetime.lookup(QStringLiteral("192.0.2.20"), base.addSecs(1));
+    check(!longLived.isEmpty() && longLived.first().expiresAt == base.addSecs(3600),
+          QStringLiteral("a long DNS TTL is clamped to one hour"));
+    const QList<DomainAttribution> defaultLived =
+        lifetime.lookup(QStringLiteral("192.0.2.21"), base.addSecs(1));
+    check(!defaultLived.isEmpty() && defaultLived.first().expiresAt == base.addSecs(300),
+          QStringLiteral("a missing DNS TTL gets the bounded default"));
+    checkEqual(attributionSourceName(AttributionSource::Unknown), QStringLiteral("Unknown"),
+               QStringLiteral("an unknown attribution source is printable"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -1222,6 +1589,8 @@ int main(int argc, char *argv[])
     testReconciliationFirewall();
     testReconciliationThrottle();
     testFirewallRuleNames();
+    testDnsObserverParse();
+    testDnsCorrelator();
 
     QSettings().clear();
 

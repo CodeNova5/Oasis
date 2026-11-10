@@ -4,7 +4,8 @@
 #   Focused harness for NG-001 (product-direction fixtures), NG-002
 #   (observation and policy telemetry contracts), NG-003 (diagnostics export
 #   schema), NG-026 (emergency-restore planning), NG-027 (enforcement-channel
-#   routing) and NG-024 (policy attribution and reconciliation planning). It links only the pure-logic sources it needs, so it runs without
+#   routing), NG-024 (policy attribution and reconciliation planning), and
+#   NG-030 (passive DNS metadata). It links only the pure-logic sources it needs, so it runs without
 #   a GUI, without administrator rights, and without WinDivert.
 #
 #   Build and run from the repository root:
@@ -35,6 +36,8 @@ SOURCES += \
     ../src/network/enforcementrestore.cpp \
     ../src/network/policyschedule.cpp \
     ../src/network/policyreconcileplan.cpp \
+    ../src/attribution/dnsobserver.cpp \
+    ../src/attribution/dnscorrelator.cpp \
     ../src/firewall/rulenames.cpp
 
 HEADERS += \
@@ -46,6 +49,8 @@ HEADERS += \
     ../src/network/enforcementrestore.h \
     ../src/network/policyschedule.h \
     ../src/network/policyreconcile.h \
+    ../src/attribution/dnsobserver.h \
+    ../src/attribution/dnscorrelator.h \
     ../src/firewall/rulenames.h
 
 win32: LIBS += -lws2_32

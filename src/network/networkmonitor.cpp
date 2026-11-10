@@ -156,6 +156,7 @@ int NetworkMonitor::recommendedAdapterIndex(const QList<AdapterInfo> &list)
 
 NetworkMonitor::NetworkMonitor(QObject *parent) : QThread(parent)
 {
+    qRegisterMetaType<DnsEvent>("DnsEvent");
     m_speedTimer = new QTimer(this);
     m_speedTimer->setInterval(1000);
     connect(m_speedTimer, &QTimer::timeout, this, [this]() {
@@ -191,6 +192,11 @@ NetworkMonitor::~NetworkMonitor()
 {
     m_stopFlag.store(true);
     if (!wait(2000)) terminate();
+}
+
+QList<DomainAttribution> NetworkMonitor::attributionsForAddress(const QString &address) const
+{
+    return m_dnsCorrelator.lookup(address);
 }
 
 void NetworkMonitor::setAdapterIP(const QString &ip)
@@ -518,6 +524,27 @@ void NetworkMonitor::run()
                     groupId = groupIt->groupId;
                     groupName = groupIt->groupName;
                     groupConfidence = groupIt->confidence;
+                }
+            }
+
+            // NG-030: passive DNS. The raw datagram is still available here, so
+            // a visible UDP/53 message is parsed and the payload discarded; the
+            // resolved socket owner travels with the event.
+            if (pkt.protocol.startsWith(QStringLiteral("UDP")) &&
+                (pkt.srcPort == 53 || pkt.dstPort == 53)) {
+                const QList<DnsEvent> events = DnsObserver::parseDatagram(
+                    reinterpret_cast<const uint8_t *>(buf.constData()),
+                    static_cast<quint32>(len));
+                for (DnsEvent event : events) {
+                    if (pid != 0) {
+                        event.pid = pid;
+                        event.processName = proc;
+                    }
+                    event.identityId = identityId;
+                    // NG-031: only answers with addresses create a mapping; the
+                    // store bounds lifetime by the DNS TTL and keeps the owner.
+                    m_dnsCorrelator.observe(event);
+                    emit dnsObservation(event);
                 }
             }
 
