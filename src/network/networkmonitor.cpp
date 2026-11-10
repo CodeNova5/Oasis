@@ -583,6 +583,14 @@ void NetworkMonitor::run()
                         observation.processName = proc;
                     }
                     observation.identityId = identityId;
+                    // NG-032/NG-035: associate a visible SNI with the remote
+                    // endpoint so the connection tree can combine it with a
+                    // DNS answer. Capture sees both directions; the remote side
+                    // is the source of received traffic and the destination of
+                    // sent traffic.
+                    observation.remoteAddress =
+                        pkt.isDownload ? pkt.srcIP : pkt.dstIP;
+                    m_dnsCorrelator.observeTls(observation);
                     emit tlsObservation(observation);
                 }
             }

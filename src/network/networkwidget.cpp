@@ -264,9 +264,9 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     hv->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     m_monitor = new NetworkMonitor(this);
-    // NG-031: connection rows ask the DNS correlator for the remote endpoint's
-    // names; the lookup filters expired answers, so the UI never shows stale
-    // attribution.
+    // NG-031/NG-032: connection rows ask the destination correlator for the
+    // remote endpoint's DNS and TLS SNI names; the lookup filters expired
+    // records, so the UI never shows stale attribution.
     m_model->setDomainResolver([this](const QString &address) {
         return m_monitor->attributionsForAddress(address);
     });

@@ -1558,6 +1558,91 @@ void testDnsCorrelator()
         lifetime.lookup(QStringLiteral("192.0.2.21"), base.addSecs(1));
     check(!defaultLived.isEmpty() && defaultLived.first().expiresAt == base.addSecs(300),
           QStringLiteral("a missing DNS TTL gets the bounded default"));
+
+    // A visible TLS SNI joins the same address index as a DNS answer. The same
+    // name from both observers is confirmed; either source alone is Likely.
+    DnsCorrelator joined(3600, 60);
+    joined.observe(answer(QStringLiteral("example.com"),
+                          QStringLiteral("93.184.216.34"), 300, 123), base);
+    TlsObservation sni;
+    sni.status = TlsSniStatus::Available;
+    sni.serverName = QStringLiteral("example.com");
+    sni.remoteAddress = QStringLiteral("93.184.216.34");
+    sni.pid = 456;
+    sni.processName = QStringLiteral("browser.exe");
+    sni.identityId = QStringLiteral("sha256:browser");
+    joined.observeTls(sni, base.addSecs(5));
+
+    const QList<DomainAttribution> joinedRecords =
+        joined.lookup(QStringLiteral("93.184.216.34"), base.addSecs(10));
+    checkEqual(static_cast<int>(joinedRecords.size()), 2,
+               QStringLiteral("DNS and TLS records are kept separately so they expire independently"));
+    DestinationNameSummary joinedSummary =
+        summarizeDestinationNames(joinedRecords, QStringLiteral("93.184.216.34"));
+    checkEqual(joinedSummary.name, QStringLiteral("example.com"),
+               QStringLiteral("the shared DNS and SNI name is selected"));
+    check(joinedSummary.source == AttributionSource::DnsAndTls,
+          QStringLiteral("the summary reports both sources"));
+    check(joinedSummary.confidence == ApplicationIdentity::Confidence::Confirmed,
+          QStringLiteral("matching DNS and SNI observations confirm the name"));
+    check(joinedSummary.evidence.size() >= 2,
+          QStringLiteral("both DNS and SNI evidence are retained"));
+    checkEqual(attributionSourceName(joinedSummary.source),
+               QStringLiteral("DNS answer + TLS SNI"),
+               QStringLiteral("a combined source is printable"));
+
+    // The shorter SNI lifetime removes only the SNI evidence; the DNS name is
+    // still available and falls back to a strong inference.
+    const DestinationNameSummary expiredSni = summarizeDestinationNames(
+        joined.lookup(QStringLiteral("93.184.216.34"), base.addSecs(66)),
+        QStringLiteral("93.184.216.34"));
+    check(expiredSni.source == AttributionSource::DnsAnswer &&
+              expiredSni.confidence == ApplicationIdentity::Confidence::StrongInference,
+          QStringLiteral("an expired SNI does not keep a DNS name confirmed"));
+
+    // A SNI without an address, or an unavailable handshake, cannot attribute a
+    // destination. A SNI-only name is still a strong inference.
+    DnsCorrelator sniOnly(3600, 60);
+    TlsObservation nameless = sni;
+    nameless.remoteAddress.clear();
+    sniOnly.observeTls(nameless, base);
+    check(sniOnly.lookup(QStringLiteral("93.184.216.34"), base).isEmpty(),
+          QStringLiteral("a SNI without a remote address is ignored"));
+
+    TlsObservation unavailable = sni;
+    unavailable.status = TlsSniStatus::EchHidden;
+    unavailable.serverName.clear();
+    sniOnly.observeTls(unavailable, base);
+    check(sniOnly.lookup(QStringLiteral("93.184.216.34"), base).isEmpty(),
+          QStringLiteral("an unavailable handshake does not create a name"));
+
+    sni.remoteAddress = QStringLiteral("203.0.113.44");
+    sniOnly.observeTls(sni, base);
+    DestinationNameSummary sniSummary = summarizeDestinationNames(
+        sniOnly.lookup(QStringLiteral("203.0.113.44"), base),
+        QStringLiteral("203.0.113.44"));
+    check(sniSummary.name == QStringLiteral("example.com") &&
+              sniSummary.source == AttributionSource::TlsSni &&
+              sniSummary.confidence == ApplicationIdentity::Confidence::StrongInference,
+          QStringLiteral("a SNI without a DNS answer is a strong inference"));
+
+    // Different names from the two observers are not a confirmation; each stays
+    // an inference and both names remain visible.
+    DnsCorrelator conflict(3600, 60);
+    conflict.observe(answer(QStringLiteral("dns.example"),
+                            QStringLiteral("198.51.100.44"), 300, 1), base);
+    TlsObservation otherSni = sni;
+    otherSni.remoteAddress = QStringLiteral("198.51.100.44");
+    otherSni.serverName = QStringLiteral("sni.example");
+    conflict.observeTls(otherSni, base.addSecs(5));
+    const DestinationNameSummary conflictSummary = summarizeDestinationNames(
+        conflict.lookup(QStringLiteral("198.51.100.44"), base.addSecs(10)),
+        QStringLiteral("198.51.100.44"));
+    check(conflictSummary.name == QStringLiteral("sni.example") &&
+              conflictSummary.confidence == ApplicationIdentity::Confidence::StrongInference &&
+              conflictSummary.names.size() == 2,
+          QStringLiteral("different DNS and SNI names are not confirmed and both are kept"));
+
     checkEqual(attributionSourceName(AttributionSource::Unknown), QStringLiteral("Unknown"),
                QStringLiteral("an unknown attribution source is printable"));
 }

@@ -45,6 +45,9 @@ struct TlsObservation
     QDateTime timestamp;
     TlsSniStatus status = TlsSniStatus::NotTls;
     QString serverName;
+    // Remote endpoint of the captured segment, filled by NetworkMonitor. Empty
+    // while parsing, because a raw record has no address of its own.
+    QString remoteAddress;
 
     quint32 pid = 0;
     QString processName;

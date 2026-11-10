@@ -79,9 +79,10 @@ public:
     bool removeProcessGroupMember(const QString &groupId, NetGuard::GroupMemberType type,
                                   const QString &value);
 
-    // NG-031: names recently resolved to a destination address, with the
-    // querying process/identity and the attribution source. Expired records are
-    // filtered, so a direct-IP connection never inherits a stale name.
+    // NG-031/NG-032: names recently resolved by DNS or seen in a visible TLS
+    // SNI for a destination address, with the owning process/identity and the
+    // attribution source. Expired records are filtered, so a direct-IP
+    // connection never inherits a stale name.
     QList<DomainAttribution> attributionsForAddress(const QString &address) const;
 
     bool    isCapturing()  const { return m_captureRunning.load(); }

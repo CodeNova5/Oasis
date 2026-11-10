@@ -1,8 +1,8 @@
 /**
  * @file    dnscorrelator.h
- * @brief   Connects recently observed DNS answers to destination addresses
- *          (NG-031), with bounded lifetime, multiple names per address, and
- *          an explicit attribution source.
+ * @brief   Connects recently observed DNS answers and visible TLS SNI names to
+ *          destination addresses (NG-031/NG-032), with bounded lifetime,
+ *          multiple names per address, and explicit attribution sources.
  * @author  Ali Sakkaf
  */
 #pragma once
@@ -15,14 +15,17 @@
 
 #include "dnsobserver.h"
 #include "network/policy.h"
+#include "tlsobserver.h"
 
-/// Where a destination record came from. NG-031 only produces DNS answers;
-/// other observers (TLS SNI, endpoint catalogs) can add sources later without
-/// making a direct-IP connection look resolved.
+/// Where a destination record came from. Records stay separate per source so a
+/// DNS answer and a TLS SNI observation can expire independently; the combined
+/// summary reports both when they name the same destination.
 enum class AttributionSource
 {
     Unknown,
-    DnsAnswer
+    DnsAnswer,
+    TlsSni,
+    DnsAndTls
 };
 
 QString attributionSourceName(AttributionSource source);
@@ -49,13 +52,34 @@ struct DomainAttribution
     QDateTime expiresAt;
 };
 
+/// One resolved view of every name observed for a destination. When DNS and TLS
+/// SNI name the same endpoint, `name` is that shared name, `source` is
+/// `DnsAndTls`, and `confidence` can be `Confirmed`; a name seen by only one
+/// observer remains a strong inference.
+struct DestinationNameSummary
+{
+    QString address;
+    QString name;
+    QStringList names;
+    AttributionSource source = AttributionSource::Unknown;
+    ApplicationIdentity::Confidence confidence = ApplicationIdentity::Confidence::Unknown;
+    QDateTime expiresAt;
+    QStringList evidence;
+};
+
+/// Combine records for one address, preferring a name observed by both DNS and
+/// TLS. The input is expected in the correlator's most-recent-first order.
+DestinationNameSummary summarizeDestinationNames(
+    const QList<DomainAttribution> &records, const QString &address);
+
 /**
  * Thread-safe, bounded address -> domain store.
  *
- * Answers expire after the smaller of the DNS TTL and `maximumTtlSeconds`, so a
- * stale mapping cannot live forever; an answer without a usable TTL gets
- * `defaultTtlSeconds`. At most eight names are kept per address and the store
- * evicts the least recently seen address when `maxAddresses` is reached.
+ * DNS answers expire after the smaller of the DNS TTL and `maximumTtlSeconds`,
+ * so a stale mapping cannot live forever; an answer without a usable TTL gets
+ * `defaultTtlSeconds`. A visible TLS SNI observation has no TTL of its own and
+ * uses `defaultTtlSeconds`. At most eight names are kept per address and the
+ * store evicts the least recently seen address when `maxAddresses` is reached.
  */
 class DnsCorrelator
 {
@@ -69,6 +93,14 @@ public:
     void observe(const DnsEvent &event,
                  const QDateTime &observedAt = QDateTime::currentDateTimeUtc());
 
+    /// Record a visible TLS SNI observation against its remote address. Only an
+    /// available SNI with a non-empty name and address creates a record; the
+    /// name is stored alongside, not merged with, any DNS record of the same
+    /// name so each source expires independently.
+    void observeTls(
+        const TlsObservation &observation,
+        const QDateTime &observedAt = QDateTime::currentDateTimeUtc());
+
     /// Names still valid for `address`, most recently seen first. Expired
     /// records are filtered even if pruning has not run yet.
     QList<DomainAttribution> lookup(
@@ -76,6 +108,11 @@ public:
         const QDateTime &now = QDateTime::currentDateTimeUtc()) const;
 
 private:
+    void recordLocked(const QString &address, const QString &name, quint32 pid,
+                      const QString &processName, const QString &identityId,
+                      AttributionSource source,
+                      ApplicationIdentity::Confidence confidence,
+                      const QDateTime &observedAt, int ttlSeconds);
     void pruneLocked(const QDateTime &now);
     void evictAddressLocked();
 

@@ -3,6 +3,7 @@
  * @author  Ali Sakkaf
  */
 #include "dnscorrelator.h"
+#include "attributionconfidence.h"
 
 #include <algorithm>
 
@@ -24,6 +25,8 @@ QString attributionSourceName(AttributionSource source)
 {
     switch (source) {
     case AttributionSource::DnsAnswer: return QStringLiteral("DNS answer");
+    case AttributionSource::TlsSni:    return QStringLiteral("TLS SNI");
+    case AttributionSource::DnsAndTls: return QStringLiteral("DNS answer + TLS SNI");
     case AttributionSource::Unknown:   break;
     }
     return QStringLiteral("Unknown");
@@ -53,63 +56,162 @@ void DnsCorrelator::observe(const DnsEvent &event, const QDateTime &observedAt)
     pruneLocked(observedAt);
 
     for (const QString &rawAddress : event.addresses) {
-        const QString address = normalizedAddress(rawAddress);
-        if (address.isEmpty()) continue;
-
-        if (!m_byAddress.contains(address) &&
-            m_byAddress.size() >= m_maxAddresses) {
-            evictAddressLocked();
-        }
-
-        QList<DomainAttribution> &records = m_byAddress[address];
-        DomainAttribution *existing = nullptr;
-        for (DomainAttribution &record : records) {
-            if (record.name == event.name) {
-                existing = &record;
-                break;
-            }
-        }
-
-        if (existing) {
-            // Refresh lifetime and evidence; firstSeen stays put so the record
-            // still shows when the name was first associated with the address.
-            existing->lastSeen = observedAt;
-            existing->expiresAt = observedAt.addSecs(ttl);
-            existing->confidence = event.confidence;
-            existing->source = AttributionSource::DnsAnswer;
-            if (event.pid != 0) {
-                existing->pid = event.pid;
-                existing->processName = event.processName;
-            }
-            if (!event.identityId.isEmpty()) {
-                existing->identityId = event.identityId;
-            }
-            continue;
-        }
-
-        if (records.size() >= kMaxNamesPerAddress) {
-            int oldest = 0;
-            for (int i = 1; i < records.size(); ++i) {
-                if (records.at(i).lastSeen < records.at(oldest).lastSeen) {
-                    oldest = i;
-                }
-            }
-            records.removeAt(oldest);
-        }
-
-        DomainAttribution record;
-        record.address = address;
-        record.name = event.name;
-        record.pid = event.pid;
-        record.processName = event.processName;
-        record.identityId = event.identityId;
-        record.confidence = event.confidence;
-        record.source = AttributionSource::DnsAnswer;
-        record.firstSeen = observedAt;
-        record.lastSeen = observedAt;
-        record.expiresAt = observedAt.addSecs(ttl);
-        records.append(record);
+        recordLocked(normalizedAddress(rawAddress), event.name, event.pid,
+                     event.processName, event.identityId,
+                     AttributionSource::DnsAnswer, event.confidence,
+                     observedAt, ttl);
     }
+}
+
+void DnsCorrelator::observeTls(const TlsObservation &observation,
+                               const QDateTime &observedAt)
+{
+    if (!observation.isAvailable()) return;
+
+    const QString address = normalizedAddress(observation.remoteAddress);
+    const QString name = observation.serverName.trimmed().toLower();
+    if (address.isEmpty() || name.isEmpty()) return;
+
+    QMutexLocker locker(&m_mutex);
+    pruneLocked(observedAt);
+    recordLocked(address, name, observation.pid, observation.processName,
+                 observation.identityId, AttributionSource::TlsSni,
+                 ApplicationIdentity::Confidence::StrongInference,
+                 observedAt, m_defaultTtlSeconds);
+}
+
+void DnsCorrelator::recordLocked(const QString &address, const QString &name,
+                                 quint32 pid, const QString &processName,
+                                 const QString &identityId,
+                                 AttributionSource source,
+                                 ApplicationIdentity::Confidence confidence,
+                                 const QDateTime &observedAt, int ttlSeconds)
+{
+    if (address.isEmpty() || name.isEmpty()) return;
+
+    if (!m_byAddress.contains(address) &&
+        m_byAddress.size() >= m_maxAddresses) {
+        evictAddressLocked();
+    }
+
+    QList<DomainAttribution> &records = m_byAddress[address];
+    DomainAttribution *existing = nullptr;
+    for (DomainAttribution &record : records) {
+        if (record.name == name && record.source == source) {
+            existing = &record;
+            break;
+        }
+    }
+
+    if (existing) {
+        // Refresh lifetime and evidence; firstSeen stays put so the record
+        // still shows when the name was first associated with the address.
+        existing->lastSeen = observedAt;
+        existing->expiresAt = observedAt.addSecs(ttlSeconds);
+        existing->confidence = confidence;
+        if (pid != 0) {
+            existing->pid = pid;
+            existing->processName = processName;
+        }
+        if (!identityId.isEmpty()) {
+            existing->identityId = identityId;
+        }
+        return;
+    }
+
+    if (records.size() >= kMaxNamesPerAddress) {
+        int oldest = 0;
+        for (int i = 1; i < records.size(); ++i) {
+            if (records.at(i).lastSeen < records.at(oldest).lastSeen) {
+                oldest = i;
+            }
+        }
+        records.removeAt(oldest);
+    }
+
+    DomainAttribution record;
+    record.address = address;
+    record.name = name;
+    record.pid = pid;
+    record.processName = processName;
+    record.identityId = identityId;
+    record.confidence = confidence;
+    record.source = source;
+    record.firstSeen = observedAt;
+    record.lastSeen = observedAt;
+    record.expiresAt = observedAt.addSecs(ttlSeconds);
+    records.append(record);
+}
+
+DestinationNameSummary summarizeDestinationNames(
+    const QList<DomainAttribution> &records, const QString &address)
+{
+    DestinationNameSummary result;
+    result.address = address;
+
+    for (const DomainAttribution &record : records) {
+        if (!record.name.isEmpty() && !result.names.contains(record.name)) {
+            result.names.append(record.name);
+        }
+    }
+    if (result.names.isEmpty()) return result;
+
+    auto isDns = [](AttributionSource source) {
+        return source == AttributionSource::DnsAnswer ||
+               source == AttributionSource::DnsAndTls;
+    };
+    auto isTls = [](AttributionSource source) {
+        return source == AttributionSource::TlsSni ||
+               source == AttributionSource::DnsAndTls;
+    };
+    auto hasSource = [&records, &isDns, &isTls](const QString &name,
+                                                bool dns, bool tls) {
+        bool foundDns = false;
+        bool foundTls = false;
+        for (const DomainAttribution &record : records) {
+            if (record.name != name) continue;
+            foundDns = foundDns || isDns(record.source);
+            foundTls = foundTls || isTls(record.source);
+        }
+        return (!dns || foundDns) && (!tls || foundTls);
+    };
+
+    // Prefer a name both observers agree on; otherwise the most recent name in
+    // the correlator's ordering is the best available inference.
+    for (const QString &name : result.names) {
+        if (hasSource(name, true, true)) {
+            result.name = name;
+            break;
+        }
+    }
+    if (result.name.isEmpty()) result.name = result.names.first();
+
+    bool dns = false;
+    bool tls = false;
+    for (const DomainAttribution &record : records) {
+        if (record.name != result.name) continue;
+        dns = dns || isDns(record.source);
+        tls = tls || isTls(record.source);
+        if (record.expiresAt.isValid() &&
+            (!result.expiresAt.isValid() || record.expiresAt > result.expiresAt)) {
+            result.expiresAt = record.expiresAt;
+        }
+    }
+
+    result.source = dns && tls ? AttributionSource::DnsAndTls
+                              : (dns ? AttributionSource::DnsAnswer
+                                     : AttributionSource::TlsSni);
+
+    AttributionConfidenceModel::DomainEvidence evidence;
+    evidence.name = result.name;
+    evidence.address = address;
+    evidence.dnsAnswer = dns;
+    evidence.tlsSni = tls;
+    const AttributionConfidenceModel::Assessment assessment =
+        AttributionConfidenceModel::forDomain(evidence);
+    result.confidence = assessment.confidence;
+    result.evidence = assessment.descriptions();
+    return result;
 }
 
 QList<DomainAttribution> DnsCorrelator::lookup(const QString &address,

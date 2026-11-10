@@ -285,12 +285,13 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
 
     if (role == Qt::ToolTipRole && col == COL_DOMAIN) {
         if (c.domain.isEmpty()) {
-            return QStringLiteral("No DNS answer has been observed for this endpoint.\n"
-                                  "A direct-IP or encrypted-DNS connection stays unattributed.");
+            return QStringLiteral("No DNS answer or TLS SNI has been observed for this endpoint.\n"
+                                  "A direct-IP, encrypted-DNS, or ECH-hidden connection stays unattributed.");
         }
         QStringList lines;
-        lines << (c.domains.size() > 1 ? QStringLiteral("DNS names for this endpoint:")
-                                       : QStringLiteral("DNS name for this endpoint:"));
+        lines << (c.domains.size() > 1
+                      ? QStringLiteral("Domain names observed for this endpoint:")
+                      : QStringLiteral("Domain name observed for this endpoint:"));
         for (const QString &name : c.domains) lines << "  " + name;
         lines << QStringLiteral("Confidence: %1 (%2)")
                      .arg(AttributionConfidenceModel::displayName(c.domainConfidence),
@@ -478,34 +479,18 @@ void NetworkTreeModel::refreshDomains()
             const QList<DomainAttribution> records =
                 m_domainResolver(c.remoteAddress);
 
-            QString domain;
-            QStringList names;
-            AttributionSource source = AttributionSource::Unknown;
-            ApplicationIdentity::Confidence confidence =
-                ApplicationIdentity::Confidence::Unknown;
-            QDateTime expiresAt;
-            QStringList evidence;
-            if (!records.isEmpty()) {
-                // lookup() returns the most recently seen name first; keep the
-                // rest for the tooltip without claiming they all arrived now.
-                domain = records.first().name;
-                source = records.first().source;
-                expiresAt = records.first().expiresAt;
-                for (const DomainAttribution &record : records) {
-                    if (!names.contains(record.name)) names << record.name;
-                }
-
-                // NG-035: a DNS answer is a strong inference, not a fact. The
-                // model also supplies the evidence text shown in the tooltip.
-                AttributionConfidenceModel::DomainEvidence domainEvidence;
-                domainEvidence.name = domain;
-                domainEvidence.address = c.remoteAddress;
-                domainEvidence.dnsAnswer = true;
-                const AttributionConfidenceModel::Assessment assessment =
-                    AttributionConfidenceModel::forDomain(domainEvidence);
-                confidence = assessment.confidence;
-                evidence = assessment.descriptions();
-            }
+            // NG-031/NG-032/NG-035: DNS answers and visible TLS SNI records
+            // share one address index. The summary prefers a name both
+            // observers agree on, so a DNS name and a matching SNI are
+            // confirmed while either alone stays Likely.
+            const DestinationNameSummary summary =
+                summarizeDestinationNames(records, c.remoteAddress);
+            const QString &domain = summary.name;
+            const QStringList &names = summary.names;
+            const AttributionSource source = summary.source;
+            const ApplicationIdentity::Confidence confidence = summary.confidence;
+            const QStringList &evidence = summary.evidence;
+            const QDateTime &expiresAt = summary.expiresAt;
 
             if (c.domain == domain && c.domains == names
                 && c.domainSource == source && c.domainConfidence == confidence
