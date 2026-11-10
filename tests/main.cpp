@@ -32,6 +32,8 @@
 #include "attribution/quicobserver.h"
 #include "attribution/endpointcatalog.h"
 #include "attribution/attributionconfidence.h"
+#include "identity/foregroundsignal.h"
+#include "identity/processlineage.h"
 #include "firewall/rulenames.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
@@ -2924,6 +2926,190 @@ void testActivityClassifier()
           QStringLiteral("the user rule keeps its source"));
 }
 
+// ─── NG-041: foreground application and active-session signal ───────────────
+// The signal is sampled, validated against the lineage, expanded to live
+// helper processes, and stamped with a freshness time. It is advisory: it can
+// qualify a classification but never overrides an explicit user policy.
+void testForegroundSignal()
+{
+    NetGuard::ProcessLineage lineage;
+    auto addProcess = [&lineage](quint32 pid, quint32 parentPid, qint64 startMs,
+                                 const QString &name) {
+        NetGuard::LineageObservation observation;
+        observation.pid            = pid;
+        observation.parentPid      = parentPid;
+        observation.startTimeMs    = startMs;
+        observation.processName    = name;
+        observation.executablePath = QStringLiteral("C:/Apps/") + name;
+        lineage.observe(observation);
+    };
+
+    // browser.exe owns the window; renderer/gpu/utility processes are its live
+    // helpers, and 200 is an unrelated process.
+    addProcess(100, 0,   1000, QStringLiteral("browser.exe"));
+    addProcess(101, 100, 2000, QStringLiteral("renderer.exe"));
+    addProcess(102, 100, 3000, QStringLiteral("gpu.exe"));
+    addProcess(103, 101, 4000, QStringLiteral("utility.exe"));
+    addProcess(104, 103, 5000, QStringLiteral("helper.exe"));
+    addProcess(105, 104, 6000, QStringLiteral("deep.exe"));
+    addProcess(106, 105, 7000, QStringLiteral("too-deep.exe"));
+    addProcess(200, 0,   8000, QStringLiteral("unrelated.exe"));
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    NetGuard::ForegroundObservation observation;
+    observation.hasWindow              = true;
+    observation.pid                    = 100;
+    observation.sessionId              = 1;
+    observation.sessionKnown           = true;
+    observation.activeConsoleSessionId = 1;
+    observation.startTimeMs            = 1000;
+    observation.sampledAtMs            = now;
+
+    const NetGuard::ForegroundSnapshot snapshot =
+        NetGuard::ForegroundSampler::buildSnapshot(observation, lineage, now);
+
+    check(snapshot.isValid(), QStringLiteral("a live foreground window is valid"));
+    checkEqual(snapshot.foregroundPid, 100u,
+               QStringLiteral("the foreground PID is reported"));
+    checkEqual(snapshot.processName, QStringLiteral("browser.exe"),
+               QStringLiteral("the foreground process name is reported"));
+    check(snapshot.activeSessionMatches(),
+          QStringLiteral("the foreground window is in the active console session"));
+
+    // A sample whose session could not be read must not claim a session match,
+    // even when the numeric IDs happen to line up.
+    NetGuard::ForegroundObservation unknownSession = observation;
+    unknownSession.sessionKnown = false;
+    const NetGuard::ForegroundSnapshot unknownSessionSnapshot =
+        NetGuard::ForegroundSampler::buildSnapshot(unknownSession, lineage, now);
+    check(!unknownSessionSnapshot.activeSessionMatches(),
+          QStringLiteral("an unread session id never matches the active session"));
+    check(unknownSessionSnapshot.isValid(),
+          QStringLiteral("an unread session id does not invalidate the window"));
+
+    checkEqual(static_cast<int>(snapshot.associationFor(100, now)),
+               static_cast<int>(NetGuard::ForegroundAssociation::ForegroundApp),
+               QStringLiteral("the window owner is the foreground application"));
+    checkEqual(static_cast<int>(snapshot.associationFor(101, now)),
+               static_cast<int>(NetGuard::ForegroundAssociation::ForegroundChild),
+               QStringLiteral("a live child is a foreground helper"));
+    checkEqual(static_cast<int>(snapshot.associationFor(200, now)),
+               static_cast<int>(NetGuard::ForegroundAssociation::None),
+               QStringLiteral("an unrelated process is not foreground"));
+
+    check(snapshot.associatedPids.contains(103)
+              && snapshot.associatedPids.contains(104)
+              && snapshot.associatedPids.contains(105),
+          QStringLiteral("helper descendants are associated with the foreground app"));
+    check(!snapshot.associatedPids.contains(106),
+          QStringLiteral("descendant expansion stops at the depth bound"));
+    check(!snapshot.associatedPids.contains(200),
+          QStringLiteral("the foreground tree never includes an unrelated process"));
+
+    // Freshness is part of the signal: an old sample reports no association.
+    check(snapshot.isFresh(now + 1000), QStringLiteral("a recent sample is fresh"));
+    check(!snapshot.isFresh(now + NetGuard::ForegroundSnapshot::kFreshnessMs + 1),
+          QStringLiteral("a sample older than the freshness window is stale"));
+    checkEqual(static_cast<int>(
+                   snapshot.associationFor(100, now
+                       + NetGuard::ForegroundSnapshot::kFreshnessMs + 1)),
+               static_cast<int>(NetGuard::ForegroundAssociation::None),
+               QStringLiteral("a stale sample never reports an association"));
+
+    // A recycled PID must not inherit the foreground state.
+    NetGuard::ForegroundObservation recycled = observation;
+    recycled.startTimeMs = 9999;
+    const NetGuard::ForegroundSnapshot recycledSnapshot =
+        NetGuard::ForegroundSampler::buildSnapshot(recycled, lineage, now);
+    check(recycledSnapshot.staleObservation,
+          QStringLiteral("a changed creation time marks the sample stale"));
+    check(!recycledSnapshot.isValid(),
+          QStringLiteral("a recycled foreground PID is not presented as valid"));
+    checkEqual(static_cast<int>(recycledSnapshot.associationFor(100, now)),
+               static_cast<int>(NetGuard::ForegroundAssociation::None),
+               QStringLiteral("a recycled PID gets no foreground association"));
+    check(recycledSnapshot.evidenceText().contains(QStringLiteral("replaced")),
+          QStringLiteral("the stale sample explains that the process was replaced"));
+
+    // No foreground window is an explicit empty answer, not a guess.
+    NetGuard::ForegroundObservation noWindow;
+    const NetGuard::ForegroundSnapshot empty =
+        NetGuard::ForegroundSampler::buildSnapshot(noWindow, lineage, now);
+    check(!empty.isValid(), QStringLiteral("no foreground window yields no signal"));
+    checkEqual(static_cast<int>(empty.associationFor(100, now)),
+               static_cast<int>(NetGuard::ForegroundAssociation::None),
+               QStringLiteral("no window means no association"));
+
+    // The lineage fills in what the raw sample could not read.
+    NetGuard::ForegroundObservation pathless = observation;
+    pathless.processName.clear();
+    pathless.executablePath.clear();
+    const NetGuard::ForegroundSnapshot filled =
+        NetGuard::ForegroundSampler::buildSnapshot(pathless, lineage, now);
+    checkEqual(filled.processName, QStringLiteral("browser.exe"),
+               QStringLiteral("the lineage supplies a missing process name"));
+    checkEqual(filled.executablePath, QStringLiteral("C:/Apps/browser.exe"),
+               QStringLiteral("the lineage supplies a missing executable path"));
+
+    // A foreground PID the lineage has not seen yet is still reported, but it
+    // has no helpers to associate.
+    NetGuard::ForegroundObservation unknownPid = observation;
+    unknownPid.pid = 999;
+    unknownPid.startTimeMs = 0;
+    const NetGuard::ForegroundSnapshot unknownSnapshot =
+        NetGuard::ForegroundSampler::buildSnapshot(unknownPid, lineage, now);
+    check(unknownSnapshot.isValid(),
+          QStringLiteral("an untracked foreground PID is still valid"));
+    checkEqual(static_cast<int>(unknownSnapshot.associatedPids.size()), 1,
+               QStringLiteral("an untracked foreground PID has no helpers"));
+
+    // The signal is advisory and cannot change enforcement by construction.
+    check(NetGuard::ForegroundSnapshot::isAdvisory(),
+          QStringLiteral("the foreground signal is advisory"));
+    check(!NetGuard::ForegroundSnapshot::canChangePolicy(),
+          QStringLiteral("the foreground signal cannot change a policy"));
+    checkEqual(NetGuard::foregroundAssociationName(
+                   NetGuard::ForegroundAssociation::ForegroundApp),
+               QStringLiteral("foreground application"),
+               QStringLiteral("the association has a plain name"));
+    check(snapshot.evidenceText().contains(QStringLiteral("Foreground application")),
+          QStringLiteral("the evidence text names the foreground application"));
+
+    // A fresh foreground sample can qualify a classification; a stale one cannot.
+    ActivityClassifier classifier;
+    ActivityQuery query;
+    query.executableName = QStringLiteral("notes.exe");
+    query.executablePath = QStringLiteral("C:/Apps/notes.exe");
+    query.bytesPerSecond = 2ULL * 1024ULL * 1024ULL;
+    query.foreground = snapshot.associationFor(101, now)
+        != NetGuard::ForegroundAssociation::None;
+    check(classifier.classify(query).category == CatalogCategory::ForegroundDownload,
+          QStringLiteral("a fresh foreground helper above the rate threshold is a "
+                         "foreground download"));
+
+    query.foreground = snapshot.associationFor(
+                          101, now + NetGuard::ForegroundSnapshot::kFreshnessMs + 1)
+        != NetGuard::ForegroundAssociation::None;
+    check(classifier.classify(query).category == CatalogCategory::Unknown,
+          QStringLiteral("a stale foreground sample does not qualify a classification"));
+
+    // An explicit user policy always wins over the advisory signal.
+    RecommendationEngine engine;
+    RecommendationContext context;
+    context.observation = query;
+    context.observation.foreground = true;
+    context.activity = classifier.classify(context.observation);
+    context.foreground = true;
+    context.bytesPerSecond = context.observation.bytesPerSecond;
+    context.explicitPolicyCovers = true;
+    const Recommendation covered = engine.recommend(context);
+    check(covered.action == RecommendationAction::NoAction,
+          QStringLiteral("an explicit policy suppresses the foreground recommendation"));
+    check(covered.title.contains(QStringLiteral("policy")),
+          QStringLiteral("the suppressed recommendation says the policy wins"));
+}
+
 // ─── NG-042: deterministic recommendation engine ────────────────────────────
 // Every recommendation is advice: it carries evidence, confidence, an expected
 // effect, and a reversal action, and nothing is ever applied automatically.
@@ -3142,6 +3328,7 @@ int main(int argc, char *argv[])
     testAttributionConfidence();
     testAttributionPrivacy();
     testActivityClassifier();
+    testForegroundSignal();
     testRecommendationEngine();
 
     QSettings().clear();

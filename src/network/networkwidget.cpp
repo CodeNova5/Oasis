@@ -217,6 +217,7 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     qRegisterMetaType<QList<CapturedPacketInfo>>("QList<CapturedPacketInfo>");
     qRegisterMetaType<NetGuard::ServicePidMap>("NetGuard::ServicePidMap");
     qRegisterMetaType<QList<NetGuard::ProcessGroup>>("QList<NetGuard::ProcessGroup>");
+    qRegisterMetaType<NetGuard::ForegroundSnapshot>("NetGuard::ForegroundSnapshot");
 
     m_model = new NetworkTreeModel(this);
     m_proxy = new QSortFilterProxyModel(this);
@@ -329,6 +330,12 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     connect(m_monitor, &NetworkMonitor::captureError, this, &NetworkWidget::onCaptureError, Qt::QueuedConnection);
     connect(m_monitor, &NetworkMonitor::captureStarted, this, &NetworkWidget::onCaptureStarted, Qt::QueuedConnection);
     connect(m_monitor, &NetworkMonitor::captureStopped, this, &NetworkWidget::onCaptureStopped, Qt::QueuedConnection);
+    // NG-041: the foreground sample is advisory and stamped with its sample
+    // time; it is kept for the classifier and future recommendation views.
+    connect(m_monitor, &NetworkMonitor::foregroundSnapshotReady, this,
+            [this](const NetGuard::ForegroundSnapshot &snapshot) {
+        m_foregroundSnapshot = snapshot;
+    }, Qt::QueuedConnection);
 
     // NG-003: capture gaps are reported on the GUI thread so the support view
     // and export only ever touch the model from one thread.

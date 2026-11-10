@@ -96,6 +96,9 @@ public:
     DiagnosticsModel *diagnosticsModel() const { return m_diagnostics; }
     // NG-036: attribution privacy controls and the history they bound.
     NetworkMonitor *networkMonitor() const { return m_monitor; }
+    // NG-041: the latest foreground sample. It is advisory, and its
+    // associationFor() refuses a sample older than its freshness window.
+    NetGuard::ForegroundSnapshot foregroundSnapshot() const { return m_foregroundSnapshot; }
 
 private:
     void populateAdapterCombo();
@@ -133,4 +136,7 @@ private:
     // Executables currently running in each activity group, kept from the last
     // group snapshot so a scheduled window can re-apply a group policy to them.
     QHash<QString, QStringList> m_runningGroupPaths;
+    // NG-041: latest advisory foreground sample, kept for the classifier and
+    // future recommendation/detail views. Never an enforcement input.
+    NetGuard::ForegroundSnapshot m_foregroundSnapshot;
 };

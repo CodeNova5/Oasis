@@ -23,6 +23,7 @@
 #include "identity/serviceresolver.h"
 #include "identity/processlineage.h"
 #include "identity/processgroupmanager.h"
+#include "identity/foregroundsignal.h"
 
 struct AdapterInfo {
     QString ip;
@@ -51,6 +52,10 @@ struct CapturedPacketInfo {
     QString groupId;
     QString groupName;
     ApplicationIdentity::Confidence groupConfidence = ApplicationIdentity::Confidence::Unknown;
+    // NG-041: whether the owning PID is the foreground application or one of its
+    // live children. Advisory only: classification and recommendations may read
+    // it, but it never applies, withdraws, or overrides a policy.
+    NetGuard::ForegroundAssociation foreground = NetGuard::ForegroundAssociation::None;
 };
 Q_DECLARE_METATYPE(QList<CapturedPacketInfo>)
 
@@ -96,6 +101,11 @@ public:
     // already shown in the tree from being applied to new connections.
     void clearAttributionHistory();
     int attributionRecordCount() const;
+
+    // NG-041: the last foreground application sample. The snapshot carries the
+    // sample time; `associationFor()` returns None once it is stale, so a caller
+    // cannot act on an old answer. The signal is advisory only.
+    NetGuard::ForegroundSnapshot foregroundSnapshot() const;
 
     bool    isCapturing()  const { return m_captureRunning.load(); }
 
@@ -144,6 +154,11 @@ signals:
     // encrypted with no hostname; unsupported versions, version negotiation,
     // and malformed packets are explicit instead of being misclassified.
     void quicObservation(const QuicObservation &observation);
+    // NG-041: the foreground application changed (window, PID, helper set, or
+    // group). Sent only when the visible state moves, so a static window does
+    // not repaint the tree every refresh. The snapshot is advisory and stamped
+    // with the time it was sampled.
+    void foregroundSnapshotReady(const NetGuard::ForegroundSnapshot &snapshot);
 
 protected:
     void run() override;
@@ -169,7 +184,7 @@ private:
     bool m_firstTick = true;
     std::chrono::steady_clock::time_point m_lastTick;
 
-    QMutex m_cacheMutex;
+    mutable QMutex m_cacheMutex;
     QHash<QString, quint32> m_tcpCache;
     QHash<QString, quint32> m_udpCache;
     QHash<quint16, quint32> m_tcpListenCache;
@@ -214,6 +229,12 @@ private:
     // Guards m_groupManager for GUI edits and holds the last published set.
     mutable QMutex m_groupMutex;
     QList<NetGuard::ProcessGroup> m_publishedGroups;
+
+    // NG-041: the last validated foreground sample, read by the packet loop
+    // under m_cacheMutex. m_lastForeground is cache-thread-only and is used to
+    // emit foregroundSnapshotReady only when the visible state changes.
+    NetGuard::ForegroundSnapshot m_foregroundCache;
+    NetGuard::ForegroundSnapshot m_lastForeground;
 
     // Throttles stale-mapping diagnostics emitted from the cache thread.
     qint64 m_lastStaleReportMs = 0;

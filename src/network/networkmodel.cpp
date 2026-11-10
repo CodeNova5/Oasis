@@ -36,11 +36,22 @@ QString signerRowText(const ProcessNode &p)
 
 // NG-040: the tooltip behind the Activity column. It names the plain category
 // with its confidence, every matched rule and the criteria that matched, and the
-// manual policy scope the user can still choose.
-QStringList activityTooltip(const ActivityClassification &activity)
+// manual policy scope the user can still choose. NG-041 adds the advisory
+// foreground signal that fed the classification.
+QStringList activityTooltip(const ActivityClassification &activity,
+                            NetGuard::ForegroundAssociation foreground =
+                                NetGuard::ForegroundAssociation::None)
 {
     QStringList lines;
     lines << QStringLiteral("Activity: %1").arg(activity.summary());
+    if (foreground == NetGuard::ForegroundAssociation::ForegroundApp) {
+        lines << QStringLiteral("Foreground: the active application "
+                                "(advisory signal, never a policy override).");
+    } else if (foreground == NetGuard::ForegroundAssociation::ForegroundChild) {
+        lines << QStringLiteral("Foreground: a live helper of the active "
+                                "application (advisory signal, never a policy "
+                                "override).");
+    }
     if (!activity.matchedRules.isEmpty()) {
         lines << QStringLiteral("Matched rules:");
         for (const CatalogMatch &rule : activity.matchedRules) {
@@ -218,10 +229,20 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                              .arg(p.groupName,
                                   NetGuard::groupConfidenceName(p.groupConfidence));
             }
+            // NG-041: the advisory foreground association behind the Activity
+            // column. It never changes or overrides a policy.
+            if (p.foreground == NetGuard::ForegroundAssociation::ForegroundApp) {
+                lines << QStringLiteral("Foreground: active application "
+                                        "(advisory, does not override policy)");
+            } else if (p.foreground == NetGuard::ForegroundAssociation::ForegroundChild) {
+                lines << QStringLiteral("Foreground: helper of the active "
+                                        "application (advisory, does not override "
+                                        "policy)");
+            }
             return lines.join('\n');
         }
         if (role == Qt::ToolTipRole && col == COL_ACTIVITY)
-            return activityTooltip(p.activity).join('\n');
+            return activityTooltip(p.activity, p.foreground).join('\n');
         if (role == Qt::ForegroundRole) {
             if (col == COL_RX) return QColor("#3B82F6");
             if (col == COL_TX) return QColor("#10B981");
@@ -267,7 +288,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
                                   NetGuard::groupConfidenceName(p.groupConfidence));
             lines << (s.acceptsStop ? "Can be stopped from Services"
                                     : "Protected service (not user-stoppable)");
-            lines << activityTooltip(p.activity);
+            lines << activityTooltip(p.activity, p.foreground);
             return lines.join('\n');
         }
         if (role == Qt::DisplayRole) {
@@ -354,7 +375,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         // it, with the same matched rules and confidence as the process row.
         QStringList lines;
         lines << QStringLiteral("Owning process: %1 (PID %2)").arg(p.name).arg(p.pid);
-        lines << activityTooltip(p.activity);
+        lines << activityTooltip(p.activity, p.foreground);
         if (!c.domain.isEmpty()) {
             lines << QStringLiteral("This connection's destination: %1 (%2)")
                          .arg(c.domain,
@@ -432,9 +453,19 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
             emit dataChanged(nameIdx, nameIdx, {Qt::ToolTipRole, Qt::UserRole + 7});
         }
 
-        // NG-040: reclassify when identity, publisher, group, or service
-        // evidence changed; refreshActivity() skips unchanged evidence, so this
-        // costs a string comparison per packet rather than a catalog match.
+        // NG-041: the foreground sample travels with the packet. refreshActivity
+        // below reclassifies when it changes; an old sample is already filtered
+        // to None by the monitor, so nothing stale is inherited here.
+        if (p.foreground != info.foreground) {
+            p.foreground = info.foreground;
+            const QModelIndex nameIdx = index(pRow, COL_NAME);
+            emit dataChanged(nameIdx, nameIdx, {Qt::ToolTipRole});
+        }
+
+        // NG-040: reclassify when identity, publisher, group, service, or
+        // foreground evidence changed; refreshActivity() skips unchanged
+        // evidence, so this costs a string comparison per packet rather than a
+        // catalog match.
         refreshActivity(pRow);
 
         const quint64 bytes  = pkt.wireLen ? pkt.wireLen : pkt.captureLen;
@@ -508,6 +539,12 @@ void NetworkTreeModel::onTick()
         p.totalRxSpeed = sumRx;
         p.totalTxSpeed = sumTx;
 
+        // NG-041: a foreground transfer can cross the classifier's sustained-rate
+        // threshold between packets. Re-evaluate only foreground rows; the
+        // signature check makes this a no-op when nothing changed.
+        if (p.foreground != NetGuard::ForegroundAssociation::None)
+            refreshActivity(pRow);
+
         // ── FIX: Emit dataChanged starting from COL_NAME to update parent UI correctly ──
         // ── FIX: Include Qt::UserRole + 5 to keep sorting updated dynamically ──
         if (!p.conns.isEmpty() || !p.services.isEmpty()) {
@@ -535,6 +572,20 @@ void NetworkTreeModel::refreshActivity(int pRow)
     signature << p.name << p.identityId << p.identityName << p.publisher
               << p.groupId << p.groupName << QString::number(p.services.size());
     if (!p.services.isEmpty()) signature << p.services.first().serviceName;
+
+    // NG-041: a foreground transfer only changes category when it crosses the
+    // classifier's sustained-rate threshold, so the boolean is part of the
+    // signature rather than the ever-changing rate itself.
+    const quint64 foregroundThreshold =
+        m_activityClassifier.foregroundDownloadThreshold();
+    const bool foregroundDownloadEligible =
+        p.foreground != NetGuard::ForegroundAssociation::None
+        && foregroundThreshold > 0
+        && p.totalRxSpeed >= foregroundThreshold;
+    signature << QString::number(static_cast<int>(p.foreground))
+              << (foregroundDownloadEligible ? QStringLiteral("1")
+                                             : QStringLiteral("0"));
+
     const QString current = signature.join(QChar('\x1f'));
     if (current == p.activitySignature) return;
     p.activitySignature = current;
@@ -547,6 +598,8 @@ void NetworkTreeModel::refreshActivity(int pRow)
     query.identityId = p.identityId;
     query.groupId = p.groupId;
     query.groupName = p.groupName;
+    query.foreground = p.foreground != NetGuard::ForegroundAssociation::None;
+    query.bytesPerSecond = p.totalRxSpeed;
     if (!p.services.isEmpty()) {
         query.serviceName = p.services.first().serviceName;
         query.service = true;

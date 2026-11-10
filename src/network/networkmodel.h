@@ -13,6 +13,7 @@
 #include <functional>
 #include "attribution/activityclassifier.h"
 #include "attribution/dnscorrelator.h"
+#include "identity/foregroundsignal.h"
 #include "packetparser.h"
 #include "network/policy.h"
 #include "identity/serviceresolver.h"
@@ -65,6 +66,9 @@ struct ProcessNode
     // evidence behind it changes (see refreshActivity()).
     ActivityClassification activity;
     QString  activitySignature;
+    // NG-041: the owning PID is the foreground application or one of its live
+    // helpers. Advisory; it feeds classification and never changes a policy.
+    NetGuard::ForegroundAssociation foreground = NetGuard::ForegroundAssociation::None;
     quint64  totalRxSpeed = 0;
     quint64  totalTxSpeed = 0;
     quint64  totalRxBytes = 0;

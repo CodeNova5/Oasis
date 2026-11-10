@@ -68,6 +68,7 @@ SOURCES += \
     src/identity/serviceresolver.cpp \
     src/identity/processlineage.cpp \
     src/identity/processgroupmanager.cpp \
+    src/identity/foregroundsignal.cpp \
     src/network/groupdetaildialog.cpp \
     src/firewall/firewallmanager.cpp \
     src/firewall/rulenames.cpp \
@@ -121,6 +122,7 @@ HEADERS += \
     src/identity/serviceresolver.h \
     src/identity/processlineage.h \
     src/identity/processgroupmanager.h \
+    src/identity/foregroundsignal.h \
     src/network/groupdetaildialog.h \
     src/firewall/firewallmanager.h \
     src/firewall/rulenames.h \

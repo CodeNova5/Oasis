@@ -159,6 +159,7 @@ NetworkMonitor::NetworkMonitor(QObject *parent) : QThread(parent)
     qRegisterMetaType<DnsEvent>("DnsEvent");
     qRegisterMetaType<TlsObservation>("TlsObservation");
     qRegisterMetaType<QuicObservation>("QuicObservation");
+    qRegisterMetaType<NetGuard::ForegroundSnapshot>("NetGuard::ForegroundSnapshot");
 
     // NG-036: honour the persisted attribution privacy choices before the first
     // packet is parsed, so a user who turned collection off never gets a brief
@@ -237,6 +238,12 @@ void NetworkMonitor::clearAttributionHistory()
 int NetworkMonitor::attributionRecordCount() const
 {
     return m_dnsCorrelator.recordCount();
+}
+
+NetGuard::ForegroundSnapshot NetworkMonitor::foregroundSnapshot() const
+{
+    QMutexLocker lk(&m_cacheMutex);
+    return m_foregroundCache;
 }
 
 void NetworkMonitor::setAdapterIP(const QString &ip)
@@ -496,6 +503,8 @@ void NetworkMonitor::run()
             QString groupId, groupName;
             ApplicationIdentity::Confidence groupConfidence =
                 ApplicationIdentity::Confidence::Unknown;
+            NetGuard::ForegroundAssociation foregroundAssociation =
+                NetGuard::ForegroundAssociation::None;
 
             if (pkt.protocol.startsWith("TCP") || pkt.protocol.startsWith("UDP")) {
                 QString sPortStr = QString::number(pkt.srcPort);
@@ -565,6 +574,12 @@ void NetworkMonitor::run()
                     groupName = groupIt->groupName;
                     groupConfidence = groupIt->confidence;
                 }
+
+                // NG-041: the foreground snapshot is read under the same lock as
+                // the caches above. Freshness is checked here, so an old sample
+                // never marks a packet as foreground.
+                foregroundAssociation = m_foregroundCache.associationFor(
+                    pid, QDateTime::currentMSecsSinceEpoch());
             }
 
             // NG-030: passive DNS. The raw datagram is still available here, so
@@ -635,7 +650,8 @@ void NetworkMonitor::run()
 
             batch.append({pkt, pid, proc, isSvc, identityId, identityName,
                           identityPublisher, signerStatus, processStartMs,
-                          parentPid, parentName, groupId, groupName, groupConfidence});
+                          parentPid, parentName, groupId, groupName, groupConfidence,
+                          foregroundAssociation});
 
             qint64 now = QDateTime::currentMSecsSinceEpoch();
             if (now - lastBatchTime >= 250 || batch.size() >= 3000) {
@@ -787,7 +803,8 @@ void NetworkMonitor::updateCaches()
 
     // Processes are observed every 200 ms, so anything unseen for 30 s is gone;
     // its record is kept for 5 minutes so helpers can still be related by PID.
-    m_lineage.expire(QDateTime::currentMSecsSinceEpoch());
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    m_lineage.expire(nowMs);
     QVector<NetGuard::LineageTransition> reusedPids;
 
     DWORD aProcs[1024], cbNeeded, cProcs;
@@ -972,10 +989,37 @@ void NetworkMonitor::updateCaches()
     }
     syncGroupSnapshot();
 
+    // ── 3f. Sample the foreground application (NG-041) ──
+    // The sample is validated against the lineage just refreshed above, so a
+    // recycled PID is discarded and the live helper processes that carry a
+    // browser's traffic are included. The result is advisory and stamped with
+    // the sample time; nothing here changes a policy.
+    NetGuard::ForegroundSnapshot foreground =
+        NetGuard::ForegroundSampler::sample(m_lineage, nowMs);
+    if (foreground.isValid()) {
+        const auto group = groupBindings.constFind(foreground.foregroundPid);
+        if (group != groupBindings.constEnd() && group->isValid()) {
+            foreground.groupId = group->groupId;
+            foreground.groupName = group->groupName;
+        }
+    }
+
+    const bool foregroundChanged =
+        m_lastForeground.hasForegroundWindow != foreground.hasForegroundWindow
+        || m_lastForeground.staleObservation != foreground.staleObservation
+        || m_lastForeground.foregroundPid != foreground.foregroundPid
+        || m_lastForeground.sessionId != foreground.sessionId
+        || m_lastForeground.associatedPids != foreground.associatedPids
+        || m_lastForeground.processName != foreground.processName
+        || m_lastForeground.groupId != foreground.groupId;
+    if (foregroundChanged) {
+        m_lastForeground = foreground;
+        emit foregroundSnapshotReady(foreground);
+    }
+
     // ── 4. Detect stale mappings: a connection key changed owner ──
     // Rate-limited to once per 5 seconds so a churning table cannot flood
     // the diagnostics model.
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     if (nowMs - m_lastStaleReportMs >= 5000) {
         QList<QPair<quint32, quint32>> changes; // old pid -> new pid
         {
@@ -1012,6 +1056,7 @@ void NetworkMonitor::updateCaches()
     m_serviceCache = servicesForActive;
     m_lineageCache = lineageForActive;
     m_groupCache = groupBindings;
+    m_foregroundCache = foreground;
 }
 
 void NetworkMonitor::refreshLocalIPs()
