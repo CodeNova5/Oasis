@@ -24,6 +24,7 @@
 #include <QTimeZone>
 
 #include "attribution/activityclassifier.h"
+#include "attribution/aicontext.h"
 #include "attribution/recommendationengine.h"
 #include "attribution/recommendationfeedback.h"
 #include "attribution/attributionprivacy.h"
@@ -3518,6 +3519,225 @@ void testRecommendationFeedback()
     QSettings().clear();
 }
 
+// ─── NG-044: structured AI context ─────────────────────────────────────────
+// The context is metadata only, names every field it does not know, is bounded
+// to a fixed payload size, and can be reviewed before anything is sent.
+void testAiContext()
+{
+    auto arrayHas = [](const QJsonArray &array, const QString &text) {
+        for (const QJsonValue &value : array) {
+            if (value.toString() == text) return true;
+        }
+        return false;
+    };
+
+    ActivityClassifier classifier;
+    RecommendationEngine engine;
+    RecommendationFeedbackStore store;
+    store.clear();
+    engine.setFeedbackStore(&store);
+
+    RecommendationContext context;
+    context.observation.identityId = QStringLiteral("sha1-4f2a");
+    context.observation.displayName = QStringLiteral("Google Update");
+    context.observation.executableName = QStringLiteral("updater.exe");
+    context.observation.executablePath =
+        QStringLiteral("C:/Users/alice/AppData/Local/Google/updater.exe");
+    context.observation.publisher = QStringLiteral("Google LLC");
+    context.observation.product = QStringLiteral("Google Update");
+    context.observation.publisherVerified = true;
+    context.observation.serviceName = QStringLiteral("gupdate");
+    context.observation.groupName = QStringLiteral("Google");
+    context.observation.domain = QStringLiteral("update.googleapis.com");
+    context.observation.remoteAddress = QStringLiteral("142.250.1.2");
+    context.activity = classifier.classify(context.observation);
+    context.bytesPerSecond = 4ULL * 1024ULL * 1024ULL;
+    context.foreground = false;
+    context.meteredConnection = true;
+
+    const Recommendation recommendation = engine.recommend(context);
+    check(recommendation.action == RecommendationAction::Throttle,
+          QStringLiteral("the fixture activity still recommends a throttle"));
+    check(recommendation.hasSuggestedPolicy(),
+          QStringLiteral("the fixture recommendation offers a policy seed"));
+
+    const AiContext ai = AiContext::forRecommendation(context, recommendation);
+    check(!ai.isEmpty(), QStringLiteral("a context is built from a recommendation"));
+
+    const QString json = ai.toJson();
+    const QJsonObject root = objectOf(json);
+    checkEqual(root.value(QStringLiteral("schemaVersion")).toInt(),
+               AiContext::kSchemaVersion,
+               QStringLiteral("the AI context is versioned"));
+    checkEqual(root.value(QStringLiteral("format")).toString(),
+               AiContext::formatToken(),
+               QStringLiteral("the AI context carries a stable format marker"));
+    check(root.value(QStringLiteral("generatedAt")).toString().endsWith('Z'),
+          QStringLiteral("the context records when it was generated"));
+
+    const QJsonObject identity = root.value(QStringLiteral("identity")).toObject();
+    checkEqual(identity.value(QStringLiteral("executable")).toString(),
+               QStringLiteral("updater.exe"),
+               QStringLiteral("only the executable base name is sent"));
+    checkEqual(identity.value(QStringLiteral("publisher")).toString(),
+               QStringLiteral("Google LLC"),
+               QStringLiteral("the publisher metadata is metadata, not a destination"));
+
+    const QJsonObject classification =
+        root.value(QStringLiteral("classification")).toObject();
+    checkEqual(classification.value(QStringLiteral("category")).toString(),
+               QStringLiteral("browser-update"),
+               QStringLiteral("the classification token is carried"));
+    checkEqual(classification.value(QStringLiteral("confidenceIsCertain")).toBool(),
+               false, QStringLiteral("a strong inference is not presented as a fact"));
+    check(!classification.value(QStringLiteral("rules")).toArray().isEmpty(),
+          QStringLiteral("the matched local rules are carried as evidence"));
+
+    const QJsonObject activity = root.value(QStringLiteral("activity")).toObject();
+    checkEqual(activity.value(QStringLiteral("destination")).toString(),
+               QStringLiteral("***.com"),
+               QStringLiteral("the destination keeps only its top-level label"));
+    checkEqual(static_cast<quint64>(
+                   activity.value(QStringLiteral("bytesPerSecond")).toDouble()),
+               context.bytesPerSecond,
+               QStringLiteral("only the aggregate rate is carried"));
+    checkEqual(activity.value(QStringLiteral("metered")).toBool(), true,
+               QStringLiteral("the metered session fact is carried"));
+
+    const QJsonObject recommendationJson =
+        root.value(QStringLiteral("recommendation")).toObject();
+    checkEqual(recommendationJson.value(QStringLiteral("action")).toString(),
+               QStringLiteral("throttle"),
+               QStringLiteral("the recommended action token is carried"));
+    checkEqual(recommendationJson.value(QStringLiteral("policyScope")).toString(),
+               recommendation.suggestedPolicy.scope,
+               QStringLiteral("only the policy scope token is sent"));
+
+    // Nothing that identifies where the user went, or where the app lives, is
+    // in the payload.
+    check(!json.contains(QStringLiteral("update.googleapis.com"))
+              && !json.contains(QStringLiteral("142.250.1.2")),
+          QStringLiteral("the context carries no raw destination or address"));
+    check(!json.contains(QStringLiteral("C:/Users"))
+              && !json.contains(QStringLiteral("targetId")),
+          QStringLiteral("the context carries no path or policy target id"));
+
+    // A field the caller cannot supply is named, not silently empty.
+    AiContext sparse;
+    sparse.executableName = QStringLiteral("tool.exe");
+    const QStringList unknown = sparse.unknownFields();
+    check(unknown.contains(QStringLiteral("identity.publisher"))
+              && unknown.contains(QStringLiteral("activity.destination"))
+              && unknown.contains(QStringLiteral("recommendation.policyScope")),
+          QStringLiteral("the schema names the fields it does not know"));
+    check(!unknown.contains(QStringLiteral("identity.executable")),
+          QStringLiteral("a supplied field is not listed as unknown"));
+    const QJsonObject sparseRoot = objectOf(sparse.toJson());
+    check(arrayHas(sparseRoot.value(QStringLiteral("unknown")).toArray(),
+                   QStringLiteral("identity.publisher")),
+          QStringLiteral("the payload serialises its unknown fields"));
+    check(!sparse.toJson().contains(QStringLiteral("publisherVerified")),
+          QStringLiteral("an unknown publisher is not guessed to be verified"));
+
+    // Free text is redacted and cannot smuggle a second line into the payload.
+    AiContext leaky;
+    leaky.displayName = QStringLiteral("Evil\nName");
+    leaky.evidence << QStringLiteral("contacted update.googleapis.com from 142.250.1.2");
+    const QString leakyJson = leaky.toJson();
+    check(!leakyJson.contains(QStringLiteral("update.googleapis.com"))
+              && !leakyJson.contains(QStringLiteral("142.250.1.2")),
+          QStringLiteral("free-text evidence is redacted too"));
+    check(!leakyJson.contains(QStringLiteral("Evil\nName")),
+          QStringLiteral("control characters are removed from the payload"));
+
+    // The size limit holds even when every optional field is oversized.
+    AiContext huge;
+    huge.displayName = QString(8000, QLatin1Char('a'));
+    huge.publisher = QString(8000, QLatin1Char('b'));
+    huge.serviceName = QString(8000, QLatin1Char('c'));
+    huge.groupName = QString(8000, QLatin1Char('d'));
+    huge.destination = QString(8000, QLatin1Char('e')) + QStringLiteral(".example.com");
+    huge.categoryName = QString(8000, QLatin1Char('f'));
+    huge.recommendedAction = QStringLiteral("throttle");
+    huge.policyScope = QString(8000, QLatin1Char('g'));
+    huge.bytesPerSecond = 123456789; // 117 MiB/s
+    for (int i = 0; i < 64; ++i) {
+        huge.matchedRuleIds << QString(200, QLatin1Char('r')) + QString::number(i);
+        huge.evidence << QString(400, QLatin1Char('e')) + QString::number(i);
+    }
+    const AiContextPayload bounded = huge.boundedJson();
+    check(bounded.fits(), QStringLiteral("a pathological context is bounded"));
+    check(bounded.bytes() <= AiContext::kMaxBytes,
+          QStringLiteral("the bounded payload respects the byte limit"));
+    check(!bounded.truncatedFields.isEmpty(),
+          QStringLiteral("a bounded context reports what it shortened"));
+    check(bounded.json.contains(QStringLiteral("\"truncated\"")),
+          QStringLiteral("the payload records the fields it shortened"));
+    check(bounded.json.contains(QStringLiteral("\"unknown\"")),
+          QStringLiteral("the payload always records unknown fields"));
+    huge.destination.clear();
+    huge.evidence.clear();
+    huge.matchedRuleIds.clear();
+    huge.policyScope.clear();
+    huge.publisher.clear();
+    huge.serviceName.clear();
+    huge.groupName.clear();
+    huge.categoryName.clear();
+    check(huge.boundedJson().truncatedFields.contains(QStringLiteral("identity.name")),
+          QStringLiteral("an over-long value is reported as shortened"));
+
+    // The payload can be read back for inspection.
+    bool ok = false;
+    const AiContext parsed = AiContext::fromJson(json, &ok);
+    check(ok, QStringLiteral("an AI context payload parses back"));
+    checkEqual(parsed.categoryToken, QStringLiteral("browser-update"),
+               QStringLiteral("the category token round-trips"));
+    checkEqual(parsed.destination, QStringLiteral("***.com"),
+               QStringLiteral("the redacted destination round-trips"));
+    checkEqual(parsed.executableName, QStringLiteral("updater.exe"),
+               QStringLiteral("the executable base name round-trips"));
+    checkEqual(parsed.bytesPerSecond, context.bytesPerSecond,
+               QStringLiteral("the aggregate rate round-trips"));
+
+    // The review text is exactly what a user would inspect before approving.
+    const QString preview = ai.previewText();
+    check(preview.contains(QStringLiteral("***.com")),
+          QStringLiteral("the review shows the redacted destination that would be sent"));
+    check(preview.contains(QStringLiteral("Browser update")),
+          QStringLiteral("the review names the classification"));
+    check(preview.contains(QStringLiteral("Payload:")),
+          QStringLiteral("the review states the payload size against the limit"));
+    check(!preview.contains(QStringLiteral("update.googleapis.com")),
+          QStringLiteral("the review never shows the raw destination"));
+    check(preview.contains(QStringLiteral("Not included (unknown):"))
+              || ai.unknownFields().isEmpty(),
+          QStringLiteral("the review lists the fields the context omits"));
+    check(ai.previewLines().size() >= 5,
+          QStringLiteral("the review is a line-by-line breakdown"));
+
+    // A newer or foreign document is rejected as a whole.
+    QJsonObject newer = root;
+    newer[QStringLiteral("schemaVersion")] = AiContext::kSchemaVersion + 1;
+    ok = true;
+    AiContext::fromJson(
+        QString::fromUtf8(QJsonDocument(newer).toJson(QJsonDocument::Compact)), &ok);
+    check(!ok, QStringLiteral("a newer AI context schema is rejected"));
+
+    QJsonObject foreign = root;
+    foreign[QStringLiteral("format")] = QStringLiteral("netguard.something-else");
+    ok = true;
+    AiContext::fromJson(
+        QString::fromUtf8(QJsonDocument(foreign).toJson(QJsonDocument::Compact)), &ok);
+    check(!ok, QStringLiteral("a document with another format is rejected"));
+
+    ok = true;
+    AiContext::fromJson(QStringLiteral("not json"), &ok);
+    check(!ok, QStringLiteral("a malformed AI context is rejected"));
+
+    store.clear();
+    QSettings().clear();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -3560,6 +3780,7 @@ int main(int argc, char *argv[])
     testForegroundSignal();
     testRecommendationEngine();
     testRecommendationFeedback();
+    testAiContext();
 
     QSettings().clear();
 

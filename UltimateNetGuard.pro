@@ -60,6 +60,7 @@ SOURCES += \
     src/attribution/activityclassifier.cpp \
     src/attribution/recommendationengine.cpp \
     src/attribution/recommendationfeedback.cpp \
+    src/attribution/aicontext.cpp \
     src/attribution/dnscorrelator.cpp \
     src/attribution/tlsobserver.cpp \
     src/attribution/quicobserver.cpp \
@@ -117,6 +118,7 @@ HEADERS += \
     src/attribution/activityclassifier.h \
     src/attribution/recommendationengine.h \
     src/attribution/recommendationfeedback.h \
+    src/attribution/aicontext.h \
     src/attribution/dnscorrelator.h \
     src/attribution/tlsobserver.h \
     src/attribution/quicobserver.h \
