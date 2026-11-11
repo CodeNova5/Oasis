@@ -217,10 +217,11 @@ AiProviderSettings AiProviderSettingsStore::fromJson(const QString &json, bool *
         root.value(QStringLiteral("endpoint")).toString().trimmed();
     settings.model = root.value(QStringLiteral("model")).toString().trimmed();
     settings.timeoutSeconds = clampedTimeout(
-        root.value(QStringLiteral("timeoutSeconds")).toInt(kDefaultTimeoutSeconds));
+        root.value(QStringLiteral("timeoutSeconds"))
+            .toInt(AiProviderSettings::kDefaultTimeoutSeconds));
     settings.responseCharacterLimit = clampedResponseCharacters(
         root.value(QStringLiteral("responseCharacterLimit"))
-            .toInt(kDefaultResponseCharacters));
+            .toInt(AiProviderSettings::kDefaultResponseCharacters));
 
     if (ok) *ok = true;
     return settings;

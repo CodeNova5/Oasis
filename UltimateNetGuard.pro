@@ -61,6 +61,8 @@ SOURCES += \
     src/attribution/recommendationengine.cpp \
     src/attribution/recommendationfeedback.cpp \
     src/attribution/aicontext.cpp \
+    src/attribution/aiprovider.cpp \
+    src/attribution/openaiadapter.cpp \
     src/attribution/dnscorrelator.cpp \
     src/attribution/tlsobserver.cpp \
     src/attribution/quicobserver.cpp \
@@ -119,6 +121,8 @@ HEADERS += \
     src/attribution/recommendationengine.h \
     src/attribution/recommendationfeedback.h \
     src/attribution/aicontext.h \
+    src/attribution/aiprovider.h \
+    src/attribution/openaiadapter.h \
     src/attribution/dnscorrelator.h \
     src/attribution/tlsobserver.h \
     src/attribution/quicobserver.h \

@@ -25,6 +25,8 @@
 
 #include "attribution/activityclassifier.h"
 #include "attribution/aicontext.h"
+#include "attribution/aiprovider.h"
+#include "attribution/openaiadapter.h"
 #include "attribution/recommendationengine.h"
 #include "attribution/recommendationfeedback.h"
 #include "attribution/attributionprivacy.h"
@@ -3738,6 +3740,294 @@ void testAiContext()
     QSettings().clear();
 }
 
+// ─── NG-045: optional AI provider adapter ──────────────────────────────────
+// AI is off unless configured; the provider only receives the bounded context;
+// and every failure returns the unchanged local recommendation.
+class FakeAiProvider : public AiProvider
+{
+public:
+    QString name() const override { return QStringLiteral("fake-provider"); }
+
+    AiProviderResponse explain(const AiContextPayload &payload,
+                               const AiProviderSettings &settings) override
+    {
+        ++calls;
+        lastPayload = payload.json;
+        lastModel = settings.model;
+        return response;
+    }
+
+    int calls = 0;
+    QString lastPayload;
+    QString lastModel;
+    AiProviderResponse response;
+};
+
+void testAiProvider()
+{
+    QSettings().clear();
+
+    // Off by default, in memory and from an empty store.
+    const AiProviderSettings defaults;
+    check(!defaults.enabled, QStringLiteral("AI is disabled by default"));
+    check(!defaults.isUsable(), QStringLiteral("the default settings cannot be used"));
+    check(!AiProviderSettingsStore().load().enabled,
+          QStringLiteral("stored settings default to disabled"));
+
+    // The endpoint must be safe before a context could be posted to it.
+    AiProviderSettings settings;
+    settings.enabled = true;
+    settings.model = QStringLiteral("some-model");
+    check(!settings.isUsable(),
+          QStringLiteral("an enabled provider without an endpoint is unusable"));
+    settings.endpoint = QStringLiteral("http://api.example.com/v1/chat/completions");
+    check(!settings.endpointProblem().isEmpty() && !settings.isUsable(),
+          QStringLiteral("a remote plain-HTTP endpoint is refused"));
+    settings.endpoint = QStringLiteral("http://127.0.0.1:8080/v1/chat/completions");
+    check(settings.isUsable(),
+          QStringLiteral("loopback HTTP is allowed for a local provider"));
+    settings.endpoint = QStringLiteral("https://api.example.com/v1/chat/completions");
+    check(settings.isUsable(),
+          QStringLiteral("an HTTPS endpoint with a model is usable"));
+    settings.endpoint = QStringLiteral("ftp://api.example.com/x");
+    check(!settings.endpointProblem().isEmpty(),
+          QStringLiteral("a non-HTTP endpoint scheme is refused"));
+    settings.endpoint = QStringLiteral("https://api.example.com/v1/chat/completions");
+
+    // The local advice the provider must never change.
+    Recommendation local;
+    local.action = RecommendationAction::Throttle;
+    local.category = CatalogCategory::BrowserUpdate;
+    local.title = QStringLiteral("Limit background browser updates");
+    local.feedbackKey = QStringLiteral("browser-update|id:sha1-4f2a");
+    local.suggestedPolicy.scope = QStringLiteral("path");
+    local.suggestedPolicy.targetId = QStringLiteral("C:/Apps/updater.exe");
+    local.suggestedPolicy.rateBitsPerSecond = 2ULL * 1024ULL * 1024ULL;
+
+    AiContext context;
+    context.executableName = QStringLiteral("updater.exe");
+    context.categoryToken = QStringLiteral("browser-update");
+    context.categoryName = QStringLiteral("Browser update");
+    context.destination = QStringLiteral("***.com");
+    context.bytesPerSecond = 4ULL * 1024ULL * 1024ULL;
+    context.recommendedAction = QStringLiteral("throttle");
+
+    FakeAiProvider provider;
+    provider.response.ok = true;
+    provider.response.text = QStringLiteral("This is an updater.");
+
+    // Disabled: no request, local advice preserved.
+    AiAssistant disabledAssistant;
+    disabledAssistant.setSettings(defaults);
+    disabledAssistant.setProvider(&provider);
+    const AiAssistResult disabled = disabledAssistant.explain(context, local);
+    check(disabled.status == AiAssistStatus::Disabled,
+          QStringLiteral("a disabled assistant does not ask the provider"));
+    checkEqual(provider.calls, 0,
+               QStringLiteral("no request is made while AI is off"));
+    check(disabled.degraded() && !disabled.usedProvider(),
+          QStringLiteral("the disabled result is the local fallback"));
+    check(disabled.localRecommendation.action == local.action
+              && disabled.localRecommendation.title == local.title
+              && disabled.localRecommendation.suggestedPolicy.targetId
+                     == local.suggestedPolicy.targetId
+              && disabled.localRecommendation.suggestedPolicy.rateBitsPerSecond
+                     == local.suggestedPolicy.rateBitsPerSecond,
+          QStringLiteral("the local recommendation is returned unchanged"));
+    check(!disabled.enforcesAnything(),
+          QStringLiteral("an AI result never enforces anything"));
+    check(!disabled.explanation.fromProvider,
+          QStringLiteral("a disabled result carries no provider explanation"));
+    check(disabled.summary().contains(QStringLiteral("local recommendation")),
+          QStringLiteral("the disabled result explains the fallback"));
+
+    // Enabled but not configured: still no request.
+    AiProviderSettings enabledOnly;
+    enabledOnly.enabled = true;
+    AiAssistant unconfiguredAssistant;
+    unconfiguredAssistant.setSettings(enabledOnly);
+    unconfiguredAssistant.setProvider(&provider);
+    provider.calls = 0;
+    const AiAssistResult unconfigured =
+        unconfiguredAssistant.explain(context, local);
+    check(unconfigured.status == AiAssistStatus::Unavailable,
+          QStringLiteral("an unconfigured provider is unavailable"));
+    checkEqual(provider.calls, 0,
+               QStringLiteral("an unconfigured provider is never called"));
+    check(unconfigured.degraded(),
+          QStringLiteral("an unconfigured provider degrades to the local recommendation"));
+
+    // Configured, but no adapter installed.
+    AiAssistant noProviderAssistant;
+    noProviderAssistant.setSettings(settings);
+    const AiAssistResult missing = noProviderAssistant.explain(context, local);
+    check(missing.status == AiAssistStatus::Unavailable,
+          QStringLiteral("a missing adapter is reported, not guessed"));
+    check(missing.detail.contains(QStringLiteral("No AI provider")),
+          QStringLiteral("the missing adapter is named"));
+
+    // A successful answer adds explanation text, and nothing else.
+    provider.response = AiProviderResponse();
+    provider.response.ok = true;
+    provider.response.text =
+        QStringLiteral("Likely a browser updater.\nIt can be reversed from the policy list.");
+    provider.response.model = QStringLiteral("model-x");
+    provider.calls = 0;
+    AiAssistant assistant;
+    assistant.setSettings(settings);
+    assistant.setProvider(&provider);
+    const AiAssistResult explained = assistant.explain(context, local);
+    check(explained.status == AiAssistStatus::Explained
+              && explained.usedProvider() && !explained.degraded(),
+          QStringLiteral("a successful answer is reported as explained"));
+    checkEqual(provider.calls, 1,
+               QStringLiteral("the provider is called exactly once"));
+    checkEqual(provider.lastPayload, context.toJson(),
+               QStringLiteral("the provider receives exactly the bounded context"));
+    checkEqual(provider.lastModel, settings.model,
+               QStringLiteral("the configured model is used"));
+    checkEqual(explained.explanation.model, QStringLiteral("model-x"),
+               QStringLiteral("the model that answered is reported"));
+    checkEqual(explained.explanation.providerName, QStringLiteral("fake-provider"),
+               QStringLiteral("the adapter name is reported"));
+    check(explained.explanation.fromProvider
+              && explained.explanation.text.contains(QLatin1Char('\n')),
+          QStringLiteral("the explanation keeps its line breaks"));
+    check(explained.localRecommendation.action == local.action
+              && explained.localRecommendation.feedbackKey == local.feedbackKey
+              && explained.localRecommendation.suggestedPolicy.targetId
+                     == local.suggestedPolicy.targetId,
+          QStringLiteral("the provider cannot change the local recommendation"));
+    check(explained.summary().contains(QStringLiteral("fake-provider")),
+          QStringLiteral("the summary credits the provider"));
+
+    // Provider output that looks like a policy is only text.
+    provider.response.text = QStringLiteral("{\"action\":\"block\",\"scope\":\"path\"}");
+    const AiAssistResult textual = assistant.explain(context, local);
+    checkEqual(textual.localRecommendation.suggestedPolicy.scope, QStringLiteral("path"),
+               QStringLiteral("a policy-shaped answer cannot change the scope"));
+    check(textual.localRecommendation.action == RecommendationAction::Throttle,
+          QStringLiteral("a policy-shaped answer cannot change the action"));
+    check(!textual.localRecommendation.suggestedPolicy.description.contains("block"),
+          QStringLiteral("a policy-shaped answer is not written into the policy seed"));
+
+    // A failed request degrades to the local recommendation.
+    provider.response = AiProviderResponse();
+    provider.response.failure = AiFailure::Network;
+    const AiAssistResult failed = assistant.explain(context, local);
+    check(failed.status == AiAssistStatus::Failed && failed.degraded(),
+          QStringLiteral("a provider failure degrades to the local recommendation"));
+    check(failed.localRecommendation.suggestedPolicy.targetId
+              == local.suggestedPolicy.targetId,
+          QStringLiteral("the local policy seed survives a provider failure"));
+    check(!failed.detail.isEmpty() && failed.explanation.isEmpty(),
+          QStringLiteral("a failure reports why and carries no explanation"));
+
+    // An empty answer is a failure, not a blank explanation.
+    provider.response = AiProviderResponse();
+    provider.response.ok = true;
+    provider.response.text = QStringLiteral("   ");
+    const AiAssistResult empty = assistant.explain(context, local);
+    check(empty.status == AiAssistStatus::Failed
+              && empty.detail.contains(QStringLiteral("empty")),
+          QStringLiteral("an empty provider answer degrades to the local advice"));
+
+    // The displayed explanation is sanitised and capped.
+    provider.response = AiProviderResponse();
+    provider.response.ok = true;
+    provider.response.text =
+        QStringLiteral("bad\x07 text\n") + QString(5000, QLatin1Char('x'));
+    AiProviderSettings capped = settings;
+    capped.responseCharacterLimit = 300;
+    assistant.setSettings(capped);
+    const AiAssistResult bounded = assistant.explain(context, local);
+    check(bounded.status == AiAssistStatus::Explained,
+          QStringLiteral("an over-long answer is still usable"));
+    check(bounded.explanation.text.size() <= 300,
+          QStringLiteral("the explanation is capped at the configured length"));
+    check(!bounded.explanation.text.contains(QChar(0x07)),
+          QStringLiteral("control characters are removed from an explanation"));
+    assistant.setSettings(settings);
+
+    // Settings are versioned, clamped, and hold no credential.
+    AiProviderSettings persisted;
+    persisted.enabled = true;
+    persisted.endpoint = QStringLiteral("https://api.example.com/v1/chat/completions");
+    persisted.model = QStringLiteral("model-y");
+    persisted.timeoutSeconds = 1;
+    persisted.responseCharacterLimit = 99999;
+    AiProviderSettingsStore settingsStore;
+    check(settingsStore.save(persisted),
+          QStringLiteral("AI settings save without a store error"));
+    const AiProviderSettings reloaded = settingsStore.load();
+    check(reloaded.enabled && reloaded.endpoint == persisted.endpoint
+              && reloaded.model == QStringLiteral("model-y"),
+          QStringLiteral("AI settings round-trip"));
+    checkEqual(reloaded.timeoutSeconds, AiProviderSettings::kMinTimeoutSeconds,
+               QStringLiteral("the timeout is clamped up to the minimum"));
+    checkEqual(reloaded.responseCharacterLimit,
+               AiProviderSettings::kMaxResponseCharacters,
+               QStringLiteral("the response cap is clamped down to the maximum"));
+    {
+        AiAssistant fromStore;
+        check(fromStore.settings().enabled
+                  && fromStore.settings().model == QStringLiteral("model-y"),
+              QStringLiteral("a fresh assistant loads the stored settings"));
+    }
+
+    const QString settingsJson = AiProviderSettingsStore::toJson(reloaded);
+    checkEqual(objectOf(settingsJson).value(QStringLiteral("schemaVersion")).toInt(),
+               AiProviderSettingsStore::kSchemaVersion,
+               QStringLiteral("the AI settings payload is versioned"));
+    check(!settingsJson.toLower().contains(QStringLiteral("key")),
+          QStringLiteral("the AI settings payload stores no credential"));
+
+    bool ok = false;
+    const AiProviderSettings parsed = AiProviderSettingsStore::fromJson(settingsJson, &ok);
+    check(ok && parsed.enabled, QStringLiteral("AI settings parse back"));
+
+    QJsonObject newer = objectOf(settingsJson);
+    newer[QStringLiteral("schemaVersion")] =
+        AiProviderSettingsStore::kSchemaVersion + 1;
+    ok = true;
+    const AiProviderSettings rejected = AiProviderSettingsStore::fromJson(
+        QString::fromUtf8(QJsonDocument(newer).toJson(QJsonDocument::Compact)), &ok);
+    check(!ok && !rejected.enabled,
+          QStringLiteral("a newer AI settings schema falls back to disabled"));
+
+    ok = true;
+    AiProviderSettingsStore::fromJson(QStringLiteral("not json"), &ok);
+    check(!ok, QStringLiteral("malformed AI settings are rejected"));
+
+    // The shipped adapter refuses an unsafe endpoint and a missing key without
+    // touching the network.
+    OpenAiCompatibleProvider adapter;
+    checkEqual(OpenAiCompatibleProvider::apiKeyEnvironmentVariable(),
+               QStringLiteral("NETGUARD_AI_API_KEY"),
+               QStringLiteral("the adapter reads its key from a fixed environment variable"));
+    check(OpenAiCompatibleProvider::systemPrompt().contains(QStringLiteral("Do not propose"))
+              && OpenAiCompatibleProvider::systemPrompt().contains(QStringLiteral("policy")),
+          QStringLiteral("the system prompt forbids proposing a policy"));
+    check(OpenAiCompatibleProvider::maxResponseBytes() > 0,
+          QStringLiteral("the adapter bounds the raw reply size"));
+
+    AiProviderSettings insecure = settings;
+    insecure.endpoint = QStringLiteral("http://api.example.com/v1/chat/completions");
+    const AiProviderResponse refused =
+        adapter.explain(context.boundedJson(), insecure);
+    check(!refused.ok && refused.failure == AiFailure::UnsupportedEndpoint,
+          QStringLiteral("the shipped adapter refuses a remote plain-HTTP endpoint"));
+
+    qunsetenv("NETGUARD_AI_API_KEY");
+    const AiProviderResponse keyless =
+        adapter.explain(context.boundedJson(), settings);
+    check(!keyless.ok && keyless.failure == AiFailure::NotConfigured,
+          QStringLiteral("the shipped adapter reports a missing key without a request"));
+
+    settingsStore.reset();
+    QSettings().clear();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -3781,6 +4071,7 @@ int main(int argc, char *argv[])
     testRecommendationEngine();
     testRecommendationFeedback();
     testAiContext();
+    testAiProvider();
 
     QSettings().clear();
 
