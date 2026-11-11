@@ -109,6 +109,7 @@ HEADERS += \
     src/network/policyeditordialog.h \
     src/network/policylistdialog.h \
     src/network/policyreconcile.h \
+    src/network/policyreconcileservice.h \
     src/network/bandwidthlimitsdialog.h \
     src/network/recommendationdialog.h \
     src/attribution/dnsobserver.h \

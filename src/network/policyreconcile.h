@@ -30,9 +30,6 @@
 
 #include "network/policy.h"
 
-class FirewallManager;
-class ThrottlePolicyManager;
-
 // ─── What Windows currently enforces ────────────────────────────────────────
 struct FirewallObservation
 {
@@ -95,23 +92,6 @@ ReconciliationReport planPolicyReconciliation(
     const PolicyObservation &observed,
     const QDateTime &now);
 
-// ─── Executor ───────────────────────────────────────────────────────────────
-class PolicyReconciler : public QObject
-{
-    Q_OBJECT
-public:
-    PolicyReconciler(ThrottlePolicyManager *throttle, FirewallManager *firewall,
-                     QObject *parent = nullptr);
-
-    // Reads the stored policies and both enforcement channels, then applies the
-    // plan. `groupPaths` is the running executables per activity group, which
-    // is what a group-scoped policy is checked against.
-    ReconciliationReport reconcileNow(const QHash<QString, QStringList> &groupPaths);
-
-signals:
-    void reconciliationFinished(const ReconciliationReport &report);
-
-private:
-    ThrottlePolicyManager *m_throttle = nullptr;
-    FirewallManager *m_firewall = nullptr;
-};
+// The executor that runs this plan is PolicyReconciler, in
+// policyreconcileservice.h. It is kept apart so this header stays free of COM,
+// managers, and threading, and the harness can link the plan alone.

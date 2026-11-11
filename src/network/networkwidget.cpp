@@ -9,6 +9,7 @@
 #include "policyeditordialog.h"
 #include "policylistdialog.h"
 #include "policyreconcile.h"
+#include "policyreconcileservice.h"
 #include "bandwidthlimitsdialog.h"
 #include "recommendationdialog.h"
 
@@ -355,13 +356,12 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // not warn on every launch. Group-scoped policies are re-applied from the
     // first group snapshot, and the Policies dialog verifies everything on
     // demand.
-    m_policyReconciler = new PolicyReconciler(m_throttlePolicies, m_firewall, this);
+    m_policyReconciler = new PolicyReconciler(m_throttlePolicies, this);
+    connect(m_policyReconciler, &PolicyReconciler::reconciliationFinished,
+            this, &NetworkWidget::onPolicyReconciliationFinished);
     if (m_firewall->isInitialized()) {
         QTimer::singleShot(8000, this, [this]() {
-            const ReconciliationReport report =
-                m_policyReconciler->reconcileNow(m_runningGroupPaths);
-            if (report.repaired > 0 || report.removed > 0 || !report.ok())
-                ui->lblStatus->setText(report.summary());
+            m_policyReconciler->requestReconciliation(m_runningGroupPaths);
         });
     }
 
@@ -476,19 +476,18 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     connect(ui->btnPolicies, &QPushButton::clicked, this, [this]() {
         PolicyListDialog dlg(this);
         connect(&dlg, &PolicyListDialog::verifyRequested, this, [this, &dlg]() {
-            const ReconciliationReport report =
-                m_policyReconciler->reconcileNow(m_runningGroupPaths);
-            QString body = report.summary();
-            const QStringList details = report.lines();
-            if (!details.isEmpty())
-                body += QStringLiteral("\n\n") + details.join(QLatin1Char('\n'));
-            if (report.ok())
-                QMessageBox::information(&dlg, QStringLiteral("Verify policies"), body);
-            else
-                QMessageBox::warning(&dlg, QStringLiteral("Verify policies"), body);
-            ui->lblStatus->setText(report.summary());
+            if (m_policyReconciler->isBusy()) {
+                QMessageBox::information(&dlg, QStringLiteral("Verify policies"),
+                                         QStringLiteral("A policy verification is already running."));
+                return;
+            }
+            // The pass runs on the reconciler's thread; the report is shown by
+            // onPolicyReconciliationFinished while this dialog's loop runs.
+            m_verifyDialog = &dlg;
+            m_policyReconciler->requestReconciliation(m_runningGroupPaths);
         });
         dlg.exec();
+        m_verifyDialog = nullptr;
         if (!dlg.changed()) return;
         m_enforcement->forgetReappliedPolicies();
         m_policyScheduler->evaluateNow();
@@ -964,11 +963,27 @@ void NetworkWidget::schedulePolicyReconciliation()
     QTimer::singleShot(0, this, [this]() {
         m_reconcileScheduled = false;
         if (!m_policyReconciler || !m_firewall || !m_firewall->isInitialized()) return;
-        const ReconciliationReport report =
-            m_policyReconciler->reconcileNow(m_runningGroupPaths);
-        if (report.repaired > 0 || report.removed > 0 || !report.ok())
-            ui->lblStatus->setText(report.summary());
+        // Queued, not inline: rule enumeration and repair run on the
+        // reconciler's own thread.
+        m_policyReconciler->requestReconciliation(m_runningGroupPaths);
     });
+}
+
+void NetworkWidget::onPolicyReconciliationFinished(const ReconciliationReport &report)
+{
+    if (report.repaired > 0 || report.removed > 0 || !report.ok())
+        ui->lblStatus->setText(report.summary());
+
+    if (!m_verifyDialog) return;
+
+    QString body = report.summary();
+    const QStringList details = report.lines();
+    if (!details.isEmpty())
+        body += QStringLiteral("\n\n") + details.join(QLatin1Char('\n'));
+    if (report.ok())
+        QMessageBox::information(m_verifyDialog, QStringLiteral("Verify policies"), body);
+    else
+        QMessageBox::warning(m_verifyDialog, QStringLiteral("Verify policies"), body);
 }
 
 void NetworkWidget::onPolicyActivationChanged(const NetworkPolicy &policy,

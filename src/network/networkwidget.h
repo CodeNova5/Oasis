@@ -16,6 +16,7 @@
 #include "diagnostics.h"
 #include "enforcementrestore.h"
 #include "policyschedule.h"
+#include "policyreconcile.h"
 #include "attribution/recommendationengine.h"
 #include "attribution/recommendationfeedback.h"
 
@@ -88,6 +89,9 @@ private slots:
                                    PolicyActivationState state,
                                    const QString &reason);
 
+    // NG-024: a queued verification finished on the reconciler's thread.
+    void onPolicyReconciliationFinished(const ReconciliationReport &report);
+
 public:
     QString getExactProcessPath(quint32 pid, const QString &procName);
     // Context-menu label for the throttle action: names the owning policy when
@@ -135,6 +139,9 @@ private:
     EmergencyRestoreReport  m_restoreReport;
     bool                    m_restoreReportPending = false;
     bool                    m_reconcileScheduled = false;
+    // The Policies dialog is open and waiting for a verification result. The
+    // report arrives asynchronously while the dialog's event loop runs.
+    QDialog                 *m_verifyDialog = nullptr;
     // Executables currently running in each activity group, kept from the last
     // group snapshot so a scheduled window can re-apply a group policy to them.
     QHash<QString, QStringList> m_runningGroupPaths;
