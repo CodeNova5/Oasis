@@ -25,6 +25,7 @@
 
 #include "attribution/activityclassifier.h"
 #include "attribution/aicontext.h"
+#include "attribution/aiapproval.h"
 #include "attribution/aiprovider.h"
 #include "attribution/openaiadapter.h"
 #include "attribution/recommendationengine.h"
@@ -4028,6 +4029,160 @@ void testAiProvider()
     QSettings().clear();
 }
 
+// ─── NG-046: AI approval flow ─────────────────────────────────────────────
+// AI explains; the policy comes from the deterministic recommendation, and the
+// user chooses its scope and duration. Approval writes one ordinary user
+// policy; rejection writes nothing.
+void testAiApproval()
+{
+    Recommendation rec;
+    rec.action = RecommendationAction::Throttle;
+    rec.category = CatalogCategory::BrowserUpdate;
+    rec.title = QStringLiteral("Limit background browser updates");
+    rec.suggestedPolicy.scope = QStringLiteral("path");
+    rec.suggestedPolicy.targetId = QStringLiteral("C:/Apps/updater.exe");
+    rec.suggestedPolicy.action = NetworkPolicy::Action::Throttle;
+    rec.suggestedPolicy.direction = NetworkDirection::Both;
+    rec.suggestedPolicy.rateBitsPerSecond = 2ULL * 1024ULL * 1024ULL * 8ULL;
+    rec.suggestedPolicy.source = QStringLiteral("user");
+    rec.suggestedPolicy.description = QStringLiteral("Recommended: limit browser updates");
+
+    RecommendationContext context;
+    context.observation.executablePath = QStringLiteral("C:/Apps/updater.exe");
+    context.observation.publisher = QStringLiteral("Google LLC");
+    context.activity = ActivityClassifier().classify(context.observation);
+
+    // The recommendation's own scope first, then the evidence-backed manual
+    // targets, without duplicating the path.
+    const QList<AiApprovalScopeOption> options =
+        aiApprovalScopeOptions(context, rec);
+    checkEqual(static_cast<int>(options.size()), 2,
+               QStringLiteral("the approved scopes are de-duplicated"));
+    check(options.size() == 2 && options.first().scope == QStringLiteral("path"),
+          QStringLiteral("the recommendation's scope is offered first"));
+    check(options.size() == 2 &&
+              options.first().targetId == QStringLiteral("C:/Apps/updater.exe"),
+          QStringLiteral("the recommended target is prefilled"));
+    check(options.size() == 2 && options.last().scope == QStringLiteral("publisher"),
+          QStringLiteral("the observed publisher is an approvable scope"));
+    checkEqual(aiApprovalScopeDisplayName(QStringLiteral("group")),
+               QStringLiteral("This application group"),
+               QStringLiteral("scopes have plain-language names"));
+
+    // A duration is always explicit; the default follows the seed's expiry.
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    check(aiApprovalDefaultDuration(rec, now) == AiApprovalDuration::UntilRemoved,
+          QStringLiteral("a seed without an expiry defaults to until removed"));
+    Recommendation paused = rec;
+    paused.suggestedPolicy.action = NetworkPolicy::Action::Block;
+    paused.suggestedPolicy.expiration = now.addSecs(3600);
+    check(aiApprovalDefaultDuration(paused, now) == AiApprovalDuration::OneHour,
+          QStringLiteral("a one-hour seed preselects one hour"));
+    check(aiApprovalExpiration(AiApprovalDuration::OneDay, now) == now.addSecs(86400),
+          QStringLiteral("a day lasts 24 hours"));
+    check(!aiApprovalExpiration(AiApprovalDuration::UntilRemoved, now).isValid(),
+          QStringLiteral("until removed has no expiration"));
+
+    // Choices are validated before anything is written.
+    AiApprovalChoices choices;
+    choices.scope = QStringLiteral("path");
+    choices.targetId = QStringLiteral("C:/Apps/updater.exe");
+    choices.duration = AiApprovalDuration::OneHour;
+    check(aiApprovalProblems(rec, choices, now).isEmpty(),
+          QStringLiteral("a scoped, timed choice can be approved"));
+    check(!aiApprovalProblems(Recommendation(), choices, now).isEmpty(),
+          QStringLiteral("a recommendation without a policy cannot be approved"));
+    AiApprovalChoices unscoped;
+    unscoped.duration = AiApprovalDuration::OneHour;
+    check(!aiApprovalProblems(rec, unscoped, now).isEmpty(),
+          QStringLiteral("an approval needs an explicit scope"));
+    Recommendation zeroRate = rec;
+    zeroRate.suggestedPolicy.rateBitsPerSecond = 0;
+    check(!aiApprovalProblems(zeroRate, choices, now).isEmpty(),
+          QStringLiteral("a throttle approval needs a rate"));
+
+    // The approved policy is an ordinary user policy: the recommendation
+    // decides the action, the user decides scope and duration.
+    choices.explanationReviewed = true;
+    const NetworkPolicy approved = aiApprovalBuildPolicy(rec, choices, now);
+    checkEqual(approved.source, QStringLiteral("user"),
+               QStringLiteral("approval creates a normal user policy, never an AI one"));
+    check(approved.id.startsWith(QStringLiteral("policy-")),
+          QStringLiteral("the approved policy gets its own id"));
+    check(approved.action == NetworkPolicy::Action::Throttle,
+          QStringLiteral("the local recommendation decides the action"));
+    checkEqual(approved.rateBitsPerSecond, rec.suggestedPolicy.rateBitsPerSecond,
+               QStringLiteral("the local recommendation decides the rate"));
+    checkEqual(approved.scope, QStringLiteral("path"),
+               QStringLiteral("the user's scope is stored"));
+    checkEqual(approved.targetId, QStringLiteral("C:/Apps/updater.exe"),
+               QStringLiteral("the user's target is stored"));
+    check(approved.enabled, QStringLiteral("an approved policy is enabled"));
+    check(approved.expiration == now.addSecs(3600),
+          QStringLiteral("the chosen duration becomes the expiration"));
+    check(approved.scheduleType == NetworkPolicy::ScheduleType::Expiration,
+          QStringLiteral("a timed policy expires"));
+    check(approved.description.contains(QStringLiteral("Approved")) &&
+              approved.description.contains(QStringLiteral("AI explanation reviewed")),
+          QStringLiteral("the approval note records the review"));
+
+    AiApprovalChoices publisher;
+    publisher.scope = QStringLiteral("publisher");
+    publisher.targetId = QStringLiteral("Google LLC");
+    publisher.duration = AiApprovalDuration::UntilRemoved;
+    const NetworkPolicy broad = aiApprovalBuildPolicy(rec, publisher, now);
+    checkEqual(broad.scope, QStringLiteral("publisher"),
+               QStringLiteral("a broader scope replaces the suggested one"));
+    check(!broad.expiration.isValid(),
+          QStringLiteral("until removed leaves no expiration"));
+    check(broad.scheduleType == NetworkPolicy::ScheduleType::None,
+          QStringLiteral("until removed without a window is a plain policy"));
+
+    Recommendation scheduled = rec;
+    scheduled.suggestedPolicy.action = NetworkPolicy::Action::Schedule;
+    scheduled.suggestedPolicy.schedule = QStringLiteral("overnight");
+    scheduled.suggestedPolicy.scheduleType = NetworkPolicy::ScheduleType::Recurring;
+    AiApprovalChoices oneDay = publisher;
+    oneDay.duration = AiApprovalDuration::OneDay;
+    const NetworkPolicy expiringWindow = aiApprovalBuildPolicy(scheduled, oneDay, now);
+    check(expiringWindow.scheduleType == NetworkPolicy::ScheduleType::Both,
+          QStringLiteral("a timed recurring window keeps both settings"));
+    AiApprovalChoices lasting = publisher;
+    lasting.duration = AiApprovalDuration::UntilRemoved;
+    check(aiApprovalBuildPolicy(scheduled, lasting, now).scheduleType ==
+              NetworkPolicy::ScheduleType::Recurring,
+          QStringLiteral("an until-removed window stays recurring"));
+
+    // Approval persists exactly one ordinary policy; rejection writes nothing.
+    QSettings().clear();
+    const int before = PolicyStore::loadPolicies().size();
+    check(aiApprovalApprove(approved),
+          QStringLiteral("an approved policy is saved"));
+    const QList<NetworkPolicy> stored = PolicyStore::loadPolicies();
+    checkEqual(static_cast<int>(stored.size()), before + 1,
+               QStringLiteral("approval adds exactly one policy"));
+    bool found = false;
+    for (const NetworkPolicy &policy : stored) {
+        if (policy.id != approved.id) continue;
+        found = true;
+        check(policyOrigin(policy) == PolicyOrigin::User,
+              QStringLiteral("the stored policy is a user policy"));
+        checkEqual(policy.targetId, approved.targetId,
+                   QStringLiteral("the stored policy keeps its target"));
+    }
+    check(found, QStringLiteral("the approved policy is listed by the store"));
+
+    const QStringList rejectedProblems = aiApprovalProblems(rec, unscoped, now);
+    check(!rejectedProblems.isEmpty(),
+          QStringLiteral("a rejected choice set is refused before writing"));
+    checkEqual(static_cast<int>(PolicyStore::loadPolicies().size()), before + 1,
+               QStringLiteral("rejection leaves the stored policy set unchanged"));
+    check(!aiApprovalApprove(NetworkPolicy()),
+          QStringLiteral("an incomplete policy is never written"));
+
+    QSettings().clear();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -4072,6 +4227,7 @@ int main(int argc, char *argv[])
     testRecommendationFeedback();
     testAiContext();
     testAiProvider();
+    testAiApproval();
 
     QSettings().clear();
 

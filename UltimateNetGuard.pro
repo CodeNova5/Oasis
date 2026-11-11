@@ -8,7 +8,7 @@
 ##############################################################################
 
 
-QT += core gui widgets network
+QT += core gui widgets network concurrent
 
 greaterThan(QT_MAJOR_VERSION, 4): lessThan(QT_MAJOR_VERSION, 6) {
     QT += winextras
@@ -54,6 +54,7 @@ SOURCES += \
     src/network/policyreconcile.cpp \
     src/network/bandwidthlimitsdialog.cpp \
     src/network/recommendationdialog.cpp \
+    src/network/aiapprovaldialog.cpp \
     src/network/policyreconcileplan.cpp \
     src/attribution/dnsobserver.cpp \
     src/attribution/attributionprivacy.cpp \
@@ -62,6 +63,7 @@ SOURCES += \
     src/attribution/recommendationfeedback.cpp \
     src/attribution/aicontext.cpp \
     src/attribution/aiprovider.cpp \
+    src/attribution/aiapproval.cpp \
     src/attribution/openaiadapter.cpp \
     src/attribution/dnscorrelator.cpp \
     src/attribution/tlsobserver.cpp \
@@ -115,6 +117,7 @@ HEADERS += \
     src/network/policyreconcileservice.h \
     src/network/bandwidthlimitsdialog.h \
     src/network/recommendationdialog.h \
+    src/network/aiapprovaldialog.h \
     src/attribution/dnsobserver.h \
     src/attribution/attributionprivacy.h \
     src/attribution/activityclassifier.h \
@@ -122,6 +125,7 @@ HEADERS += \
     src/attribution/recommendationfeedback.h \
     src/attribution/aicontext.h \
     src/attribution/aiprovider.h \
+    src/attribution/aiapproval.h \
     src/attribution/openaiadapter.h \
     src/attribution/dnscorrelator.h \
     src/attribution/tlsobserver.h \

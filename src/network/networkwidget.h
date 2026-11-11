@@ -9,6 +9,7 @@
 #include <QSortFilterProxyModel>
 #include <QDialog>
 #include <QEvent>
+#include <memory>
 #include "networkmonitor.h"
 #include "networkmodel.h"
 #include "bandwidthguard.h"
@@ -19,8 +20,10 @@
 #include "policyreconcile.h"
 #include "attribution/recommendationengine.h"
 #include "attribution/recommendationfeedback.h"
+#include "attribution/aiprovider.h"
 
 class FirewallManager;
+class OpenAiCompatibleProvider;
 class EnforcementCoordinator;
 class PolicyReconciler;
 
@@ -113,6 +116,11 @@ private:
     void schedulePolicyReconciliation();
     QIcon getIconByPid(quint32 pid, const QString &procName);
     void requestThrottle(quint32 pid, const QString &procName);
+    // Evidence snapshot for the recommendation and approval views, taken while
+    // the context menu's row is still valid.
+    RecommendationContext recommendationContextFor(const ActivityQuery &query,
+                                                    quint32 pid,
+                                                    const QString &processName) const;
 
     Ui::NetworkWidget       *ui = nullptr;
     NetworkMonitor          *m_monitor = nullptr;
@@ -152,4 +160,9 @@ private:
     // consults. Feedback changes future suggestions, never a policy.
     RecommendationEngine        m_recommendationEngine;
     RecommendationFeedbackStore m_recommendationFeedback;
+    // NG-045/NG-046: the opt-in provider and coordinator behind the approval
+    // flow. The assistant is loaded from persisted settings and stays disabled
+    // until the user configures it.
+    std::unique_ptr<OpenAiCompatibleProvider> m_aiProvider;
+    AiAssistant                 m_aiAssistant;
 };

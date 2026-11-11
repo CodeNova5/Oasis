@@ -43,6 +43,7 @@ SOURCES += \
     ../src/attribution/recommendationfeedback.cpp \
     ../src/attribution/aicontext.cpp \
     ../src/attribution/aiprovider.cpp \
+    ../src/attribution/aiapproval.cpp \
     ../src/attribution/openaiadapter.cpp \
     ../src/attribution/dnscorrelator.cpp \
     ../src/attribution/tlsobserver.cpp \
@@ -69,6 +70,7 @@ HEADERS += \
     ../src/attribution/recommendationfeedback.h \
     ../src/attribution/aicontext.h \
     ../src/attribution/aiprovider.h \
+    ../src/attribution/aiapproval.h \
     ../src/attribution/openaiadapter.h \
     ../src/attribution/dnscorrelator.h \
     ../src/attribution/tlsobserver.h \

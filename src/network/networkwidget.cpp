@@ -12,6 +12,9 @@
 #include "policyreconcileservice.h"
 #include "bandwidthlimitsdialog.h"
 #include "recommendationdialog.h"
+#include "aiapprovaldialog.h"
+#include "attribution/aiapproval.h"
+#include "attribution/openaiadapter.h"
 
 // ── Theme Manager ──
 #include "stylemanager.h"
@@ -112,6 +115,21 @@ static bool explicitPolicyCovers(const ActivityQuery &query, quint32 pid)
         }
     }
     return false;
+}
+
+// NG-042/NG-046: the evidence snapshot shared by the recommendation and
+// approval views. Callers add the classification they captured with the row.
+RecommendationContext NetworkWidget::recommendationContextFor(const ActivityQuery &query,
+                                                             quint32 pid,
+                                                             const QString &processName) const
+{
+    RecommendationContext context;
+    context.observation = query;
+    context.bytesPerSecond = query.bytesPerSecond;
+    context.foreground = query.foreground;
+    context.exempt = m_bandwidthGuard->isExempt(processName);
+    context.explicitPolicyCovers = explicitPolicyCovers(query, pid);
+    return context;
 }
 
 // ============================================================================
@@ -320,6 +338,10 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // NG-043: feedback the user gives a recommendation is read by the engine on
     // every later recommendation, so a verdict changes future local advice.
     m_recommendationEngine.setFeedbackStore(&m_recommendationFeedback);
+    // NG-045/NG-046: AI is opt-in and disabled until provider settings are
+    // saved; the adapter never applies a policy by itself.
+    m_aiProvider = std::make_unique<OpenAiCompatibleProvider>();
+    m_aiAssistant.setProvider(m_aiProvider.get());
     m_throttlePolicies = new ThrottlePolicyManager(this);
     // QoS changes run on a worker thread, so results arrive asynchronously.
     connect(m_throttlePolicies, &ThrottlePolicyManager::throttleApplied,
@@ -653,17 +675,42 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
             if (query.executablePath.trimmed().isEmpty())
                 query.executablePath = getExactProcessPath(pid, name);
 
-            RecommendationContext context;
-            context.observation = query;
+            RecommendationContext context = recommendationContextFor(query, pid, name);
             context.activity = recommendationActivity;
-            context.bytesPerSecond = query.bytesPerSecond;
-            context.foreground = query.foreground;
-            context.exempt = m_bandwidthGuard->isExempt(name);
-            context.explicitPolicyCovers = explicitPolicyCovers(query, pid);
 
             RecommendationDialog dlg(context, m_recommendationEngine,
                                      &m_recommendationFeedback, this);
             dlg.exec();
+        });
+
+        // NG-046: review an optional AI explanation and approve the local
+        // recommendation as one ordinary user policy with an explicit scope
+        // and duration. Rejecting the dialog writes nothing.
+        QAction *actApproval = menu.addAction("🧠 Review AI explanation & approve policy...");
+        connect(actApproval, &QAction::triggered, this,
+                [this, pid, name, recommendationQuery, recommendationActivity]() {
+            ActivityQuery query = recommendationQuery;
+            if (query.executablePath.trimmed().isEmpty())
+                query.executablePath = getExactProcessPath(pid, name);
+
+            RecommendationContext context = recommendationContextFor(query, pid, name);
+            context.activity = recommendationActivity;
+
+            AiApprovalDialog dlg(context, m_recommendationEngine,
+                                 &m_aiAssistant, this);
+            if (dlg.exec() != QDialog::Accepted) return;
+
+            if (!aiApprovalApprove(dlg.approvedPolicy())) {
+                QMessageBox::warning(this, QStringLiteral("Approve policy"),
+                                     QStringLiteral("The approved policy could not be "
+                                                    "saved."));
+                return;
+            }
+
+            ui->lblStatus->setText(QStringLiteral("Policy approved and saved."));
+            // The scheduler has not seen the approved policy yet, so this counts
+            // as an activation change and applies it now when it is in force.
+            m_policyScheduler->evaluateNow();
         });
 
         menu.addSeparator();
