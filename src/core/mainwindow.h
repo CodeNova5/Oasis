@@ -74,6 +74,10 @@ private slots:
     void applyAttributionPrivacy();
     void onClearAttributionHistory();
 
+    // NG-045: the optional AI provider is configured here as well as in the
+    // approval dialog; both views persist through the same store.
+    void saveAiProviderSettings();
+
     void recordLiveTraffic();
     void refreshHistoryUI();
     void saveHistoryToJson();
@@ -82,6 +86,8 @@ private:
     void setupWidgets();
     void setupDiagnosticsView();
     void setupAttributionPrivacyView();
+    void setupAiProviderView();
+    void refreshAiProviderUi();
     void refreshAttributionHistory();
     void setupTray();
     void animateLiveBadge();

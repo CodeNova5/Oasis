@@ -108,6 +108,9 @@ public:
     // NG-041: the latest foreground sample. It is advisory, and its
     // associationFor() refuses a sample older than its freshness window.
     NetGuard::ForegroundSnapshot foregroundSnapshot() const { return m_foregroundSnapshot; }
+    // NG-045/NG-046: re-read the provider settings saved from the Settings tab
+    // so the approval dialog uses them without a restart.
+    void reloadAiProviderSettings();
 
 private:
     void populateAdapterCombo();

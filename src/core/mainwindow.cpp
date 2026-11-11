@@ -16,6 +16,7 @@
 #include "network/bandwidthguard.h"
 #include "attribution/attributionconfidence.h"
 #include "attribution/attributionprivacy.h"
+#include "attribution/aiprovider.h"
 #include "network/diagnostics.h"
 #include "network/networkmonitor.h"
 #include "firewall/firewallwidget.h"
@@ -69,6 +70,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupWidgets();
     setupDiagnosticsView();
     setupAttributionPrivacyView();
+    setupAiProviderView();
     setupTray();
 
     loadSettings();
@@ -533,6 +535,90 @@ void MainWindow::setupAttributionPrivacyView()
             this, &MainWindow::onClearAttributionHistory);
 
     applyAttributionPrivacy();
+}
+
+void MainWindow::setupAiProviderView()
+{
+    refreshAiProviderUi();
+
+    connect(ui->chkAiProviderEnabled, &QCheckBox::toggled,
+            this, &MainWindow::saveAiProviderSettings);
+    connect(ui->btnSaveAiProviderSettings, &QPushButton::clicked,
+            this, &MainWindow::saveAiProviderSettings);
+    connect(ui->lineAiProviderEndpoint, &QLineEdit::returnPressed,
+            this, &MainWindow::saveAiProviderSettings);
+    connect(ui->lineAiProviderModel, &QLineEdit::returnPressed,
+            this, &MainWindow::saveAiProviderSettings);
+
+    // The approval dialog can also change these settings, so re-read them when
+    // the Settings tab is shown.
+    connect(ui->mainTabs, &QTabWidget::currentChanged, this, [this](int) {
+        if (ui->mainTabs->currentWidget() == ui->tabSettings)
+            refreshAiProviderUi();
+    });
+}
+
+void MainWindow::refreshAiProviderUi()
+{
+    const AiProviderSettings settings = AiProviderSettingsStore().load();
+
+    {
+        QSignalBlocker enabled(ui->chkAiProviderEnabled);
+        QSignalBlocker endpoint(ui->lineAiProviderEndpoint);
+        QSignalBlocker model(ui->lineAiProviderModel);
+
+        ui->chkAiProviderEnabled->setChecked(settings.enabled);
+        ui->lineAiProviderEndpoint->setText(settings.endpoint);
+        ui->lineAiProviderModel->setText(settings.model);
+    }
+
+    ui->lineAiProviderEndpoint->setEnabled(settings.enabled);
+    ui->lineAiProviderModel->setEnabled(settings.enabled);
+
+    if (!settings.enabled) {
+        ui->lblAiProviderStatus->setText(
+            QStringLiteral("AI is off. Local recommendations work without it."));
+    } else if (settings.isUsable()) {
+        ui->lblAiProviderStatus->setText(
+            QStringLiteral("AI is configured. Nothing is sent until you press the "
+                           "button in the approval dialog."));
+    } else {
+        ui->lblAiProviderStatus->setText(
+            QStringLiteral("AI is enabled but not usable: %1")
+                .arg(settings.endpointProblem().isEmpty()
+                         ? QStringLiteral("set an endpoint and a model")
+                         : settings.endpointProblem()));
+    }
+}
+
+void MainWindow::saveAiProviderSettings()
+{
+    AiProviderSettingsStore store;
+    AiProviderSettings settings = store.load();
+    settings.enabled = ui->chkAiProviderEnabled->isChecked();
+    settings.endpoint = ui->lineAiProviderEndpoint->text().trimmed();
+    settings.model = ui->lineAiProviderModel->text().trimmed();
+
+    const bool saved = store.save(settings);
+    if (m_netWidget)
+        m_netWidget->reloadAiProviderSettings();
+
+    refreshAiProviderUi();
+
+    if (!saved) {
+        ui->lblAiProviderStatus->setText(
+            QStringLiteral("The AI provider settings could not be saved."));
+    } else if (settings.enabled && !settings.isUsable()) {
+        ui->lblAiProviderStatus->setText(
+            QStringLiteral("Settings saved, but AI is not usable yet: %1")
+                .arg(settings.endpointProblem().isEmpty()
+                         ? QStringLiteral("set an endpoint and a model")
+                         : settings.endpointProblem()));
+    } else {
+        ui->lblAiProviderStatus->setText(
+            QStringLiteral("Settings saved. The API key still comes from "
+                           "NETGUARD_AI_API_KEY."));
+    }
 }
 
 void MainWindow::applyAttributionPrivacy()

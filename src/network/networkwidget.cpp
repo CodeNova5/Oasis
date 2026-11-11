@@ -119,6 +119,11 @@ static bool explicitPolicyCovers(const ActivityQuery &query, quint32 pid)
 
 // NG-042/NG-046: the evidence snapshot shared by the recommendation and
 // approval views. Callers add the classification they captured with the row.
+void NetworkWidget::reloadAiProviderSettings()
+{
+    m_aiAssistant.setSettings(AiProviderSettingsStore().load());
+}
+
 RecommendationContext NetworkWidget::recommendationContextFor(const ActivityQuery &query,
                                                              quint32 pid,
                                                              const QString &processName) const
