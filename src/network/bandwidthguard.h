@@ -118,6 +118,11 @@ public:
     ProcessCategory memberCategory(const ClassificationEvidence &evidence) const;
     ProcessClassification memberClassification(const ClassificationEvidence &evidence) const;
 
+    // NG-043: whether a process is inside an active "ignore alerts" window. The
+    // recommendation view reads it so it never suggests something the user has
+    // already dismissed. Read-only apart from pruning an expired exemption.
+    bool isExempt(const QString &processName);
+
 signals:
     void sustainedBandwidthExceeded(const BandwidthEvent &event);
 
@@ -143,7 +148,6 @@ private:
     static QString normalizeProcessName(const QString &processName);
     static QString resolveExecutablePath(quint32 pid);
     static int categoryRank(ProcessCategory category);
-    bool isExempt(const QString &processName);
     ProcessCategory resolveCategory(const ProcessWindow &window, quint32 pid,
                                    bool *fromGroup = nullptr,
                                    ApplicationIdentity::Confidence *confidence = nullptr,

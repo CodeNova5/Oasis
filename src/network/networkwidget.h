@@ -16,6 +16,8 @@
 #include "diagnostics.h"
 #include "enforcementrestore.h"
 #include "policyschedule.h"
+#include "attribution/recommendationengine.h"
+#include "attribution/recommendationfeedback.h"
 
 class FirewallManager;
 class EnforcementCoordinator;
@@ -139,4 +141,8 @@ private:
     // NG-041: latest advisory foreground sample, kept for the classifier and
     // future recommendation/detail views. Never an enforcement input.
     NetGuard::ForegroundSnapshot m_foregroundSnapshot;
+    // NG-042/NG-043: the deterministic engine and the local-only feedback it
+    // consults. Feedback changes future suggestions, never a policy.
+    RecommendationEngine        m_recommendationEngine;
+    RecommendationFeedbackStore m_recommendationFeedback;
 };

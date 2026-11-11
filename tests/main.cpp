@@ -25,6 +25,7 @@
 
 #include "attribution/activityclassifier.h"
 #include "attribution/recommendationengine.h"
+#include "attribution/recommendationfeedback.h"
 #include "attribution/attributionprivacy.h"
 #include "attribution/dnsobserver.h"
 #include "attribution/dnscorrelator.h"
@@ -3289,6 +3290,234 @@ void testRecommendationEngine()
                QStringLiteral("the action has a plain label"));
 }
 
+// ─── NG-043: local recommendation feedback ──────────────────────────────────
+// Feedback is remembered on this device only and changes future suggestions:
+// "incorrect" downgrades an actionable suggestion to a review, "unwanted" hides
+// it, and neither ever overrides an explicit policy or exemption.
+void testRecommendationFeedback()
+{
+    checkEqual(recommendationFeedbackToken(RecommendationFeedback::Useful),
+               QStringLiteral("useful"),
+               QStringLiteral("useful feedback has a stable token"));
+    checkEqual(recommendationFeedbackToken(RecommendationFeedback::Incorrect),
+               QStringLiteral("incorrect"),
+               QStringLiteral("incorrect feedback has a stable token"));
+    checkEqual(recommendationFeedbackToken(RecommendationFeedback::Unwanted),
+               QStringLiteral("unwanted"),
+               QStringLiteral("unwanted feedback has a stable token"));
+    checkEqual(recommendationFeedbackDisplayName(RecommendationFeedback::Unwanted),
+               QStringLiteral("Not wanted"),
+               QStringLiteral("unwanted feedback has a plain label"));
+
+    RecommendationFeedback parsed = RecommendationFeedback::None;
+    check(recommendationFeedbackFromToken(QStringLiteral("incorrect"), &parsed)
+              && parsed == RecommendationFeedback::Incorrect,
+          QStringLiteral("a feedback token parses back"));
+    check(!recommendationFeedbackFromToken(QStringLiteral("bogus"), &parsed),
+          QStringLiteral("an unknown feedback token is rejected"));
+
+    ActivityClassifier classifier;
+    RecommendationEngine engine;
+    RecommendationFeedbackStore store;
+    store.clear();
+    engine.setFeedbackStore(&store);
+
+    auto contextFor = [&classifier](const QString &executableName) {
+        RecommendationContext context;
+        context.observation.executableName = executableName;
+        context.observation.executablePath =
+            QStringLiteral("C:/Apps/") + executableName;
+        context.activity = classifier.classify(context.observation);
+        return context;
+    };
+
+    RecommendationContext chrome = contextFor(QStringLiteral("updater.exe"));
+    chrome.observation.publisher = QStringLiteral("Google LLC");
+    chrome.observation.product = QStringLiteral("Google Update");
+    chrome.activity = classifier.classify(chrome.observation);
+    chrome.bytesPerSecond = 4ULL * 1024ULL * 1024ULL;
+
+    const Recommendation baseline = engine.recommend(chrome);
+    check(baseline.action == RecommendationAction::Throttle,
+          QStringLiteral("the baseline updater suggestion is a throttle"));
+    const QString key = baseline.feedbackKey;
+    check(!key.isEmpty(),
+          QStringLiteral("a recommendation carries its local feedback key"));
+    checkEqual(key, RecommendationEngine::feedbackKeyFor(chrome),
+               QStringLiteral("the key is deterministic for the same evidence"));
+
+    // The durable identity makes the key survive an update or a moved install.
+    RecommendationContext moved = chrome;
+    moved.observation.identityId = QStringLiteral("sha1-identity");
+    const QString identityKey = RecommendationEngine::feedbackKeyFor(moved);
+    moved.observation.executablePath = QStringLiteral("D:/Elsewhere/updater.exe");
+    checkEqual(RecommendationEngine::feedbackKeyFor(moved), identityKey,
+               QStringLiteral("the identity keeps the feedback key stable"));
+
+    // A different category and a different application are different keys.
+    RecommendationContext sync = contextFor(QStringLiteral("OneDrive.exe"));
+    sync.observation.publisher = QStringLiteral("Microsoft Corporation");
+    sync.observation.product = QStringLiteral("Microsoft OneDrive");
+    sync.activity = classifier.classify(sync.observation);
+    check(RecommendationEngine::feedbackKeyFor(sync) != key,
+          QStringLiteral("a different application has a different key"));
+    check(engine.recommend(sync).action == RecommendationAction::Schedule,
+          QStringLiteral("feedback for one application leaves another alone"));
+
+    // A verdict persists across a fresh store instance.
+    check(store.setFeedback(key, RecommendationFeedback::Useful),
+          QStringLiteral("feedback saves without a store error"));
+    check(store.feedbackFor(key) == RecommendationFeedback::Useful,
+          QStringLiteral("feedback reads back immediately"));
+    checkEqual(store.count(), 1, QStringLiteral("one verdict is stored"));
+    {
+        RecommendationFeedbackStore reloaded;
+        check(reloaded.feedbackFor(key) == RecommendationFeedback::Useful,
+              QStringLiteral("feedback persists across a store reload"));
+    }
+
+    check(store.setFeedback(key, RecommendationFeedback::Incorrect),
+          QStringLiteral("a verdict can be replaced"));
+    {
+        RecommendationFeedbackStore reloaded;
+        check(reloaded.feedbackFor(key) == RecommendationFeedback::Incorrect,
+              QStringLiteral("the replacement persists"));
+    }
+
+    // "Incorrect" keeps the activity visible but downgrades an actionable
+    // suggestion to a review, and offers no policy seed.
+    const Recommendation incorrect = engine.recommend(chrome);
+    check(incorrect.action == RecommendationAction::ReviewSettings,
+          QStringLiteral("an incorrect suggestion is downgraded to a review"));
+    check(incorrect.feedbackApplied,
+          QStringLiteral("the recommendation reports that feedback applied"));
+    check(incorrect.feedback == RecommendationFeedback::Incorrect,
+          QStringLiteral("the recommendation carries the recorded verdict"));
+    check(!incorrect.hasSuggestedPolicy(),
+          QStringLiteral("a downgraded suggestion offers no policy seed"));
+    check(incorrect.whyLikely.contains(QStringLiteral("incorrect")),
+          QStringLiteral("the downgraded suggestion explains the verdict"));
+
+    // "Unwanted" hides the suggestion entirely.
+    check(store.setFeedback(key, RecommendationFeedback::Unwanted),
+          QStringLiteral("the unwanted verdict saves"));
+    const Recommendation unwanted = engine.recommend(chrome);
+    check(unwanted.action == RecommendationAction::NoAction,
+          QStringLiteral("an unwanted suggestion is hidden"));
+    check(unwanted.feedbackApplied,
+          QStringLiteral("the hidden suggestion reports that feedback applied"));
+    check(!unwanted.hasSuggestedPolicy(),
+          QStringLiteral("a hidden suggestion offers no policy seed"));
+    checkEqual(unwanted.title, QStringLiteral("Suggestion hidden"),
+               QStringLiteral("the hidden suggestion says so"));
+    check(unwanted.reversalAction.contains(QStringLiteral("feedback")),
+          QStringLiteral("the hidden suggestion says how to bring it back"));
+
+    // "Useful" leaves the suggestion in place.
+    check(store.setFeedback(key, RecommendationFeedback::Useful),
+          QStringLiteral("the useful verdict saves"));
+    const Recommendation useful = engine.recommend(chrome);
+    check(useful.action == RecommendationAction::Throttle,
+          QStringLiteral("a useful suggestion stays a throttle"));
+    check(useful.feedback == RecommendationFeedback::Useful,
+          QStringLiteral("the useful verdict is carried"));
+    check(!useful.feedbackApplied,
+          QStringLiteral("a useful verdict does not change the outcome"));
+    check(useful.whyLikely.contains(QStringLiteral("useful")),
+          QStringLiteral("the suggestion acknowledges the useful verdict"));
+
+    // An explicit policy and an exemption always win over feedback.
+    RecommendationContext covered = chrome;
+    covered.explicitPolicyCovers = true;
+    const Recommendation coveredResult = engine.recommend(covered);
+    check(coveredResult.action == RecommendationAction::NoAction,
+          QStringLiteral("an explicit policy still suppresses the suggestion"));
+    checkEqual(coveredResult.title, QStringLiteral("Already covered by your policy"),
+               QStringLiteral("the explicit policy keeps its explanation"));
+    check(!coveredResult.feedbackApplied && coveredResult.feedbackKey.isEmpty(),
+          QStringLiteral("feedback is not consulted when a policy already covers the app"));
+
+    RecommendationContext exempted = chrome;
+    exempted.exempt = true;
+    const Recommendation exemptResult = engine.recommend(exempted);
+    check(exemptResult.action == RecommendationAction::NoAction,
+          QStringLiteral("an exemption still suppresses the suggestion"));
+    checkEqual(exemptResult.title, QStringLiteral("This app is exempt"),
+               QStringLiteral("the exemption keeps its explanation"));
+
+    // Clearing the verdict restores the suggestion.
+    check(store.setFeedback(key, RecommendationFeedback::None),
+          QStringLiteral("clearing one verdict succeeds"));
+    check(store.feedbackFor(key) == RecommendationFeedback::None,
+          QStringLiteral("the cleared verdict is gone"));
+    check(engine.recommend(chrome).action == RecommendationAction::Throttle,
+          QStringLiteral("clearing feedback restores the suggestion"));
+
+    // The serialised form is versioned and carries no activity data.
+    RecommendationFeedbackEntry entry;
+    entry.key = QStringLiteral("browser-update|id:abc");
+    entry.feedback = RecommendationFeedback::Useful;
+    entry.updatedAt = QDateTime::currentDateTimeUtc();
+    const QString json = RecommendationFeedbackStore::toJson({entry});
+    checkEqual(objectOf(json).value(QStringLiteral("schemaVersion")).toInt(),
+               RecommendationFeedbackStore::kSchemaVersion,
+               QStringLiteral("the feedback payload is versioned"));
+    bool ok = false;
+    const QList<RecommendationFeedbackEntry> roundTrip =
+        RecommendationFeedbackStore::fromJson(json, &ok);
+    check(ok && roundTrip.size() == 1
+              && roundTrip.first().feedback == RecommendationFeedback::Useful,
+          QStringLiteral("a feedback payload round-trips"));
+    check(!json.contains(QStringLiteral("bytesPerSecond"))
+              && !json.contains(QStringLiteral("example.com"))
+              && !json.contains(QStringLiteral("remoteAddress")),
+          QStringLiteral("feedback stores only the key, verdict, and time"));
+
+    QJsonObject newer = objectOf(json);
+    newer[QStringLiteral("schemaVersion")] =
+        RecommendationFeedbackStore::kSchemaVersion + 1;
+    ok = true;
+    check(RecommendationFeedbackStore::fromJson(
+              QString::fromUtf8(QJsonDocument(newer).toJson(QJsonDocument::Compact)),
+              &ok).isEmpty() && !ok,
+          QStringLiteral("a newer feedback schema is rejected as a whole"));
+
+    ok = true;
+    RecommendationFeedbackStore::fromJson(QStringLiteral("not json"), &ok);
+    check(!ok, QStringLiteral("a malformed feedback payload is rejected"));
+
+    ok = false;
+    const QString unknownToken = QStringLiteral(
+        "{\"schemaVersion\":1,\"entries\":[{\"key\":\"k\",\"feedback\":\"maybe\"}]}");
+    check(RecommendationFeedbackStore::fromJson(unknownToken, &ok).isEmpty() && ok,
+          QStringLiteral("an unknown verdict is skipped rather than guessed"));
+
+    // Loading is bounded, keeping the most recent verdicts.
+    QJsonArray many;
+    const int overBound = RecommendationFeedbackStore::kMaxEntries + 50;
+    for (int i = 0; i < overBound; ++i) {
+        QJsonObject object;
+        object[QStringLiteral("key")] = QStringLiteral("key-%1").arg(i);
+        object[QStringLiteral("feedback")] = QStringLiteral("useful");
+        object[QStringLiteral("updatedAt")] = QDateTime::currentDateTimeUtc()
+            .addSecs(i).toString(Qt::ISODate);
+        many.append(object);
+    }
+    QJsonObject boundedRoot;
+    boundedRoot[QStringLiteral("schemaVersion")] = 1;
+    boundedRoot[QStringLiteral("entries")] = many;
+    ok = false;
+    checkEqual(static_cast<int>(RecommendationFeedbackStore::fromJson(
+                   QString::fromUtf8(QJsonDocument(boundedRoot).toJson(QJsonDocument::Compact)),
+                   &ok).size()),
+               RecommendationFeedbackStore::kMaxEntries,
+               QStringLiteral("feedback loading is bounded"));
+
+    check(store.clear(), QStringLiteral("clearing all feedback succeeds"));
+    checkEqual(store.count(), 0, QStringLiteral("no verdict remains after clear"));
+    QSettings().clear();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -3330,6 +3559,7 @@ int main(int argc, char *argv[])
     testActivityClassifier();
     testForegroundSignal();
     testRecommendationEngine();
+    testRecommendationFeedback();
 
     QSettings().clear();
 

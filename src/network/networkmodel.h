@@ -117,6 +117,10 @@ public:
     // NG-040: reclassify one process row when its identity, publisher, group, or
     // service evidence changed. Cheap to call; it skips unchanged evidence.
     void refreshActivity(int pRow);
+    // NG-043: the evidence and classification behind a process row, for a
+    // recommendation or detail view. The row index is the source-model row.
+    ActivityQuery activityQueryForRow(int pRow) const;
+    ActivityClassification activityForRow(int pRow) const;
     // NG-012: replace the PID -> services map and refresh the affected rows.
     void applyServiceSnapshot(const NetGuard::ServicePidMap &services);
     void clear();

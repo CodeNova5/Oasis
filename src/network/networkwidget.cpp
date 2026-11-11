@@ -10,6 +10,7 @@
 #include "policylistdialog.h"
 #include "policyreconcile.h"
 #include "bandwidthlimitsdialog.h"
+#include "recommendationdialog.h"
 
 // ── Theme Manager ──
 #include "stylemanager.h"
@@ -22,6 +23,7 @@
 #include <QApplication>
 #include <QMenu>
 #include <QClipboard>
+#include <QDateTime>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -70,6 +72,45 @@ static QString bandwidthUsageText(const BandwidthEvent &event)
     return QString("%1 used %2 in this capture session")
         .arg(event.processName)
         .arg(NetworkTreeModel::formatBytes(event.totalBytes));
+}
+
+// NG-043: an explicit user policy already covering the row means the
+// recommendation view must not suggest something the user has decided.
+static bool explicitPolicyCovers(const ActivityQuery &query, quint32 pid)
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const QString path = query.executablePath.trimmed();
+
+    for (const NetworkPolicy &policy : PolicyStore::loadPolicies()) {
+        if (!policy.enabled) continue;
+        if (policy.expiration.isValid() && policy.expiration <= now) continue;
+
+        const QString scope = policy.scope.trimmed().toLower();
+        const QString target = policy.targetId.trimmed();
+        if (target.isEmpty()) continue;
+
+        if (scope == QLatin1String("pid") && target == QString::number(pid))
+            return true;
+        if ((scope == QLatin1String("path") || scope == QLatin1String("executable"))
+            && !path.isEmpty()
+            && QFileInfo(target).absoluteFilePath().compare(
+                   QFileInfo(path).absoluteFilePath(), Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+        if (scope == QLatin1String("group") && !query.groupId.isEmpty()
+            && target.compare(query.groupId, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+        if (scope == QLatin1String("service") && !query.serviceName.isEmpty()
+            && target.compare(query.serviceName, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+        if (scope == QLatin1String("publisher") && !query.publisher.isEmpty()
+            && target.compare(query.publisher, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // ============================================================================
@@ -275,6 +316,9 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     });
     m_diagnostics = new DiagnosticsModel(this);
         m_bandwidthGuard = new BandwidthGuard(this);
+    // NG-043: feedback the user gives a recommendation is read by the engine on
+    // every later recommendation, so a verdict changes future local advice.
+    m_recommendationEngine.setFeedbackStore(&m_recommendationFeedback);
     m_throttlePolicies = new ThrottlePolicyManager(this);
     // QoS changes run on a worker thread, so results arrive asynchronously.
     connect(m_throttlePolicies, &ThrottlePolicyManager::throttleApplied,
@@ -592,6 +636,35 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
             // The scheduler has not seen this policy yet, so this counts as an
             // activation change and applies it now when it is in force.
             m_policyScheduler->evaluateNow();
+        });
+
+        // NG-042/NG-043: show the deterministic recommendation for this row and
+        // let the user record whether it was useful, incorrect, or unwanted.
+        // The evidence is captured before the menu's event loop can change the
+        // model, so the dialog always describes the row that was right-clicked.
+        const ActivityQuery recommendationQuery =
+            m_model->activityQueryForRow(idx.row());
+        const ActivityClassification recommendationActivity =
+            m_model->activityForRow(idx.row());
+
+        QAction *actRecommend = menu.addAction("💡 Recommendation...");
+        connect(actRecommend, &QAction::triggered, this,
+                [this, pid, name, recommendationQuery, recommendationActivity]() {
+            ActivityQuery query = recommendationQuery;
+            if (query.executablePath.trimmed().isEmpty())
+                query.executablePath = getExactProcessPath(pid, name);
+
+            RecommendationContext context;
+            context.observation = query;
+            context.activity = recommendationActivity;
+            context.bytesPerSecond = query.bytesPerSecond;
+            context.foreground = query.foreground;
+            context.exempt = m_bandwidthGuard->isExempt(name);
+            context.explicitPolicyCovers = explicitPolicyCovers(query, pid);
+
+            RecommendationDialog dlg(context, m_recommendationEngine,
+                                     &m_recommendationFeedback, this);
+            dlg.exec();
         });
 
         menu.addSeparator();

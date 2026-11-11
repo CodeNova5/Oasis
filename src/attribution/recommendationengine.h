@@ -15,6 +15,7 @@
 #include <QStringList>
 
 #include "attribution/activityclassifier.h"
+#include "attribution/recommendationfeedback.h"
 #include "network/policy.h"
 
 enum class RecommendationAction
@@ -69,6 +70,14 @@ struct Recommendation
     /// recommendation applies no policy.
     NetworkPolicy suggestedPolicy;
 
+    // NG-043: the local feedback key this recommendation is remembered under,
+    // the verdict the user already gave it, and whether that verdict changed
+    // the outcome (an incorrect suggestion becomes a review, an unwanted one is
+    // hidden).
+    QString feedbackKey;
+    RecommendationFeedback feedback = RecommendationFeedback::None;
+    bool feedbackApplied = false;
+
     bool hasSuggestedPolicy() const;
     bool enforcesAnything() const { return false; }
     QString confidenceName() const;
@@ -78,6 +87,20 @@ struct Recommendation
 class RecommendationEngine
 {
 public:
+    /// NG-043: local feedback the engine should consult. The store is owned by
+    /// the caller and must outlive the engine; without one, feedback is not
+    /// applied (useful for tests and for callers that never show suggestions).
+    void setFeedbackStore(const RecommendationFeedbackStore *store)
+    {
+        m_feedback = store;
+    }
+    const RecommendationFeedbackStore *feedbackStore() const { return m_feedback; }
+
+    /// The stable, local-only key for one activity: category plus the durable
+    /// identity (or the best available local identity fallback). No destination
+    /// or rate is part of the key.
+    static QString feedbackKeyFor(const RecommendationContext &context);
+
     /// Deterministic category → response mapping. The user's explicit policy,
     /// an exemption, and a foreground session are applied by `recommend()`.
     static RecommendationAction recommendedActionFor(CatalogCategory category);
@@ -87,4 +110,7 @@ public:
     static quint64 suggestedRateBitsPerSecond(quint64 observedBytesPerSecond);
 
     Recommendation recommend(const RecommendationContext &context) const;
+
+private:
+    const RecommendationFeedbackStore *m_feedback = nullptr;
 };

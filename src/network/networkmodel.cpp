@@ -563,6 +563,35 @@ void NetworkTreeModel::setDomainResolver(
     m_domainResolver = std::move(resolver);
 }
 
+ActivityQuery NetworkTreeModel::activityQueryForRow(int pRow) const
+{
+    ActivityQuery query;
+    if (pRow < 0 || pRow >= m_procs.size()) return query;
+
+    const ProcessNode &p = m_procs[pRow];
+    query.executableName = p.name;
+    query.displayName = p.identityName;
+    query.publisher = p.publisher;
+    query.publisherVerified =
+        p.signerStatus == ApplicationIdentity::SignerStatus::Signed;
+    query.identityId = p.identityId;
+    query.groupId = p.groupId;
+    query.groupName = p.groupName;
+    query.foreground = p.foreground != NetGuard::ForegroundAssociation::None;
+    query.bytesPerSecond = p.totalRxSpeed;
+    if (!p.services.isEmpty()) {
+        query.serviceName = p.services.first().serviceName;
+        query.service = true;
+    }
+    return query;
+}
+
+ActivityClassification NetworkTreeModel::activityForRow(int pRow) const
+{
+    if (pRow < 0 || pRow >= m_procs.size()) return ActivityClassification();
+    return m_procs[pRow].activity;
+}
+
 void NetworkTreeModel::refreshActivity(int pRow)
 {
     if (pRow < 0 || pRow >= m_procs.size()) return;
@@ -590,22 +619,7 @@ void NetworkTreeModel::refreshActivity(int pRow)
     if (current == p.activitySignature) return;
     p.activitySignature = current;
 
-    ActivityQuery query;
-    query.executableName = p.name;
-    query.displayName = p.identityName;
-    query.publisher = p.publisher;
-    query.publisherVerified = p.signerStatus == ApplicationIdentity::SignerStatus::Signed;
-    query.identityId = p.identityId;
-    query.groupId = p.groupId;
-    query.groupName = p.groupName;
-    query.foreground = p.foreground != NetGuard::ForegroundAssociation::None;
-    query.bytesPerSecond = p.totalRxSpeed;
-    if (!p.services.isEmpty()) {
-        query.serviceName = p.services.first().serviceName;
-        query.service = true;
-    }
-
-    p.activity = m_activityClassifier.classify(query);
+    p.activity = m_activityClassifier.classify(activityQueryForRow(pRow));
 
     const QModelIndex idx = index(pRow, COL_ACTIVITY);
     emit dataChanged(idx, idx, {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole + 5});

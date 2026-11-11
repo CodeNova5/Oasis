@@ -5,6 +5,7 @@
 #include "recommendationengine.h"
 
 #include <QDateTime>
+#include <QDir>
 #include <QFileInfo>
 
 namespace {
@@ -152,6 +153,36 @@ QStringList Recommendation::lines() const
     return lines;
 }
 
+QString RecommendationEngine::feedbackKeyFor(const RecommendationContext &context)
+{
+    const ActivityQuery &query = context.observation;
+
+    // Prefer the durable identity: it survives an update or a moved install, so
+    // a verdict the user gave once keeps applying. Otherwise use the most
+    // specific local identifier available. No destination, address, or rate is
+    // part of the key, and the key never leaves this device.
+    QString subject;
+    if (!query.identityId.trimmed().isEmpty()) {
+        subject = QStringLiteral("id:") + query.identityId.trimmed();
+    } else if (!query.executablePath.trimmed().isEmpty()) {
+        subject = QStringLiteral("path:")
+            + QDir::fromNativeSeparators(query.executablePath.trimmed()).toLower();
+    } else if (!query.executableName.trimmed().isEmpty()) {
+        subject = QStringLiteral("exe:") + query.executableName.trimmed().toLower();
+    } else if (!query.serviceName.trimmed().isEmpty()) {
+        subject = QStringLiteral("svc:") + query.serviceName.trimmed().toLower();
+    } else if (!query.groupId.trimmed().isEmpty()) {
+        subject = QStringLiteral("group:") + query.groupId.trimmed();
+    } else if (!query.displayName.trimmed().isEmpty()) {
+        subject = QStringLiteral("name:") + query.displayName.trimmed().toLower();
+    } else {
+        subject = QStringLiteral("unknown");
+    }
+
+    return catalogCategoryToken(context.activity.category)
+        + QLatin1Char('|') + subject;
+}
+
 RecommendationAction RecommendationEngine::recommendedActionFor(CatalogCategory category)
 {
     switch (category) {
@@ -237,6 +268,16 @@ Recommendation RecommendationEngine::recommend(const RecommendationContext &cont
 
     RecommendationAction action = recommendedActionFor(context.activity.category);
 
+    // NG-043: a verdict the user already gave changes future suggestions for
+    // this application. An explicit policy or exemption returned above, so
+    // feedback never overrides either.
+    const QString key = feedbackKeyFor(context);
+    result.feedbackKey = key;
+    const RecommendationFeedback feedback = m_feedback
+        ? m_feedback->feedbackFor(key)
+        : RecommendationFeedback::None;
+    result.feedback = feedback;
+
     // A foreground transfer may be intentional, so it is never throttled or
     // paused behind the user's back; the suggestion becomes a review instead.
     if (context.foreground &&
@@ -250,6 +291,29 @@ Recommendation RecommendationEngine::recommend(const RecommendationContext &cont
         action == RecommendationAction::NoAction &&
         context.activity.category == CatalogCategory::ForegroundDownload) {
         action = RecommendationAction::ReviewSettings;
+    }
+
+    // "Unwanted" hides the suggestion entirely; "Incorrect" keeps it visible
+    // but downgrades an actionable suggestion to a review, because the user has
+    // said its basis does not apply.
+    if (feedback == RecommendationFeedback::Unwanted) {
+        result.action = RecommendationAction::NoAction;
+        result.title = QStringLiteral("Suggestion hidden");
+        result.whyLikely = QStringLiteral("You marked this recommendation unwanted for this "
+                                          "application. The activity and its evidence stay "
+                                          "visible, but no suggestion is offered.");
+        result.expectedEffect = QStringLiteral("No change: nothing is limited or blocked.");
+        result.reversalAction = QStringLiteral("Clear the feedback for this application to see "
+                                               "the suggestion again.");
+        result.feedbackApplied = true;
+        return result;
+    }
+    if (feedback == RecommendationFeedback::Incorrect
+        && (action == RecommendationAction::Throttle
+            || action == RecommendationAction::Pause
+            || action == RecommendationAction::Schedule)) {
+        action = RecommendationAction::ReviewSettings;
+        result.feedbackApplied = true;
     }
 
     result.action = action;
@@ -273,6 +337,18 @@ Recommendation RecommendationEngine::recommend(const RecommendationContext &cont
 
     if (context.meteredConnection)
         result.whyLikely += QStringLiteral(" The connection is metered, so its cost matters.");
+
+    if (feedback == RecommendationFeedback::Incorrect) {
+        const QString note = QStringLiteral("You marked an earlier suggestion for this "
+                                            "application incorrect, so it is limited to a review.");
+        result.whyLikely = result.whyLikely.isEmpty()
+            ? note : result.whyLikely + QLatin1Char(' ') + note;
+    } else if (feedback == RecommendationFeedback::Useful) {
+        const QString note = QStringLiteral("You marked an earlier suggestion for this "
+                                            "application useful.");
+        result.whyLikely = result.whyLikely.isEmpty()
+            ? note : result.whyLikely + QLatin1Char(' ') + note;
+    }
 
     quint64 rateBits = 0;
     if (action == RecommendationAction::Throttle)
