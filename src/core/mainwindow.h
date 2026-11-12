@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QStringList>
 
 #include "ui/theme/thememanager.h"
 #include "hardware/hardwaremonitor.h"
@@ -29,6 +30,10 @@ class HardwareWidget;
 class TaskbarOverlay;
 class DiagnosticsModel;
 class AuditLogModel;
+class AppSidebar;
+class AppHeader;
+class SystemStatusBar;
+class QStackedWidget;
 struct BandwidthEvent;
 
 // Data structure to hold daily traffic per application
@@ -48,9 +53,6 @@ public:
 protected:
     void closeEvent  (QCloseEvent *event) override;
     void changeEvent (QEvent *event)      override;
-    // NG-052: the status line is the in-app half of a notification; clicking it
-    // opens the detail view of the application the notification was about.
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void onToggleTheme();
@@ -66,6 +68,10 @@ private slots:
     void saveSettings();
     void applySettingsToOverlay();
     void applyRunAtStartup(bool enable);
+
+    // Shell navigation: switching pages also updates the header title and the
+    // sidebar selection, so the three never disagree.
+    void navigateTo(int index);
 
     // NG-052: follow a notification to its evidence. A no-op until a
     // notification has named an application.
@@ -99,6 +105,8 @@ private slots:
     void saveHistoryToJson();
 
 private:
+    void buildShell();
+    QWidget *makePlaceholderPage(const QString &title, const QString &detail);
     void setupWidgets();
     void setupDiagnosticsView();
     void setupAuditLogView();
@@ -117,7 +125,6 @@ private:
     // click or the status line can open its detail view.
     void rememberNotificationSubject(quint32 pid, const QString &path,
                                      const QString &name);
-    void animateLiveBadge();
     void loadSettings();
     void initHistoryManager();
     void loadHistoryFromJson();
@@ -126,6 +133,15 @@ private:
     static QString fmtBytes(quint64 bytes);
 
     Ui::MainWindow    *ui          = nullptr;
+
+    AppSidebar        *m_sidebar   = nullptr;
+    AppHeader         *m_header    = nullptr;
+    SystemStatusBar   *m_statusBar = nullptr;
+    QStackedWidget    *m_pages     = nullptr;
+    QStringList        m_screenTitles;
+    QStringList        m_screenSubtitles;
+    int                m_overviewIndex = 0;
+    int                m_settingsIndex = 0;
 
     NetworkWidget     *m_netWidget = nullptr;
     AuditLogModel     *m_auditModel = nullptr;
@@ -141,9 +157,6 @@ private:
     QString            m_notificationName;
 
     ThemeManager::Mode m_theme     = ThemeManager::Dark;
-
-    QTimer            *m_badgeTimer= nullptr;
-    bool               m_badgeLit  = true;
 
     QTimer            *m_trafficMonitorTimer = nullptr;
     QTimer            *m_historyUiTimer      = nullptr;

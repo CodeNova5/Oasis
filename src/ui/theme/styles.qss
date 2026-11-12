@@ -131,6 +131,30 @@ QLabel#groupLabel {
     color: @text-muted;
 }
 
+QLabel[uiRole="emptyTitle"] {
+    font-size: @font-size-section;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+QLabel[uiRole="emptyText"] {
+    font-size: @font-size-body;
+    color: @text-secondary;
+}
+
+/* Status bar: one compact line */
+QFrame#statusBar QLabel {
+    font-size: @font-size-meta;
+}
+QLabel#warningMsg {
+    color: @semantic-warning;
+    font-size: @font-size-meta;
+    font-weight: 600;
+}
+QLabel#warningMsg[severity="failed"] {
+    color: @semantic-danger;
+}
+
 QLabel#rxLabel { color: @chart-download; font-weight: 600; }
 QLabel#txLabel { color: @chart-upload; font-weight: 600; }
 QLabel#cpuLabel { color: @semantic-warning; font-weight: 600; }
@@ -166,6 +190,7 @@ QToolButton[uiRole="navItem"] {
     border-radius: @radius-control;
     color: @text-secondary;
     font-size: @font-size-body;
+    font-weight: 400;
     min-height: @control-height;
     padding: 0 @space-md;
     text-align: left;

@@ -30,6 +30,9 @@ SOURCES += \
     src/main.cpp \
     src/core/mainwindow.cpp \
     src/ui/theme/thememanager.cpp \
+    src/ui/shell/appsidebar.cpp \
+    src/ui/shell/appheader.cpp \
+    src/ui/shell/systemstatusbar.cpp \
     src/core/updatechecker.cpp \
     src/core/appinstaller.cpp \
     src/core/windowsicon.cpp \
@@ -102,6 +105,9 @@ HEADERS += \
     src/ui/theme/typography.h \
     src/ui/theme/dimensions.h \
     src/ui/theme/thememanager.h \
+    src/ui/shell/appsidebar.h \
+    src/ui/shell/appheader.h \
+    src/ui/shell/systemstatusbar.h \
     src/core/updatechecker.h \
     src/core/appinstaller.h \
     src/core/windowsicon.h \
@@ -182,6 +188,7 @@ INCLUDEPATH += \
     src \
     src/core \
     src/ui/theme \
+    src/ui/shell \
     src/network \
     src/firewall \
     src/hardware \

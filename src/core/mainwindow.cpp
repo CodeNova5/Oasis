@@ -8,6 +8,10 @@
 #include "qdebug.h"
 #include "ui_mainwindow.h"
 #include "ui/theme/thememanager.h"
+#include "ui/theme/dimensions.h"
+#include "ui/shell/appsidebar.h"
+#include "ui/shell/appheader.h"
+#include "ui/shell/systemstatusbar.h"
 #include "updatechecker.h"
 #include "appinstaller.h"
 #include "windowsicon.h"
@@ -51,6 +55,10 @@
 #include <QTextStream>
 #include <QMessageBox>
 #include <QTableWidgetItem>
+#include <QStackedWidget>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QFrame>
 
 // How an export says whether destinations were redacted, appended to every
 // success message so the file's contents are never a surprise.
@@ -73,11 +81,11 @@ MainWindow::MainWindow(QWidget *parent)
     Title.append(" Version ");
     Title.append(APP_VERSION_STR);
     setWindowTitle(Title);
-    ui->versionLabel->setText(APP_VERSION_DISPLAY);
 
     if (QScreen *scr = QGuiApplication::primaryScreen())
         move(scr->availableGeometry().center() - rect().center());
 
+    buildShell();
     setupWidgets();
     setupDiagnosticsView();
     setupAuditLogView();
@@ -85,28 +93,11 @@ MainWindow::MainWindow(QWidget *parent)
     setupAiProviderView();
     setupTray();
 
-    // NG-052: the status line shows the latest notification. Make it clickable
-    // so the user can go from the alert to the evidence behind it.
-    if (ui->statusMsg) {
-        ui->statusMsg->installEventFilter(this);
-        ui->statusMsg->setCursor(Qt::PointingHandCursor);
-        ui->statusMsg->setToolTip(QStringLiteral("Click for the details of the last notification."));
-    }
-
     loadSettings();
     initHistoryManager();
 
-    ui->mainTabs->setCurrentIndex(0);
     ui->cmbOverlayRamFormat->setCurrentIndex(0);
-
-
-    m_badgeTimer = new QTimer(this);
-    m_badgeTimer->setInterval(900);
-    connect(m_badgeTimer, &QTimer::timeout, this, &MainWindow::animateLiveBadge);
-    m_badgeTimer->start();
-
-    connect(ui->btnThemeToggle, &QPushButton::clicked, this, &MainWindow::onToggleTheme);
-    connect(ui->btnMinimizeToTray, &QPushButton::clicked, this, &MainWindow::onMinimizeToTray);
+    m_header->setDarkMode(ThemeManager::instance().isDark());
 
     connect(ui->chkRunAtStartup, &QCheckBox::toggled, this, [this](bool checked){
         applyRunAtStartup(checked);
@@ -207,7 +198,7 @@ void MainWindow::initHistoryManager()
     m_historyUiTimer = new QTimer(this);
     m_historyUiTimer->setInterval(2000);
     connect(m_historyUiTimer, &QTimer::timeout, this, [this](){
-        if (ui->mainTabs->currentWidget() == ui->tabHistory) {
+        if (m_pages && m_pages->currentWidget() == ui->tabHistory) {
             refreshHistoryUI();
         }
     });
@@ -798,8 +789,8 @@ void MainWindow::setupAiProviderView()
 
     // The approval dialog can also change these settings, so re-read them when
     // the Settings tab is shown.
-    connect(ui->mainTabs, &QTabWidget::currentChanged, this, [this](int) {
-        if (ui->mainTabs->currentWidget() == ui->tabSettings)
+    connect(m_pages, &QStackedWidget::currentChanged, this, [this](int) {
+        if (m_pages->currentWidget() == ui->tabSettings)
             refreshAiProviderUi();
     });
 }
@@ -1132,6 +1123,202 @@ void MainWindow::applyRunAtStartup(bool enable)
 // Core Window Methods
 // ============================================================================
 
+// ============================================================================
+// Application shell (sidebar + header + page stack + status bar)
+// ============================================================================
+
+void MainWindow::buildShell()
+{
+    // Detach the existing screens from the legacy tab widget. Their internal
+    // UI is intentionally untouched: the redesigned Overview/Activity/...
+    // pages are added here in later phases, one destination at a time.
+    QWidget *oldRoot = takeCentralWidget();
+    QTabWidget *tabs = ui->mainTabs;
+
+    const QList<QWidget *> existingPages = {
+        ui->tabNetwork, ui->tabDataSaver, ui->tabFirewall,
+        ui->tabHardware, ui->tabHistory, ui->tabSettings
+    };
+    for (QWidget *page : existingPages) {
+        if (!page)
+            continue;
+        const int index = tabs->indexOf(page);
+        if (index >= 0)
+            tabs->removeTab(index);
+        page->setParent(nullptr);
+        page->hide();
+    }
+    delete oldRoot;
+
+    auto *root = new QWidget(this);
+    auto *rootLayout = new QVBoxLayout(root);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
+
+    auto *workspace = new QWidget(root);
+    auto *workspaceLayout = new QHBoxLayout(workspace);
+    workspaceLayout->setContentsMargins(0, 0, 0, 0);
+    workspaceLayout->setSpacing(0);
+
+    m_sidebar = new AppSidebar(workspace);
+
+    auto *mainColumn = new QWidget(workspace);
+    auto *columnLayout = new QVBoxLayout(mainColumn);
+    columnLayout->setContentsMargins(0, 0, 0, 0);
+    columnLayout->setSpacing(0);
+
+    m_header = new AppHeader(mainColumn);
+    m_pages = new QStackedWidget(mainColumn);
+    m_pages->setObjectName(QStringLiteral("PageSurface"));
+    columnLayout->addWidget(m_header);
+    columnLayout->addWidget(m_pages, 1);
+
+    workspaceLayout->addWidget(m_sidebar);
+    workspaceLayout->addWidget(mainColumn, 1);
+
+    m_statusBar = new SystemStatusBar(root);
+    rootLayout->addWidget(workspace, 1);
+    rootLayout->addWidget(m_statusBar);
+
+    setCentralWidget(root);
+
+    // Sidebar item index and stack index are kept identical so navigation is
+    // a single number rather than a lookup table.
+    auto addScreen = [this](const QString &label, QWidget *page,
+                            const QString &title, const QString &subtitle) {
+        m_sidebar->addItem(label);
+        m_pages->addWidget(page);
+        m_screenTitles << title;
+        m_screenSubtitles << subtitle;
+    };
+
+    m_sidebar->addSection(QStringLiteral("Monitor"));
+    addScreen(QStringLiteral("Overview"), ui->tabNetwork,
+              QStringLiteral("Overview"),
+              QStringLiteral("Live activity, processes and controls"));
+    m_overviewIndex = m_screenTitles.size() - 1;
+    addScreen(QStringLiteral("Activity"),
+              makePlaceholderPage(QStringLiteral("Activity"),
+                  QStringLiteral("Time-based bandwidth analysis is being rebuilt "
+                                 "as a dedicated screen. Live monitoring continues on Overview.")),
+              QStringLiteral("Activity"),
+              QStringLiteral("Bandwidth over time"));
+    addScreen(QStringLiteral("Applications"),
+              makePlaceholderPage(QStringLiteral("Applications"),
+                  QStringLiteral("The application table is being rebuilt as a dedicated "
+                                 "screen. Current process activity is available on Overview.")),
+              QStringLiteral("Applications"),
+              QStringLiteral("Bandwidth consumers and their identity"));
+    addScreen(QStringLiteral("Connections"),
+              makePlaceholderPage(QStringLiteral("Connections"),
+                  QStringLiteral("Endpoint attribution is being rebuilt as a dedicated "
+                                 "screen. Live connections remain visible on Overview.")),
+              QStringLiteral("Connections"),
+              QStringLiteral("Domains, IPs and evidence"));
+
+    m_sidebar->addSection(QStringLiteral("Control"));
+    addScreen(QStringLiteral("Policies"), ui->tabFirewall,
+              QStringLiteral("Policies"),
+              QStringLiteral("Rules and enforcement status"));
+    addScreen(QStringLiteral("Data Saver"), ui->tabDataSaver,
+              QStringLiteral("Data Saver"),
+              QStringLiteral("Detected high-bandwidth processes"));
+    addScreen(QStringLiteral("Insights"),
+              makePlaceholderPage(QStringLiteral("Insights"),
+                  QStringLiteral("Recommendations are being rebuilt as a dedicated "
+                                 "screen. Local recommendations remain available on Overview.")),
+              QStringLiteral("Insights"),
+              QStringLiteral("Anomalies and recommendations"));
+
+    m_sidebar->addSection(QStringLiteral("History"));
+    addScreen(QStringLiteral("History"), ui->tabHistory,
+              QStringLiteral("History"),
+              QStringLiteral("Stored traffic by day and application"));
+    addScreen(QStringLiteral("Audit & Reports"),
+              makePlaceholderPage(QStringLiteral("Audit & Reports"),
+                  QStringLiteral("Report exports are being rebuilt as a dedicated screen. "
+                                 "The local audit log remains available under Settings.")),
+              QStringLiteral("Audit & Reports"),
+              QStringLiteral("Event traceability and exports"));
+
+    m_sidebar->addPinnedSection(QStringLiteral("System"));
+    addScreen(QStringLiteral("Hardware"), ui->tabHardware,
+              QStringLiteral("Hardware"),
+              QStringLiteral("CPU, memory, GPU and temperatures"));
+    addScreen(QStringLiteral("Settings"), ui->tabSettings,
+              QStringLiteral("Settings"),
+              QStringLiteral("Privacy, diagnostics and preferences"));
+    m_settingsIndex = m_screenTitles.size() - 1;
+
+    connect(m_sidebar, &AppSidebar::itemActivated, this, &MainWindow::navigateTo);
+    connect(m_header, &AppHeader::themeToggleRequested,
+            this, &MainWindow::onToggleTheme);
+    connect(m_header, &AppHeader::minimizeToTrayRequested,
+            this, &MainWindow::onMinimizeToTray);
+    connect(m_header, &AppHeader::monitoringPillActivated, this, [this]() {
+        navigateTo(m_settingsIndex);
+    });
+    connect(m_statusBar, &SystemStatusBar::warningActivated, this, [this]() {
+        navigateTo(m_settingsIndex);
+    });
+    connect(m_statusBar, &SystemStatusBar::messageActivated,
+            this, &MainWindow::openLastNotificationSubject);
+
+    navigateTo(m_overviewIndex);
+}
+
+QWidget *MainWindow::makePlaceholderPage(const QString &title, const QString &detail)
+{
+    auto *page = new QWidget;
+    auto *outer = new QVBoxLayout(page);
+    outer->setContentsMargins(Theme::Dim::SpaceXl, Theme::Dim::SpaceXl,
+                              Theme::Dim::SpaceXl, Theme::Dim::SpaceXl);
+    outer->setSpacing(0);
+
+    auto *card = new QFrame(page);
+    card->setProperty("uiRole", QStringLiteral("emptyState"));
+    card->setMaximumWidth(420);
+
+    auto *cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(Theme::Dim::Space2Xl, Theme::Dim::Space2Xl,
+                                   Theme::Dim::Space2Xl, Theme::Dim::Space2Xl);
+    cardLayout->setSpacing(Theme::Dim::SpaceSm);
+
+    auto *heading = new QLabel(title, card);
+    heading->setProperty("uiRole", QStringLiteral("emptyTitle"));
+    heading->setAlignment(Qt::AlignCenter);
+
+    auto *body = new QLabel(detail, card);
+    body->setProperty("uiRole", QStringLiteral("emptyText"));
+    body->setWordWrap(true);
+    body->setAlignment(Qt::AlignCenter);
+
+    cardLayout->addWidget(heading);
+    cardLayout->addWidget(body);
+
+    auto *row = new QHBoxLayout;
+    row->addStretch(1);
+    row->addWidget(card);
+    row->addStretch(1);
+
+    outer->addStretch(1);
+    outer->addLayout(row);
+    outer->addStretch(1);
+    return page;
+}
+
+void MainWindow::navigateTo(int index)
+{
+    if (!m_pages || index < 0 || index >= m_pages->count())
+        return;
+    m_pages->setCurrentIndex(index);
+    if (m_sidebar)
+        m_sidebar->setCurrentIndex(index);
+    if (m_header && index < m_screenTitles.size())
+        m_header->setPage(m_screenTitles.at(index),
+                          m_screenSubtitles.value(index));
+}
+
 void MainWindow::setupWidgets()
 {
     m_netWidget = new NetworkWidget(this);
@@ -1189,6 +1376,38 @@ void MainWindow::setupWidgets()
     });
 
     connect(m_overlay, &TaskbarOverlay::exitRequested, qApp, &QApplication::quit);
+
+    // ── Global monitoring state → header pill and status bar ───────────────
+    NetworkMonitor *monitor = m_netWidget->networkMonitor();
+    connect(monitor, &NetworkMonitor::captureStarted, this, [this]() {
+        if (m_header)
+            m_header->setMonitoringState(AppHeader::MonitorState::Active);
+        if (m_statusBar) {
+            m_statusBar->setWarning(QString());
+            m_statusBar->setMonitoringState(true, m_netWidget->activeAdapterDescription());
+        }
+    });
+    connect(monitor, &NetworkMonitor::captureStopped, this, [this]() {
+        if (m_header)
+            m_header->setMonitoringState(AppHeader::MonitorState::Stopped);
+        if (m_statusBar)
+            m_statusBar->setMonitoringState(false);
+    });
+    connect(monitor, &NetworkMonitor::captureError, this, [this](const QString &msg) {
+        if (m_header)
+            m_header->setMonitoringState(AppHeader::MonitorState::Degraded);
+        if (m_statusBar)
+            m_statusBar->setWarning(
+                QStringLiteral("⚠ Capture error — open diagnostics"), true);
+        qWarning() << "Capture error:" << msg;
+    });
+    connect(monitor, &NetworkMonitor::adapterDiagnostic, this,
+            [this](const QString &adapter, const QString &reason) {
+        if (m_statusBar)
+            m_statusBar->setWarning(
+                QStringLiteral("⚠ Adapter unavailable — open diagnostics"), false);
+        qWarning() << "Adapter issue:" << adapter << reason;
+    });
 }
 
 void MainWindow::setupTray()
@@ -1224,8 +1443,8 @@ void MainWindow::onToggleTheme()
 {
     ThemeManager::instance().toggleTheme();
     m_theme = ThemeManager::instance().mode();
-    ui->btnThemeToggle->setChecked(m_theme == ThemeManager::Light);
-    ui->btnThemeToggle->setText(m_theme == ThemeManager::Dark ? "☀" : "🌙");
+    if (m_header)
+        m_header->setDarkMode(m_theme == ThemeManager::Dark);
     saveSettings();
 }
 
@@ -1249,18 +1468,6 @@ void MainWindow::rememberNotificationSubject(quint32 pid, const QString &path,
     m_notificationName = name.trimmed();
 }
 
-bool MainWindow::eventFilter(QObject *watched, QEvent *event)
-{
-    if (ui && watched == ui->statusMsg && event->type() == QEvent::MouseButtonRelease) {
-        const auto *mouse = static_cast<QMouseEvent *>(event);
-        if (mouse->button() == Qt::LeftButton) {
-            openLastNotificationSubject();
-            return true;
-        }
-    }
-    return QMainWindow::eventFilter(watched, event);
-}
-
 // NG-052: "move from a notification to evidence and then to a reversible
 // action". The detail view is the evidence, and its action bar is the reversible
 // control, so a warning is one click away from the thing it is warning about.
@@ -1272,8 +1479,7 @@ void MainWindow::openLastNotificationSubject()
     showNormal();
     activateWindow();
     raise();
-    if (ui->mainTabs && ui->tabNetwork)
-        ui->mainTabs->setCurrentWidget(ui->tabNetwork);
+    navigateTo(m_overviewIndex);
 
     m_netWidget->showApplicationDetails(m_notificationPid, m_notificationPath,
                                         m_notificationName);
@@ -1322,12 +1528,11 @@ void MainWindow::postNotification(const AppNotification &notification)
         m_tray->showMessage(notification.title, message, icon, timeoutMs);
     }
 
-    if (appRoute && ui->statusMsg) {
+    if (appRoute && m_statusBar) {
         QString status = notification.title;
         if (decision.suppressedCount > 0)
             status += QStringLiteral(" (+%1 earlier)").arg(decision.suppressedCount);
-        ui->statusMsg->setText(status);
-        ui->statusMsg->setToolTip(message);
+        m_statusBar->setMessage(status, message);
     }
 }
 
@@ -1339,8 +1544,10 @@ void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
 
 void MainWindow::onNetworkSpeed(quint64 rxBps, quint64 txBps)
 {
-    ui->rxLabel->setText("↓ " + fmtSpeed(rxBps));
-    ui->txLabel->setText("↑ " + fmtSpeed(txBps));
+    if (m_statusBar) {
+        m_statusBar->setSpeedText(fmtSpeed(rxBps), fmtSpeed(txBps));
+        m_statusBar->setLastUpdated(QDateTime::currentDateTime());
+    }
     m_tray->setToolTip(QString("NetGuard AIO\n↓ %1  ↑ %2").arg(fmtSpeed(rxBps), fmtSpeed(txBps)));
 }
 
@@ -1496,14 +1703,9 @@ void MainWindow::onDataSaverDetectionMenu(const QPoint &pos)
 
 void MainWindow::onHardwareSnapshot(const HardwareSnapshot &snap)
 {
-    ui->cpuLabel->setText(QString("CPU %1%").arg(static_cast<int>(snap.cpuLoadPct)));
-    ui->ramLabel->setText(QString("RAM %1%").arg(static_cast<int>(snap.ramLoadPct)));
-}
-
-void MainWindow::animateLiveBadge()
-{
-    m_badgeLit = !m_badgeLit;
-    ui->liveBadge->setStyleSheet(m_badgeLit ? "color:#2EA043; font-weight:700; font-size:8pt;" : "color:#1A3A22; font-weight:700; font-size:8pt;");
+    if (m_statusBar)
+        m_statusBar->setHardware(static_cast<int>(snap.cpuLoadPct),
+                                 static_cast<int>(snap.ramLoadPct));
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

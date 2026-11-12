@@ -110,6 +110,9 @@ public:
     QString throttleActionText(const QString &path) const;
     void selectAdapterByIPOrAuto(const QString &ipOrAuto);
     QList<AdapterInfo> getAdapterList() const { return m_adapters; }
+    // Description of the adapter currently selected in the capture combo, for
+    // the shell status bar. Empty until the adapter list is populated.
+    QString activeAdapterDescription() const;
     DiagnosticsModel *diagnosticsModel() const { return m_diagnostics; }
     // NG-050: the persisted audit log behind the audit view and its export.
     AuditEventStore *auditStore() { return &m_auditStore; }

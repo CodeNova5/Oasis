@@ -1467,6 +1467,13 @@ void NetworkWidget::populateAdapterCombo() {
     onAdapterChanged(restoreIdx);
 }
 
+QString NetworkWidget::activeAdapterDescription() const
+{
+    if (!ui || !ui->cmbAdapter)
+        return QString();
+    return ui->cmbAdapter->currentText();
+}
+
 void NetworkWidget::selectAdapterByIPOrAuto(const QString &ipOrAuto)
 {
     for (int i = 0; i < ui->cmbAdapter->count(); ++i) {
