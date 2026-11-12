@@ -18,6 +18,7 @@
 #include "enforcementrestore.h"
 #include "policyschedule.h"
 #include "policyreconcile.h"
+#include "auditeventstore.h"
 #include "attribution/recommendationengine.h"
 #include "attribution/recommendationfeedback.h"
 #include "attribution/aiprovider.h"
@@ -168,4 +169,8 @@ private:
     // until the user configures it.
     std::unique_ptr<OpenAiCompatibleProvider> m_aiProvider;
     AiAssistant                 m_aiAssistant;
+    // NG-050: bounded local audit trail of detections, decisions, policy
+    // changes, enforcement outcomes, and attribution changes. It is persisted
+    // by the store itself; nothing here uploads it.
+    AuditEventStore             m_auditStore;
 };

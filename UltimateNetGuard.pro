@@ -45,6 +45,7 @@ SOURCES += \
     src/network/packetparser.cpp \
     src/network/testfixtures.cpp \
     src/network/policy.cpp \
+    src/network/auditeventstore.cpp \
     src/network/diagnostics.cpp \
     src/network/enforcementrestore.cpp \
     src/network/enforcementcoordinator.cpp \
@@ -107,6 +108,7 @@ HEADERS += \
     src/network/packetparser.h \
     src/network/testfixtures.h \
     src/network/policy.h \
+    src/network/auditeventstore.h \
     src/network/diagnostics.h \
     src/network/enforcementrestore.h \
     src/network/enforcementcoordinator.h \

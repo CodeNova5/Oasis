@@ -29,6 +29,7 @@ INCLUDEPATH += $$PWD/../src
 SOURCES += \
     main.cpp \
     ../src/network/policy.cpp \
+    ../src/network/auditeventstore.cpp \
     ../src/network/packetparser.cpp \
     ../src/network/bandwidthguard.cpp \
     ../src/network/testfixtures.cpp \
@@ -56,6 +57,7 @@ SOURCES += \
 
 HEADERS += \
     ../src/network/policy.h \
+    ../src/network/auditeventstore.h \
     ../src/network/packetparser.h \
     ../src/network/bandwidthguard.h \
     ../src/network/testfixtures.h \

@@ -53,6 +53,23 @@
 #include "core/windowsicon.h"
 #include "firewall/firewallmanager.h"
 
+namespace {
+
+// NG-050: audit records use plain words so they stay readable after export.
+QString enforcementStatusName(EnforcementResult::Status status)
+{
+    switch (status) {
+    case EnforcementResult::Status::NotApplied: return QStringLiteral("not applied");
+    case EnforcementResult::Status::Requested:  return QStringLiteral("requested");
+    case EnforcementResult::Status::Applied:    return QStringLiteral("applied");
+    case EnforcementResult::Status::Partial:    return QStringLiteral("partial");
+    case EnforcementResult::Status::Failed:     return QStringLiteral("failed");
+    }
+    return QStringLiteral("unknown");
+}
+
+} // namespace
+
 // ============================================================================
 // ── Elevate Permissions to allow reading Process Paths (Crucial for Icons) ──
 // ============================================================================
@@ -369,6 +386,30 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // Shares the managers above, so a throttle result the worker posts reaches
     // this widget, and emergency restore can take back only automatic controls.
     m_enforcement = new EnforcementCoordinator(m_throttlePolicies, m_firewall, this);
+    // NG-050: every enforcement outcome the coordinator reports becomes an
+    // audit event, including a channel that could not act, so a policy's real
+    // effect is explainable later.
+    connect(m_enforcement, &EnforcementCoordinator::policyApplied, this,
+            [this](const QString &policyId, const QString &executablePath,
+                   const EnforcementResult &result) {
+        AuditEvent event;
+        event.type = AuditEvent::EventType::EnforcementResult;
+        event.scope = executablePath;
+        event.reason = QStringLiteral("policy channel reported an outcome");
+        event.result = enforcementStatusName(result.status);
+        if (result.status == EnforcementResult::Status::Failed)
+            event.errorInfo = result.message;
+        event.relatedPolicyId = policyId;
+        event.details = QStringLiteral("channels: %1; upload limited: %2; download limited: %3")
+                            .arg(result.channels.isEmpty()
+                                     ? QStringLiteral("(none)")
+                                     : result.channels)
+                            .arg(result.uploadLimited ? QStringLiteral("yes")
+                                                      : QStringLiteral("no"))
+                            .arg(result.downloadLimited ? QStringLiteral("yes")
+                                                        : QStringLiteral("no"));
+        m_auditStore.append(event);
+    });
 
     // NG-023: evaluate the stored policies at startup (which is how a boundary
     // missed while the application was closed is recovered) and then on a
@@ -516,6 +557,12 @@ NetworkWidget::NetworkWidget(QWidget *parent)
         dlg.exec();
         m_verifyDialog = nullptr;
         if (!dlg.changed()) return;
+        AuditEvent audit;
+        audit.type = AuditEvent::EventType::PolicyChange;
+        audit.scope = QStringLiteral("policy store");
+        audit.reason = QStringLiteral("user edited or deleted stored policies");
+        audit.result = QStringLiteral("saved");
+        m_auditStore.append(audit);
         m_enforcement->forgetReappliedPolicies();
         m_policyScheduler->evaluateNow();
         schedulePolicyReconciliation();
@@ -657,6 +704,15 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
                                      QStringLiteral("The policy could not be saved."));
                 return;
             }
+
+            AuditEvent audit;
+            audit.type = AuditEvent::EventType::PolicyChange;
+            audit.scope = dlg.policy().scope;
+            audit.reason = QStringLiteral("user created a policy");
+            audit.result = QStringLiteral("saved");
+            audit.relatedPolicyId = dlg.policy().id;
+            audit.details = dlg.policy().description;
+            m_auditStore.append(audit);
 
             ui->lblStatus->setText(QStringLiteral("Policy saved."));
             // The scheduler has not seen this policy yet, so this counts as an
@@ -907,6 +963,18 @@ void NetworkWidget::restoreAllDataSaverPolicies()
     // through throttlesRestored().
     m_restoreReport = m_enforcement->emergencyRestore();
     m_restoreReportPending = m_restoreReport.throttleRestoreRequested;
+
+    AuditEvent restoreAudit;
+    restoreAudit.type = AuditEvent::EventType::UserDecision;
+    restoreAudit.scope = QStringLiteral("automatic controls");
+    restoreAudit.reason = QStringLiteral("user restored automatic controls");
+    restoreAudit.result = m_restoreReport.ok() ? QStringLiteral("restored")
+                                               : QStringLiteral("partial");
+    restoreAudit.errorInfo = m_restoreReport.ok()
+        ? QString()
+        : QStringLiteral("%1 action(s) failed").arg(m_restoreReport.failed);
+    restoreAudit.details = m_restoreReport.summary();
+    m_auditStore.append(restoreAudit);
 
     ui->lblStatus->setText((m_restoreReport.ok() ? QString() : QStringLiteral("⚠ "))
                            + m_restoreReport.summary());

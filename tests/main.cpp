@@ -40,6 +40,7 @@
 #include "identity/foregroundsignal.h"
 #include "identity/processlineage.h"
 #include "firewall/rulenames.h"
+#include "network/auditeventstore.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/policy.h"
@@ -4183,6 +4184,301 @@ void testAiApproval()
     QSettings().clear();
 }
 
+// ─── NG-050: audit event store ──────────────────────────────────────────────
+// The store must timestamp, bound, persist, query, and export events, and the
+// export must never add packet content.
+void testAuditEventStore()
+{
+    QSettings().clear();
+
+    // Names and parsing are stable and shared by the export.
+    checkEqual(auditEventTypeName(AuditEvent::EventType::EnforcementResult),
+               QStringLiteral("EnforcementResult"),
+               QStringLiteral("an audit event type has a stable name"));
+    checkEqual(static_cast<int>(auditEventTypeNames().size()), 9,
+               QStringLiteral("every audit event type is named"));
+    AuditEvent::EventType parsedType = AuditEvent::EventType::Detection;
+    check(auditEventTypeFromName(QStringLiteral("policychange"), &parsedType),
+          QStringLiteral("event type names parse case-insensitively"));
+    check(parsedType == AuditEvent::EventType::PolicyChange,
+          QStringLiteral("a parsed event type names the right value"));
+    check(!auditEventTypeFromName(QStringLiteral("Bogus"), &parsedType),
+          QStringLiteral("an unknown event type name is rejected"));
+
+    // Retention is clamped in both directions.
+    AuditEventStore store;
+    checkEqual(store.count(), 0, QStringLiteral("a new audit store starts empty"));
+    checkEqual(store.retention().retentionDays, 30,
+               QStringLiteral("the default retention window is 30 days"));
+    checkEqual(store.retention().maxEvents, 2000,
+               QStringLiteral("the default event bound is 2000"));
+    AuditRetentionSettings tooSmall;
+    tooSmall.retentionDays = 0;
+    tooSmall.maxEvents = 0;
+    store.setRetention(tooSmall);
+    checkEqual(store.retention().retentionDays, 1,
+               QStringLiteral("retention below one day is clamped up"));
+    checkEqual(store.retention().maxEvents, 1,
+               QStringLiteral("an event bound below one is clamped up"));
+    AuditRetentionSettings tooLarge;
+    tooLarge.retentionDays = 100000;
+    tooLarge.maxEvents = 100000;
+    store.setRetention(tooLarge);
+    checkEqual(store.retention().retentionDays, 365,
+               QStringLiteral("retention above one year is clamped down"));
+    checkEqual(store.retention().maxEvents, 20000,
+               QStringLiteral("an event bound above 20000 is clamped down"));
+    store.setRetention(AuditRetentionSettings());
+
+    const QDateTime now = QDateTime::currentDateTime();
+
+    AuditEvent detection;
+    detection.type = AuditEvent::EventType::Detection;
+    detection.scope = QStringLiteral("C:/Apps/updater.exe");
+    detection.reason = QStringLiteral("sustained upload observed");
+    detection.result = QStringLiteral("observed");
+    store.append(detection);
+    checkEqual(store.count(), 1, QStringLiteral("append stores one event"));
+    check(store.events().first().timestamp.isValid(),
+          QStringLiteral("an event with no timestamp is stamped on append"));
+
+    AuditEvent policyChange;
+    policyChange.timestamp = now.addSecs(-10);
+    policyChange.type = AuditEvent::EventType::PolicyChange;
+    policyChange.scope = QStringLiteral("group:chrome");
+    policyChange.reason = QStringLiteral("user created a policy");
+    policyChange.result = QStringLiteral("saved");
+    policyChange.relatedPolicyId = QStringLiteral("policy-1");
+    policyChange.relatedIdentityId = QStringLiteral("sha1:abc");
+    store.append(policyChange);
+
+    AuditEvent enforcement;
+    enforcement.timestamp = now.addSecs(-5);
+    enforcement.type = AuditEvent::EventType::EnforcementResult;
+    enforcement.scope = QStringLiteral("C:/Apps/updater.exe");
+    enforcement.reason = QStringLiteral("throttle requested");
+    enforcement.result = QStringLiteral("applied");
+    enforcement.errorInfo = QStringLiteral("upload channel unavailable");
+    enforcement.relatedPolicyId = QStringLiteral("policy-1");
+    enforcement.details = QStringLiteral("{\"direction\":\"download\"}");
+    store.append(enforcement);
+    checkEqual(store.count(), 3, QStringLiteral("the store keeps every appended event"));
+
+    AuditQuery byType;
+    byType.types << AuditEvent::EventType::EnforcementResult;
+    const QList<AuditEvent> enforcementEvents = store.query(byType);
+    checkEqual(static_cast<int>(enforcementEvents.size()), 1,
+               QStringLiteral("query filters by event type"));
+    checkEqual(enforcementEvents.first().result, QStringLiteral("applied"),
+               QStringLiteral("the filtered event keeps its outcome"));
+
+    AuditQuery byIdentity;
+    byIdentity.identityId = QStringLiteral("sha1:abc");
+    checkEqual(static_cast<int>(store.query(byIdentity).size()), 1,
+               QStringLiteral("query filters by related identity"));
+
+    AuditQuery byPolicy;
+    byPolicy.policyId = QStringLiteral("policy-1");
+    checkEqual(static_cast<int>(store.query(byPolicy).size()), 2,
+               QStringLiteral("query filters by related policy"));
+
+    AuditQuery byScope;
+    byScope.scope = QStringLiteral("group:chrome");
+    checkEqual(static_cast<int>(store.query(byScope).size()), 1,
+               QStringLiteral("query filters by exact scope"));
+
+    AuditQuery byText;
+    byText.text = QStringLiteral("UNAVAILABLE");
+    checkEqual(static_cast<int>(store.query(byText).size()), 1,
+               QStringLiteral("query matches free text case-insensitively"));
+
+    AuditQuery byWindow;
+    byWindow.from = now.addSecs(-7);
+    const QList<AuditEvent> window = store.query(byWindow);
+    checkEqual(static_cast<int>(window.size()), 2,
+               QStringLiteral("query honours the start of a time window"));
+    check(window.first().timestamp <= window.last().timestamp,
+          QStringLiteral("query results are chronological"));
+
+    AuditQuery newest;
+    newest.limit = 2;
+    const QList<AuditEvent> recent = store.query(newest);
+    checkEqual(static_cast<int>(recent.size()), 2,
+               QStringLiteral("query limit keeps two events"));
+    checkEqual(static_cast<int>(recent.first().type),
+               static_cast<int>(AuditEvent::EventType::EnforcementResult),
+               QStringLiteral("a limited query keeps the newest events"));
+
+    // The event bound evicts the oldest first.
+    AuditRetentionSettings tiny;
+    tiny.maxEvents = 2;
+    store.setRetention(tiny);
+    checkEqual(store.count(), 2,
+               QStringLiteral("the event bound is enforced immediately"));
+    check(store.events().first().type == AuditEvent::EventType::EnforcementResult,
+          QStringLiteral("the oldest event is evicted first"));
+
+    // Shortening the window forgets an older event immediately.
+    store.setRetention(AuditRetentionSettings());
+    AuditEvent outdated;
+    outdated.timestamp = QDateTime::currentDateTime().addDays(-3);
+    outdated.type = AuditEvent::EventType::Detection;
+    outdated.reason = QStringLiteral("old detection");
+    store.append(outdated);
+    const int beforeWindowShrink = store.count();
+    AuditRetentionSettings shortWindow;
+    shortWindow.retentionDays = 1;
+    store.setRetention(shortWindow);
+    checkEqual(store.count(), beforeWindowShrink - 1,
+               QStringLiteral("shortening retention forgets an older event"));
+    bool oldSeen = false;
+    for (const AuditEvent &event : store.events())
+        if (event.reason == QStringLiteral("old detection")) oldSeen = true;
+    check(!oldSeen, QStringLiteral("the expired event is gone from the store"));
+
+    // Clearing keeps the bounds but removes every event, on disk too.
+    store.clear();
+    checkEqual(store.count(), 0, QStringLiteral("clear empties the log"));
+    checkEqual(store.retention().retentionDays, 1,
+               QStringLiteral("clear keeps the retention settings"));
+    {
+        AuditEventStore reloadedEmpty;
+        checkEqual(reloadedEmpty.count(), 0,
+                   QStringLiteral("the cleared log is persisted"));
+    }
+
+    // Persistence round-trip.
+    QSettings().clear();
+    {
+        AuditEventStore persisted;
+        AuditRetentionSettings bounds;
+        bounds.retentionDays = 7;
+        bounds.maxEvents = 100;
+        persisted.setRetention(bounds);
+        AuditEvent first;
+        first.timestamp = now.addSecs(-20);
+        first.type = AuditEvent::EventType::PolicyChange;
+        first.scope = QStringLiteral("group:chrome");
+        first.reason = QStringLiteral("user created a policy");
+        first.result = QStringLiteral("saved");
+        first.relatedPolicyId = QStringLiteral("policy-1");
+        first.relatedIdentityId = QStringLiteral("sha1:abc");
+        first.details = QStringLiteral("status metadata");
+        persisted.append(first);
+        AuditEvent second;
+        second.timestamp = now.addSecs(-1);
+        second.type = AuditEvent::EventType::EnforcementResult;
+        second.scope = QStringLiteral("C:/Apps/updater.exe");
+        second.reason = QStringLiteral("policy channel reported an outcome");
+        second.result = QStringLiteral("applied");
+        second.relatedPolicyId = QStringLiteral("policy-1");
+        persisted.append(second);
+    }
+    AuditEventStore reloaded;
+    checkEqual(reloaded.retention().retentionDays, 7,
+               QStringLiteral("retention days survive a restart"));
+    checkEqual(reloaded.retention().maxEvents, 100,
+               QStringLiteral("the event bound survives a restart"));
+    checkEqual(reloaded.count(), 2, QStringLiteral("audit events survive a restart"));
+    checkEqual(reloaded.events().first().scope, QStringLiteral("group:chrome"),
+               QStringLiteral("a reloaded event keeps its scope"));
+    checkEqual(reloaded.events().last().result, QStringLiteral("applied"),
+               QStringLiteral("a reloaded event keeps its outcome"));
+
+    // Export: versioned, named, counted, and metadata only.
+    const QString exportJson = reloaded.exportJson();
+    const QJsonObject root = objectOf(exportJson);
+    checkEqual(root.value(QStringLiteral("format")).toString(),
+               QStringLiteral("netguard.audit-log"),
+               QStringLiteral("the audit export carries its format marker"));
+    checkEqual(root.value(QStringLiteral("schemaVersion")).toInt(), 1,
+               QStringLiteral("the audit export carries the schema version"));
+    check(QDateTime::fromString(root.value(QStringLiteral("exportedAt")).toString(),
+                                Qt::ISODateWithMs).isValid(),
+          QStringLiteral("the audit export is timestamped"));
+    checkEqual(root.value(QStringLiteral("count")).toInt(), 2,
+               QStringLiteral("the audit export counts its events"));
+    const QJsonObject retentionObject =
+        root.value(QStringLiteral("retention")).toObject();
+    checkEqual(retentionObject.value(QStringLiteral("days")).toInt(), 7,
+               QStringLiteral("the audit export reports the retention window"));
+    checkEqual(retentionObject.value(QStringLiteral("maxEvents")).toInt(), 100,
+               QStringLiteral("the audit export reports the event bound"));
+
+    const QJsonArray exportedEvents = root.value(QStringLiteral("events")).toArray();
+    checkEqual(static_cast<int>(exportedEvents.size()), 2,
+               QStringLiteral("the audit export lists every event"));
+    const QJsonObject exportedEvent = exportedEvents.first().toObject();
+    checkEqual(exportedEvent.value(QStringLiteral("type")).toString(),
+               QStringLiteral("PolicyChange"),
+               QStringLiteral("the export names the event type"));
+    check(exportedEvent.value(QStringLiteral("timestamp")).toString().contains(QLatin1Char('T')),
+          QStringLiteral("the exported event has an ISO timestamp"));
+    const QStringList allowedKeys = {
+        QStringLiteral("details"), QStringLiteral("errorInfo"),
+        QStringLiteral("reason"), QStringLiteral("relatedIdentityId"),
+        QStringLiteral("relatedPolicyId"), QStringLiteral("result"),
+        QStringLiteral("scope"), QStringLiteral("timestamp"),
+        QStringLiteral("type")
+    };
+    for (const QString &key : exportedEvent.keys()) {
+        check(allowedKeys.contains(key),
+              QStringLiteral("the export writes only contract fields (unexpected %1)").arg(key));
+    }
+    const QString exportText = exportJson.toLower();
+    check(!exportText.contains(QStringLiteral("payload")) &&
+          !exportText.contains(QStringLiteral("packetcontent")),
+          QStringLiteral("the audit export adds no packet-payload key"));
+
+    // Corrupt or newer persisted data is rejected rather than half-applied.
+    QSettings().clear();
+    {
+        QSettings settings;
+        settings.beginGroup(QStringLiteral("NetGuard/Audit"));
+        settings.setValue(QStringLiteral("storeVersion"), 99);
+        settings.setValue(QStringLiteral("events"),
+                          QStringLiteral("[{\"timestamp\":\"2026-01-01T00:00:00\",\"type\":7}]"));
+        settings.endGroup();
+    }
+    AuditEventStore newer;
+    checkEqual(newer.count(), 0,
+               QStringLiteral("a newer audit store version is ignored as a whole"));
+    checkEqual(newer.retention().retentionDays, 30,
+               QStringLiteral("a rejected store falls back to default bounds"));
+
+    QSettings().clear();
+    {
+        QSettings settings;
+        settings.beginGroup(QStringLiteral("NetGuard/Audit"));
+        settings.setValue(QStringLiteral("storeVersion"), 1);
+        settings.setValue(QStringLiteral("events"), QStringLiteral("not json"));
+        settings.endGroup();
+    }
+    AuditEventStore malformed;
+    checkEqual(malformed.count(), 0,
+               QStringLiteral("a malformed audit payload loads as empty"));
+
+    QSettings().clear();
+    {
+        QSettings settings;
+        settings.beginGroup(QStringLiteral("NetGuard/Audit"));
+        settings.setValue(QStringLiteral("storeVersion"), 1);
+        settings.setValue(QStringLiteral("events"),
+                          QStringLiteral("[{\"timestamp\":\"%1\",\"type\":0,"
+                                         "\"reason\":\"kept\"},{\"type\":0}]")
+                              .arg(QDateTime::currentDateTime().addDays(-1)
+                                       .toString(Qt::ISODate)));
+        settings.endGroup();
+    }
+    AuditEventStore partial;
+    checkEqual(partial.count(), 1,
+               QStringLiteral("an unreadable event is skipped and the rest are kept"));
+    checkEqual(partial.events().first().reason, QStringLiteral("kept"),
+               QStringLiteral("the readable event keeps its fields"));
+
+    QSettings().clear();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -4228,6 +4524,7 @@ int main(int argc, char *argv[])
     testAiContext();
     testAiProvider();
     testAiApproval();
+    testAuditEventStore();
 
     QSettings().clear();
 
