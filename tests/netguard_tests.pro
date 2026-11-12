@@ -41,6 +41,7 @@ SOURCES += \
     ../src/network/enforcementrestore.cpp \
     ../src/network/policyschedule.cpp \
     ../src/network/policyscope.cpp \
+    ../src/network/topconsumers.cpp \
     ../src/network/policyreconcileplan.cpp \
     ../src/attribution/dnsobserver.cpp \
     ../src/attribution/attributionprivacy.cpp \
@@ -74,6 +75,7 @@ HEADERS += \
     ../src/network/enforcementrestore.h \
     ../src/network/policyschedule.h \
     ../src/network/policyscope.h \
+    ../src/network/topconsumers.h \
     ../src/network/policyreconcile.h \
     ../src/attribution/dnsobserver.h \
     ../src/attribution/attributionprivacy.h \

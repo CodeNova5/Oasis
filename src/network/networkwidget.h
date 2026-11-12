@@ -26,6 +26,7 @@
 #include "attribution/aiprovider.h"
 
 class FirewallManager;
+class DashboardPanel;
 class OpenAiCompatibleProvider;
 class EnforcementCoordinator;
 class PolicyReconciler;
@@ -131,6 +132,9 @@ private:
     // Queues one reconciliation instead of running it inline, so a burst of
     // activation changes or a dialog close does not enumerate rules per event.
     void schedulePolicyReconciliation();
+    // NG-054: rebuilds the first-view panel from the current rows, in-force
+    // policies, and the recommendations for the current top consumers.
+    void refreshDashboard();
     QIcon getIconByPid(quint32 pid, const QString &procName);
     void requestThrottle(quint32 pid, const QString &procName);
     // Evidence snapshot for the recommendation and approval views, taken while
@@ -159,6 +163,8 @@ private:
                          const QString &executablePath);
 
     Ui::NetworkWidget       *ui = nullptr;
+    // NG-054: the first-view panel, inserted above the process tree.
+    DashboardPanel          *m_dashboard = nullptr;
     NetworkMonitor          *m_monitor = nullptr;
     DiagnosticsModel        *m_diagnostics = nullptr;
     NetworkTreeModel        *m_model = nullptr;
@@ -176,6 +182,9 @@ private:
     int                     m_dataSaverMode = 1;
 
     QHash<QString, QIcon>   m_iconCache;
+    // NG-054: paths resolved once per (pid, start time) for the dashboard, so a
+    // refresh does not open a process handle for every row every second.
+    QHash<QString, QString> m_dashboardPathCache;
     // Auto-throttle alerts waiting for the worker thread to report back.
     QHash<QString, BandwidthEvent> m_pendingThrottleEvents;
     // Emergency restore result waiting for the throttle worker's outcome, so

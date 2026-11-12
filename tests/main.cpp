@@ -50,6 +50,7 @@
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
+#include "network/topconsumers.h"
 #include "network/policyreconcile.h"
 #include "network/testfixtures.h"
 
@@ -5415,6 +5416,167 @@ void testPolicyScopePresentation()
           QStringLiteral("the risk summary still starts from the breadth"));
 }
 
+// ─── NG-054: dashboard ranking, controls, unresolved traffic ──────────────
+void testTopConsumers()
+{
+    const QDateTime now(QDate(2026, 11, 12), QTime(9, 0));
+
+    TopConsumers::Consumer game;
+    game.pid = 200;
+    game.name = QStringLiteral("game.exe");
+    game.rxBytesPerSecond = 5000;
+    game.rxBytes = 9000;
+
+    TopConsumers::Consumer chrome;
+    chrome.pid = 100;
+    chrome.name = QStringLiteral("chrome.exe");
+    chrome.identity = QStringLiteral("Google Chrome");
+    chrome.path = QStringLiteral("C:/Apps/chrome.exe");
+    chrome.rxBytesPerSecond = 3000;
+    chrome.txBytesPerSecond = 1000;
+    chrome.rxBytes = 40000;
+    chrome.txBytes = 20000;
+    chrome.activity = QStringLiteral("Browser (Likely)");
+    chrome.blocked = true;
+
+    TopConsumers::Consumer updater;
+    updater.pid = 300;
+    updater.name = QStringLiteral("updater.exe");
+    updater.path = QStringLiteral("C:/Apps/updater.exe");
+    updater.rxBytesPerSecond = 1000;
+    updater.rxBytes = 20000;
+    updater.activity = QStringLiteral("Updater (Likely)");
+    updater.throttled = true;
+    updater.controlOwner = QStringLiteral("Limit background updates");
+    updater.recommendation = QStringLiteral("Limit background updates");
+    updater.recommendationReason = QStringLiteral("Updates run while the app is idle");
+
+    const QList<TopConsumers::Consumer> consumers{game, chrome, updater};
+
+    check(TopConsumers::isUnresolved(game),
+          QStringLiteral("a consumer without a path or activity is unresolved"));
+    check(!TopConsumers::isUnresolved(chrome),
+          QStringLiteral("a consumer with a path and activity is resolved"));
+
+    const QList<const TopConsumers::Consumer *> top2 =
+        TopConsumers::rankConsumers(consumers, 2);
+    checkEqual(int(top2.size()), 2, QStringLiteral("the ranking honours its limit"));
+    checkEqual(top2.value(0)->name, QStringLiteral("game.exe"),
+               QStringLiteral("the highest current rate ranks first"));
+    checkEqual(top2.value(1)->name, QStringLiteral("chrome.exe"),
+               QStringLiteral("the second-highest rate ranks second"));
+    checkEqual(int(TopConsumers::rankConsumers(consumers, 0).size()), 3,
+               QStringLiteral("a zero limit means no limit"));
+    checkEqual(int(TopConsumers::rankConsumers(consumers, 9).size()), 3,
+               QStringLiteral("a limit larger than the list returns the list"));
+
+    TopConsumers::Consumer tieA;
+    tieA.pid = 2;
+    tieA.name = QStringLiteral("b.exe");
+    tieA.rxBytesPerSecond = 100;
+    TopConsumers::Consumer tieB;
+    tieB.pid = 1;
+    tieB.name = QStringLiteral("a.exe");
+    tieB.rxBytesPerSecond = 100;
+    const QList<const TopConsumers::Consumer *> ties =
+        TopConsumers::rankConsumers({tieA, tieB}, 0);
+    checkEqual(ties.value(0)->name, QStringLiteral("a.exe"),
+               QStringLiteral("equal consumers are ordered by name, not insertion"));
+
+    NetworkPolicy block;
+    block.id = QStringLiteral("p-block");
+    block.scope = QStringLiteral("path");
+    block.targetId = QStringLiteral("C:/Apps/chrome.exe");
+    block.action = NetworkPolicy::Action::Block;
+    block.description = QStringLiteral("Block Chrome");
+    block.expiration = now.addSecs(3600);
+    block.scheduleType = NetworkPolicy::ScheduleType::Expiration;
+
+    NetworkPolicy publisher;
+    publisher.id = QStringLiteral("p-publisher");
+    publisher.scope = QStringLiteral("publisher");
+    publisher.targetId = QStringLiteral("Contoso");
+    publisher.action = NetworkPolicy::Action::Allow;
+
+    NetworkPolicy expired;
+    expired.id = QStringLiteral("p-expired");
+    expired.scope = QStringLiteral("path");
+    expired.targetId = QStringLiteral("C:/Apps/old.exe");
+    expired.expiration = now.addSecs(-60);
+    expired.scheduleType = NetworkPolicy::ScheduleType::Expiration;
+
+    NetworkPolicy disabled;
+    disabled.id = QStringLiteral("p-disabled");
+    disabled.scope = QStringLiteral("path");
+    disabled.targetId = QStringLiteral("C:/Apps/off.exe");
+    disabled.enabled = false;
+
+    const QList<NetworkPolicy> policies{block, publisher, expired, disabled};
+    const TopConsumers::Summary summary =
+        TopConsumers::build(consumers, policies, now, 3);
+
+    checkEqual(summary.consumerCount, 3, QStringLiteral("every consumer is counted"));
+    checkEqual(int(summary.rows.size()), 3,
+               QStringLiteral("the panel shows one row per consumer"));
+    checkEqual(summary.topPid, 200u, QStringLiteral("the top consumer is the highest rate"));
+    check(summary.headline.contains(QStringLiteral("game.exe is the top consumer at")),
+          QStringLiteral("the headline names the top consumer and its rate"));
+    check(summary.topSummary.contains(QStringLiteral("game.exe")),
+          QStringLiteral("the top summary starts from the process name"));
+    check(summary.rows.value(0).unresolved,
+          QStringLiteral("the unresolved row is marked"));
+    checkEqual(summary.rows.value(0).activity, QStringLiteral("Unresolved"),
+               QStringLiteral("a row with no activity says so"));
+    checkEqual(summary.rows.value(1).control, QStringLiteral("Blocked"),
+               QStringLiteral("a blocked consumer shows the control"));
+    checkEqual(summary.rows.value(2).control,
+               QStringLiteral("Limited by Limit background updates"),
+               QStringLiteral("a limited consumer names the owning policy"));
+    checkEqual(summary.rows.value(1).identity, QStringLiteral("Google Chrome"),
+               QStringLiteral("a row carries the resolved identity"));
+
+    checkEqual(summary.unresolvedConsumers, 1,
+               QStringLiteral("one consumer cannot be explained"));
+    checkEqual(summary.unresolvedBytes, quint64(9000),
+               QStringLiteral("its bytes are counted as unresolved"));
+    check(summary.unresolvedSummary.contains(QStringLiteral("1 consumer")),
+          QStringLiteral("the unresolved line is singular for one consumer"));
+
+    checkEqual(int(summary.controls.size()), 2,
+               QStringLiteral("only policies in force count as active controls"));
+    checkEqual(summary.controls.value(0).policyId, QStringLiteral("p-block"),
+               QStringLiteral("an in-force block is listed first when it is stored first"));
+    checkEqual(summary.controls.value(0).effect, QStringLiteral("Block, downloads"),
+               QStringLiteral("a control states its effect"));
+    check(summary.controls.value(0).temporary,
+          QStringLiteral("a control with an expiration is temporary"));
+    check(summary.controls.value(1).enforcement.contains(QStringLiteral("Stored only")),
+          QStringLiteral("a stored-only control admits it is not enforced"));
+    checkEqual(summary.controlSummary, QStringLiteral("2 controls in force (1 temporary)"),
+               QStringLiteral("the control line counts what is in force"));
+
+    checkEqual(int(summary.recommendations.size()), 1,
+               QStringLiteral("one suggestion is surfaced"));
+    checkEqual(summary.recommendations.value(0).pid, 300u,
+               QStringLiteral("the suggestion carries its consumer"));
+    checkEqual(summary.recommendationSummary, QStringLiteral("1 suggested action"),
+               QStringLiteral("the suggestion line is singular"));
+
+    const TopConsumers::Summary empty =
+        TopConsumers::build({}, policies, now, 3);
+    check(empty.isEmpty(), QStringLiteral("no consumers is an empty dashboard"));
+    checkEqual(empty.headline, QStringLiteral("Waiting for traffic"),
+               QStringLiteral("an empty dashboard says it is waiting"));
+    checkEqual(empty.controlSummary, QStringLiteral("2 controls in force (1 temporary)"),
+               QStringLiteral("controls still show before traffic arrives"));
+    checkEqual(empty.unresolvedSummary,
+               QStringLiteral("Every consumer has an executable path and an activity match"),
+               QStringLiteral("an empty unresolved section is reassuring, not blank"));
+    checkEqual(empty.recommendationSummary,
+               QStringLiteral("No action is suggested right now"),
+               QStringLiteral("an empty suggestion section says so"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -5464,6 +5626,7 @@ int main(int argc, char *argv[])
     testApplicationDetailModel();
     testEvidenceExport();
     testPolicyScopePresentation();
+    testTopConsumers();
 
     QSettings().clear();
 

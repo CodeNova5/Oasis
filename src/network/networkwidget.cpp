@@ -6,6 +6,8 @@
 #include "ui_networkwidget.h"
 #include "groupdetaildialog.h"
 #include "applicationdetaildialog.h"
+#include "dashboardpanel.h"
+#include "topconsumers.h"
 #include "enforcementcoordinator.h"
 #include "policyeditordialog.h"
 #include "policylistdialog.h"
@@ -639,6 +641,25 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     hv->setHighlightSections(false);
     hv->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
+    // NG-054: the first view answers "what is using the network, what controls
+    // it, what is unexplained, and what is suggested" before the tree. The
+    // panel renders; every action it offers routes back through this widget,
+    // so it never becomes a second enforcement path.
+    m_dashboard = new DashboardPanel(this);
+    if (ui->rootLayout->indexOf(ui->treeView) >= 0) {
+        ui->rootLayout->insertWidget(ui->rootLayout->indexOf(ui->treeView), m_dashboard);
+    } else {
+        ui->rootLayout->addWidget(m_dashboard);
+    }
+    connect(m_dashboard, &DashboardPanel::detailsRequested,
+            this, &NetworkWidget::showApplicationDetails);
+    connect(m_dashboard, &DashboardPanel::recommendationRequested, this,
+            [this](quint32 pid, const QString &path, const QString &name) {
+        showRecommendationFor(pid, name, path);
+    });
+    connect(m_dashboard, &DashboardPanel::policiesRequested, this,
+            [this]() { ui->btnPolicies->click(); });
+
     m_monitor = new NetworkMonitor(this);
     // NG-031/NG-032: connection rows ask the destination correlator for the
     // remote endpoint's DNS and TLS SNI names; the lookup filters expired
@@ -866,6 +887,9 @@ NetworkWidget::NetworkWidget(QWidget *parent)
         m_enforcement->forgetReappliedPolicies();
         m_policyScheduler->evaluateNow();
         schedulePolicyReconciliation();
+        // NG-054: the controls section lists what is in force, so a policy edit
+        // is visible in the first view without waiting for the next beat.
+        refreshDashboard();
         ui->lblStatus->setText(QStringLiteral("Policies updated."));
     });
     connect(ui->btnLimits, &QPushButton::clicked, this, [this]() {
@@ -1235,6 +1259,7 @@ void NetworkWidget::onThrottleApplied(const QString &executablePath, const Throt
             ? "⚙ " + bandwidthUsageText(alert) + " - throttled to 50 KiB/s"
             : "⚠ " + bandwidthUsageText(alert) + " - throttle not applied");
 
+        refreshDashboard();
         emit bandwidthAlert(alert);
         return;
     }
@@ -1249,6 +1274,7 @@ void NetworkWidget::onThrottleApplied(const QString &executablePath, const Throt
         ui->lblStatus->setText("⚠ Bandwidth limit not applied.");
         QMessageBox::warning(this, "Bandwidth limit not applied", result.message);
     }
+    refreshDashboard();
 }
 
 void NetworkWidget::onThrottleRemoved(const QString &executablePath, const ThrottleResult &result)
@@ -1257,11 +1283,13 @@ void NetworkWidget::onThrottleRemoved(const QString &executablePath, const Throt
 
     if (result.status == ThrottleStatus::Removed || result.status == ThrottleStatus::NotApplied) {
         ui->lblStatus->setText("Bandwidth limit removed.");
+        refreshDashboard();
         return;
     }
 
     ui->lblStatus->setText("⚠ Bandwidth limit could not be removed.");
     QMessageBox::warning(this, "Bandwidth limit", result.message);
+    refreshDashboard();
 }
 
 void NetworkWidget::onThrottlesRestored(const ThrottleResult &result)
@@ -1383,6 +1411,7 @@ void NetworkWidget::toggleInternetAccess(const QString &procName, const QString 
         m_firewall->removeAppRules(path);
         // Do not let the guard immediately re-block what the user just restored.
         m_bandwidthGuard->exemptProcess(procName, 2 * 60 * 60);
+        refreshDashboard();
         return;
     }
 
@@ -1400,7 +1429,9 @@ void NetworkWidget::toggleInternetAccess(const QString &procName, const QString 
                              m_firewall->lastError().isEmpty()
                                  ? "The firewall rule could not be created."
                                  : m_firewall->lastError());
+        return;
     }
+    refreshDashboard();
 }
 
 void NetworkWidget::autoStart() {
@@ -1508,12 +1539,14 @@ void NetworkWidget::onCaptureStarted() {
     ui->btnStartStop->setText("⏹  Stop");
     ui->cmbAdapter->setEnabled(false);
     ui->lblStatus->setText("● Live capture…");
+    refreshDashboard();
 }
 void NetworkWidget::onCaptureStopped() {
     m_capturing = false;
     ui->btnStartStop->setText("▶  Start");
     ui->cmbAdapter->setEnabled(true);
     ui->lblStatus->setText("Stopped.");
+    refreshDashboard();
 }
 
 void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batch)
@@ -1545,6 +1578,102 @@ void NetworkWidget::onSpeedUpdated(quint64 rxBps, quint64 txBps) {
     ui->lblRxVal->setText(NetworkTreeModel::formatSpeed(rxBps));
     ui->lblTxVal->setText(NetworkTreeModel::formatSpeed(txBps));
     emit speedUpdated(rxBps, txBps);
+    // The panel follows the same once-a-second beat as the counters, so it never
+    // needs a timer of its own.
+    refreshDashboard();
+}
+
+void NetworkWidget::refreshDashboard()
+{
+    if (!m_dashboard || !m_model) return;
+
+    const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+
+    QList<TopConsumers::Consumer> consumers;
+    const int rows = m_model->rowCount();
+    consumers.reserve(rows);
+    for (int row = 0; row < rows; ++row) {
+        const ProcessRowSnapshot snap = m_model->snapshotForRow(row);
+        if (!snap.isValid()) continue;
+
+        TopConsumers::Consumer consumer;
+        consumer.pid = snap.pid;
+        consumer.name = snap.name;
+        consumer.identity = snap.identityName.trimmed().isEmpty()
+            ? snap.publisher.trimmed() : snap.identityName.trimmed();
+        consumer.path = snap.query.executablePath.trimmed();
+        if (consumer.path.isEmpty() && snap.pid != 0) {
+            // The model's row evidence carries the process name, not the image
+            // path, so resolve it once per (pid, start time) rather than on
+            // every beat or per action.
+            const QString key = QStringLiteral("%1:%2")
+                                    .arg(snap.pid).arg(snap.processStartMs);
+            auto cached = m_dashboardPathCache.find(key);
+            if (cached == m_dashboardPathCache.end()) {
+                if (m_dashboardPathCache.size() >= 1024) m_dashboardPathCache.clear();
+                cached = m_dashboardPathCache.insert(
+                    key, getExactProcessPath(snap.pid, snap.name));
+            }
+            consumer.path = cached.value().trimmed();
+        }
+        consumer.rxBytes = snap.rxBytes;
+        consumer.txBytes = snap.txBytes;
+        consumer.rxBytesPerSecond = snap.rxBytesPerSecond;
+        consumer.txBytesPerSecond = snap.txBytesPerSecond;
+        if (snap.activity.isKnown()) consumer.activity = snap.activity.summary();
+        consumer.foreground = snap.foreground != NetGuard::ForegroundAssociation::None;
+
+        if (!consumer.path.isEmpty()) {
+            consumer.blocked = m_firewall && m_firewall->isBlocked(consumer.path);
+            consumer.throttled = m_throttlePolicies &&
+                m_throttlePolicies->isThrottled(consumer.path);
+            if (consumer.throttled) {
+                const QString policyId = m_throttlePolicies->policyAttribution().value(
+                    ThrottlePolicyManager::normalizePath(consumer.path));
+                for (const NetworkPolicy &policy : policies) {
+                    if (policy.id != policyId) continue;
+                    consumer.controlOwner = ApplicationDetail::policySummaryText(policy);
+                    break;
+                }
+            }
+        }
+
+        consumers.append(consumer);
+    }
+
+    const QDateTime now = QDateTime::currentDateTime();
+    TopConsumers::Summary summary = TopConsumers::build(consumers, policies, now);
+
+    // Suggestions are computed for the rows the panel shows, not for every row:
+    // a suggestion for row 40 is not part of the first view.
+    bool addedSuggestion = false;
+    for (const TopConsumers::Row &row : summary.rows) {
+        for (TopConsumers::Consumer &consumer : consumers) {
+            if (consumer.pid != row.pid || consumer.path != row.path) continue;
+
+            ActivityClassification activity;
+            const ActivityQuery query = queryAndActivityFor(
+                consumer.pid, consumer.name, consumer.path, &activity);
+            RecommendationContext context =
+                recommendationContextFor(query, consumer.pid, consumer.name);
+            context.activity = activity;
+
+            const Recommendation recommendation = m_recommendationEngine.recommend(context);
+            if (recommendation.action != RecommendationAction::NoAction) {
+                consumer.recommendation = recommendation.title;
+                QString reason = recommendation.whyLikely.trimmed();
+                if (reason.isEmpty()) reason = recommendation.expectedEffect.trimmed();
+                if (reason.size() > 100)
+                    reason = reason.left(97) + QStringLiteral("...");
+                consumer.recommendationReason = reason;
+                addedSuggestion = true;
+            }
+            break;
+        }
+    }
+    if (addedSuggestion) summary = TopConsumers::build(consumers, policies, now);
+
+    m_dashboard->setSummary(summary);
 }
 // void NetworkWidget::onCaptureError(const QString &msg) { ui->lblStatus->setText("⚠ " + msg); QMessageBox::critical(this, "Capture Error", msg); onCaptureStopped(); }
 
@@ -1568,7 +1697,9 @@ void NetworkWidget::onClearTable()
     m_totalPkts = 0;
     ui->lblPackets->setText("0");
     m_iconCache.clear();
+    m_dashboardPathCache.clear();
     ui->btnExpandAll->setText("Expand All");
+    refreshDashboard();
 }
 
 void NetworkWidget::onExpandAll()
