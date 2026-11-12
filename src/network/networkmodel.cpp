@@ -592,6 +592,48 @@ ActivityClassification NetworkTreeModel::activityForRow(int pRow) const
     return m_procs[pRow].activity;
 }
 
+// NG-052: a copy of the row, taken while the caller still owns a valid index.
+ProcessRowSnapshot NetworkTreeModel::snapshotForRow(int pRow) const
+{
+    ProcessRowSnapshot snapshot;
+    if (pRow < 0 || pRow >= m_procs.size()) return snapshot;
+
+    const ProcessNode &p = m_procs[pRow];
+    snapshot.name = p.name;
+    snapshot.identityId = p.identityId;
+    snapshot.identityName = p.identityName;
+    snapshot.publisher = p.publisher;
+    snapshot.signerStatus = p.signerStatus;
+    snapshot.pid = p.pid;
+    snapshot.parentPid = p.parentPid;
+    snapshot.processStartMs = p.processStartMs;
+    snapshot.parentName = p.parentName;
+    snapshot.groupId = p.groupId;
+    snapshot.groupName = p.groupName;
+    snapshot.groupConfidence = p.groupConfidence;
+    for (const NetGuard::ServiceEntry &service : p.services)
+        snapshot.services << service.serviceName;
+    snapshot.foreground = p.foreground;
+    snapshot.query = activityQueryForRow(pRow);
+    snapshot.activity = p.activity;
+    snapshot.rxBytes = p.totalRxBytes;
+    snapshot.txBytes = p.totalTxBytes;
+    snapshot.rxBytesPerSecond = p.totalRxSpeed;
+    snapshot.txBytesPerSecond = p.totalTxSpeed;
+    snapshot.packets = p.totalPackets;
+    snapshot.connections = p.conns;
+    return snapshot;
+}
+
+int NetworkTreeModel::rowForPid(quint32 pid) const
+{
+    if (pid == 0) return -1;
+    for (int row = 0; row < m_procs.size(); ++row) {
+        if (m_procs[row].pid == pid) return row;
+    }
+    return -1;
+}
+
 void NetworkTreeModel::refreshActivity(int pRow)
 {
     if (pRow < 0 || pRow >= m_procs.size()) return;

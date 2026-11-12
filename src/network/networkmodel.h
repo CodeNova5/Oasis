@@ -79,6 +79,37 @@ struct ProcessNode
     QHash<ConnectionKey, int>    connIdx;
 };
 
+// NG-052: everything one process row can contribute to an application detail
+// view, captured before the live model can change under the caller. `query` and
+// `activity` are the row's own classification evidence, not a re-run.
+struct ProcessRowSnapshot
+{
+    QString name;
+    QString identityId;
+    QString identityName;
+    QString publisher;
+    ApplicationIdentity::SignerStatus signerStatus = ApplicationIdentity::SignerStatus::Unknown;
+    quint32 pid = 0;
+    quint32 parentPid = 0;
+    qint64  processStartMs = 0;
+    QString parentName;
+    QString groupId;
+    QString groupName;
+    ApplicationIdentity::Confidence groupConfidence = ApplicationIdentity::Confidence::Unknown;
+    QStringList services;
+    NetGuard::ForegroundAssociation foreground = NetGuard::ForegroundAssociation::None;
+    ActivityQuery query;
+    ActivityClassification activity;
+    quint64 rxBytes = 0;
+    quint64 txBytes = 0;
+    quint64 rxBytesPerSecond = 0;
+    quint64 txBytesPerSecond = 0;
+    quint32 packets = 0;
+    QList<ConnectionStat> connections;
+
+    bool isValid() const { return pid != 0 || !name.isEmpty(); }
+};
+
 enum NetCol : int {
     COL_NAME = 0,
     COL_SRC,
@@ -121,6 +152,10 @@ public:
     // recommendation or detail view. The row index is the source-model row.
     ActivityQuery activityQueryForRow(int pRow) const;
     ActivityClassification activityForRow(int pRow) const;
+    // NG-052: identity, usage, destinations, and lineage of one process row.
+    ProcessRowSnapshot snapshotForRow(int pRow) const;
+    // Source-model row of a live PID, or -1 when the process is not shown.
+    int rowForPid(quint32 pid) const;
     // NG-012: replace the PID -> services map and refresh the affected rows.
     void applyServiceSnapshot(const NetGuard::ServicePidMap &services);
     void clear();

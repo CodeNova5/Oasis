@@ -32,6 +32,7 @@ SOURCES += \
     ../src/network/auditeventstore.cpp \
     ../src/network/auditlogmodel.cpp \
     ../src/network/notificationcoordinator.cpp \
+    ../src/network/applicationdetail.cpp \
     ../src/network/packetparser.cpp \
     ../src/network/bandwidthguard.cpp \
     ../src/network/testfixtures.cpp \
@@ -62,6 +63,7 @@ HEADERS += \
     ../src/network/auditeventstore.h \
     ../src/network/auditlogmodel.h \
     ../src/network/notificationcoordinator.h \
+    ../src/network/applicationdetail.h \
     ../src/network/packetparser.h \
     ../src/network/bandwidthguard.h \
     ../src/network/testfixtures.h \

@@ -26,6 +26,7 @@
 #include "taskbar/taskbaroverlay.h"
 
 #include <QCloseEvent>
+#include <QMouseEvent>
 #include <windows.h>
 #include <shellapi.h>
 #include <QTimer>
@@ -75,6 +76,14 @@ MainWindow::MainWindow(QWidget *parent)
     setupAttributionPrivacyView();
     setupAiProviderView();
     setupTray();
+
+    // NG-052: the status line shows the latest notification. Make it clickable
+    // so the user can go from the alert to the evidence behind it.
+    if (ui->statusMsg) {
+        ui->statusMsg->installEventFilter(this);
+        ui->statusMsg->setCursor(Qt::PointingHandCursor);
+        ui->statusMsg->setToolTip(QStringLiteral("Click for the details of the last notification."));
+    }
 
     loadSettings();
     initHistoryManager();
@@ -1052,6 +1061,9 @@ void MainWindow::setupWidgets()
                                         message);
         notification.priority = NotificationPriority::Critical;
         notification.policyId = policyId;
+        // NG-052: a failed enforcement is about one executable; carry it so the
+        // balloon click opens that application's evidence.
+        rememberNotificationSubject(0, executablePath, QFileInfo(executablePath).fileName());
         postNotification(notification);
     }, Qt::QueuedConnection);
 
@@ -1101,6 +1113,9 @@ void MainWindow::setupTray()
     m_tray->show();
 
     connect(m_tray, &QSystemTrayIcon::activated, this, &MainWindow::onTrayActivated);
+    // NG-052: clicking a balloon follows it to the same evidence.
+    connect(m_tray, &QSystemTrayIcon::messageClicked,
+            this, &MainWindow::openLastNotificationSubject);
 }
 
 void MainWindow::onToggleTheme()
@@ -1115,11 +1130,51 @@ void MainWindow::onToggleTheme()
 void MainWindow::onMinimizeToTray()
 {
     hide();
+    // A tray notice is not about an application, so following it would be wrong.
+    rememberNotificationSubject(0, QString(), QString());
     AppNotification notification;
     notification.key = QStringLiteral("tray-background");
     notification.title = QStringLiteral("NetGuard AIO");
     notification.message = QStringLiteral("Running in the background. Click the tray icon to restore.");
     postNotification(notification);
+}
+
+void MainWindow::rememberNotificationSubject(quint32 pid, const QString &path,
+                                             const QString &name)
+{
+    m_notificationPid = pid;
+    m_notificationPath = path.trimmed();
+    m_notificationName = name.trimmed();
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (ui && watched == ui->statusMsg && event->type() == QEvent::MouseButtonRelease) {
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        if (mouse->button() == Qt::LeftButton) {
+            openLastNotificationSubject();
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
+// NG-052: "move from a notification to evidence and then to a reversible
+// action". The detail view is the evidence, and its action bar is the reversible
+// control, so a warning is one click away from the thing it is warning about.
+void MainWindow::openLastNotificationSubject()
+{
+    if (!m_netWidget) return;
+    if (m_notificationPid == 0 && m_notificationPath.isEmpty()) return;
+
+    showNormal();
+    activateWindow();
+    raise();
+    if (ui->mainTabs && ui->tabNetwork)
+        ui->mainTabs->setCurrentWidget(ui->tabNetwork);
+
+    m_netWidget->showApplicationDetails(m_notificationPid, m_notificationPath,
+                                        m_notificationName);
 }
 
 void MainWindow::postNotification(const AppNotification &notification)
@@ -1189,6 +1244,8 @@ void MainWindow::onNetworkSpeed(quint64 rxBps, quint64 txBps)
 
 void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
 {
+    // NG-052: the alert and the detail view must describe the same application.
+    rememberNotificationSubject(event.pid, event.executablePath, event.processName);
     const QString category = BandwidthGuard::categoryDisplayName(event.category);
     const QString categoryWithConfidence = AttributionConfidenceModel::qualifiedText(
         category, event.categoryConfidence);
@@ -1350,6 +1407,7 @@ void MainWindow::animateLiveBadge()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     hide();
+    rememberNotificationSubject(0, QString(), QString());
     AppNotification notification;
     notification.key = QStringLiteral("tray-background");
     notification.title = QStringLiteral("NetGuard AIO");

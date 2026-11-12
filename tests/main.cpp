@@ -43,6 +43,7 @@
 #include "network/auditeventstore.h"
 #include "network/auditlogmodel.h"
 #include "network/notificationcoordinator.h"
+#include "network/applicationdetail.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/policy.h"
@@ -4740,6 +4741,344 @@ void testNotificationCoordinator()
 
 } // namespace
 
+void testApplicationDetailModel()
+{
+    using namespace ApplicationDetail;
+
+    // ── Which stored policy targets an application ──
+    ActivityQuery query;
+    query.executablePath = QStringLiteral("C:/Apps/Google/GoogleUpdater.exe");
+    query.groupId = QStringLiteral("group-google");
+    query.serviceName = QStringLiteral("wuauserv");
+    query.publisher = QStringLiteral("Google LLC");
+
+    NetworkPolicy pathPolicy;
+    pathPolicy.scope = QStringLiteral("path");
+    pathPolicy.targetId = QStringLiteral("c:/apps/google/googleupdater.exe");
+    check(policyTargets(pathPolicy, query, 0),
+          QStringLiteral("an executable path matches a path policy case-insensitively"));
+
+    NetworkPolicy pidPolicy;
+    pidPolicy.scope = QStringLiteral("pid");
+    pidPolicy.targetId = QStringLiteral("4321");
+    check(policyTargets(pidPolicy, query, 4321),
+          QStringLiteral("a pid policy matches the running process"));
+    check(!policyTargets(pidPolicy, query, 0),
+          QStringLiteral("a pid policy matches no other process"));
+    check(!policyTargets(pidPolicy, query, 9999),
+          QStringLiteral("a different pid is not covered"));
+
+    NetworkPolicy groupPolicy;
+    groupPolicy.scope = QStringLiteral("group");
+    groupPolicy.targetId = QStringLiteral("GROUP-GOOGLE");
+    check(policyTargets(groupPolicy, query, 0),
+          QStringLiteral("a group policy matches its group id case-insensitively"));
+
+    NetworkPolicy servicePolicy;
+    servicePolicy.scope = QStringLiteral("service");
+    servicePolicy.targetId = QStringLiteral("WUAUSERV");
+    check(policyTargets(servicePolicy, query, 0),
+          QStringLiteral("a service policy matches the service key"));
+
+    NetworkPolicy publisherPolicy;
+    publisherPolicy.scope = QStringLiteral("publisher");
+    publisherPolicy.targetId = QStringLiteral("google llc");
+    check(policyTargets(publisherPolicy, query, 0),
+          QStringLiteral("a publisher policy matches case-insensitively"));
+
+    NetworkPolicy packagePolicy;
+    packagePolicy.scope = QStringLiteral("package");
+    packagePolicy.targetId = QStringLiteral("SpotifyAB.SpotifyMusic");
+    check(!policyTargets(packagePolicy, query, 0),
+          QStringLiteral("a package scope is not claimed from process evidence"));
+
+    NetworkPolicy emptyTarget;
+    emptyTarget.scope = QStringLiteral("path");
+    check(!policyTargets(emptyTarget, query, 0),
+          QStringLiteral("a policy without a target matches nothing"));
+
+    NetworkPolicy described;
+    described.scope = QStringLiteral("path");
+    described.targetId = QStringLiteral("C:/Apps/a.exe");
+    described.description = QStringLiteral("Nightly package downloads");
+    checkEqual(policySummaryText(described), QStringLiteral("Nightly package downloads"),
+               QStringLiteral("the description is the policy summary when present"));
+    described.description.clear();
+    checkEqual(policySummaryText(described), QStringLiteral("path: C:/Apps/a.exe"),
+               QStringLiteral("the scope and target are the summary when there is no description"));
+
+    // ── Destinations ──
+    Destination dns;
+    dns.address = QStringLiteral("142.250.190.78");
+    dns.name = QStringLiteral("update.googleapis.com");
+    dns.source = attributionSourceName(AttributionSource::DnsAnswer);
+    dns.confidence = ApplicationIdentity::Confidence::StrongInference;
+    dns.evidence << QStringLiteral("DNS answer for update.googleapis.com");
+
+    Destination tls = dns;
+    tls.source = attributionSourceName(AttributionSource::TlsSni);
+    tls.confidence = ApplicationIdentity::Confidence::Confirmed;
+    tls.evidence = QStringList{QStringLiteral("visible TLS SNI")};
+
+    Destination direct;
+    direct.address = QStringLiteral("203.0.113.9");
+
+    const QList<Destination> merged = mergeDestinations({direct, dns, tls});
+    checkEqual(int(merged.size()), 2, QStringLiteral("the same name and address is one destination"));
+    checkEqual(merged.first().name, QStringLiteral("update.googleapis.com"),
+               QStringLiteral("a named destination ranks before a direct address"));
+    checkEqual(static_cast<int>(merged.first().confidence),
+               static_cast<int>(ApplicationIdentity::Confidence::Confirmed),
+               QStringLiteral("the strongest attribution wins the row"));
+    checkEqual(int(merged.first().evidence.size()), 2,
+               QStringLiteral("evidence from both observations is kept"));
+    check(merged.first().source.contains(QStringLiteral("TLS SNI"))
+              && merged.first().source.contains(QStringLiteral("DNS answer")),
+          QStringLiteral("both attribution sources are reported"));
+    checkEqual(merged.last().address, QStringLiteral("203.0.113.9"),
+               QStringLiteral("a direct address stays listed"));
+    check(merged.last().name.isEmpty(),
+          QStringLiteral("a direct address gets no invented name"));
+
+    DestinationNameSummary summary;
+    summary.address = QStringLiteral("198.51.100.7");
+    summary.name = QStringLiteral("cdn.example.com");
+    summary.source = AttributionSource::DnsAndTls;
+    summary.confidence = ApplicationIdentity::Confidence::Confirmed;
+    summary.evidence << QStringLiteral("DNS and TLS agree");
+    const Destination converted = destinationFromSummary(summary);
+    checkEqual(converted.name, QStringLiteral("cdn.example.com"),
+               QStringLiteral("a correlator summary becomes a destination row"));
+    checkEqual(converted.source, attributionSourceName(AttributionSource::DnsAndTls),
+               QStringLiteral("the attribution source is carried through"));
+    checkEqual(static_cast<int>(converted.confidence),
+               static_cast<int>(ApplicationIdentity::Confidence::Confirmed),
+               QStringLiteral("the destination confidence is carried through"));
+    checkEqual(converted.evidence.value(0), QStringLiteral("DNS and TLS agree"),
+               QStringLiteral("the destination evidence is carried through"));
+
+    // ── Assembled view ──
+    ActivityClassifier classifier;
+    ActivityQuery chromeQuery;
+    chromeQuery.executableName = QStringLiteral("updater.exe");
+    chromeQuery.publisher = QStringLiteral("Google LLC");
+    chromeQuery.product = QStringLiteral("Google Update");
+    chromeQuery.publisherVerified = true;
+
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+
+    Input input;
+    input.executableName = QStringLiteral("updater.exe");
+    input.displayName = QStringLiteral("Google Update");
+    input.executablePath = QStringLiteral("C:/Program Files/Google/updater.exe");
+    input.identityId = QStringLiteral("identity-1234");
+    input.publisher = QStringLiteral("Google LLC");
+    input.signerStatus = ApplicationIdentity::SignerStatus::Signed;
+    input.pid = 1200;
+    input.processStartMs = QDateTime(QDate(2026, 11, 12), QTime(9, 0)).toMSecsSinceEpoch();
+    input.groupId = QStringLiteral("group-google");
+    input.groupName = QStringLiteral("Google Chrome");
+    input.services << QStringLiteral("GoogleUpdaterService");
+    input.query = chromeQuery;
+    input.query.executablePath = input.executablePath;
+    input.query.groupId = input.groupId;
+    input.activity = classifier.classify(chromeQuery);
+    input.usage.rxBytes = 5ULL * 1024 * 1024;
+    input.usage.txBytes = 512ULL * 1024;
+    input.usage.rxBytesPerSecond = 1024ULL * 1024;
+    input.usage.packets = 4200;
+    input.usage.foreground = true;
+    input.destinations = {dns, direct};
+
+    RelatedProcess parent;
+    parent.name = QStringLiteral("chrome.exe");
+    parent.pid = 900;
+    parent.role = QStringLiteral("Parent process");
+    input.related << parent;
+    input.related << parent; // a repeated relationship is folded
+    RelatedProcess self;
+    self.name = QStringLiteral("self.exe");
+    self.pid = input.pid;
+    self.role = QStringLiteral("Self");
+    input.related << self;
+
+    NetworkPolicy activePolicy;
+    activePolicy.id = QStringLiteral("policy-active");
+    activePolicy.scope = QStringLiteral("path");
+    activePolicy.targetId = input.executablePath;
+    activePolicy.description = QStringLiteral("Chrome updates");
+    activePolicy.action = NetworkPolicy::Action::Throttle;
+    activePolicy.direction = NetworkDirection::Download;
+    activePolicy.source = QStringLiteral("user");
+    activePolicy.expiration = now.addSecs(3600);
+
+    NetworkPolicy expiredPolicy;
+    expiredPolicy.id = QStringLiteral("policy-expired");
+    expiredPolicy.scope = QStringLiteral("group");
+    expiredPolicy.targetId = input.groupId;
+    expiredPolicy.action = NetworkPolicy::Action::Block;
+    expiredPolicy.source = QStringLiteral("automatic");
+    expiredPolicy.expiration = now.addSecs(-60);
+
+    NetworkPolicy unrelatedPolicy;
+    unrelatedPolicy.id = QStringLiteral("policy-unrelated");
+    unrelatedPolicy.scope = QStringLiteral("path");
+    unrelatedPolicy.targetId = QStringLiteral("C:/Other/other.exe");
+
+    input.policies = {activePolicy, expiredPolicy, unrelatedPolicy};
+
+    AuditEvent older;
+    older.timestamp = now.addSecs(-600);
+    older.type = AuditEvent::EventType::Detection;
+    older.reason = QStringLiteral("sustained download observed");
+    older.result = QStringLiteral("observed");
+    AuditEvent newer;
+    newer.timestamp = now.addSecs(-60);
+    newer.type = AuditEvent::EventType::EnforcementResult;
+    newer.reason = QStringLiteral("throttle applied");
+    newer.result = QStringLiteral("applied");
+    input.audit = {older, newer};
+
+    input.internetBlocked = false;
+    input.throttleApplied = true;
+    input.throttleOwner = QStringLiteral("Chrome updates");
+    input.now = now;
+
+    const Snapshot snapshot = build(input);
+
+    checkEqual(snapshot.title, QStringLiteral("Google Update (updater.exe)"),
+               QStringLiteral("the title pairs the display name with the executable"));
+    check(snapshot.subtitle.contains(QStringLiteral("PID 1200"))
+              && snapshot.subtitle.contains(QStringLiteral("foreground")),
+          QStringLiteral("the subtitle names the pid and the foreground role"));
+    check(snapshot.activitySummary.contains(QStringLiteral("Browser update")),
+          QStringLiteral("the activity summary shows the classified category"));
+    check(snapshot.activityDetail.contains(QStringLiteral("builtin-chrome-update")),
+          QStringLiteral("the activity detail names the matched rule"));
+    check(!snapshot.evidence.isEmpty(),
+          QStringLiteral("classification evidence is carried into the view"));
+    check(snapshot.activitySummary.contains(QStringLiteral("Likely")),
+          QStringLiteral("the summary qualifies a Likely classification"));
+
+    bool hasPath = false;
+    bool hasIdentity = false;
+    bool hasGroup = false;
+    bool hasLimit = false;
+    for (const QPair<QString, QString> &fact : snapshot.facts) {
+        if (fact.first == QStringLiteral("Executable"))
+            hasPath = fact.second == input.executablePath;
+        if (fact.first == QStringLiteral("Identity"))
+            hasIdentity = fact.second == QStringLiteral("identity-1234");
+        if (fact.first == QStringLiteral("Activity group"))
+            hasGroup = fact.second == QStringLiteral("Google Chrome");
+        if (fact.first == QStringLiteral("Bandwidth limit"))
+            hasLimit = fact.second.contains(QStringLiteral("Chrome updates"));
+    }
+    check(hasPath, QStringLiteral("the identity facts name the executable path"));
+    check(hasIdentity, QStringLiteral("the identity facts name the durable identity"));
+    check(hasGroup, QStringLiteral("the identity facts name the activity group"));
+    check(hasLimit, QStringLiteral("a limit names the policy that owns it"));
+    checkEqual(int(snapshot.destinations.size()), 2, QStringLiteral("only the known destinations are listed"));
+    checkEqual(int(snapshot.related.size()), 1,
+               QStringLiteral("related processes are de-duplicated and exclude this process"));
+    checkEqual(snapshot.related.first().pid, 900u,
+               QStringLiteral("the parent process is the related process"));
+    checkEqual(int(snapshot.policies.size()), 2,
+               QStringLiteral("only policies targeting this application are listed"));
+    QString activeState;
+    QString expiredState;
+    bool activeInForce = false;
+    for (const PolicyEntry &entry : snapshot.policies) {
+        if (entry.id == QStringLiteral("policy-active")) {
+            activeState = entry.state;
+            activeInForce = entry.inForce;
+        }
+        if (entry.id == QStringLiteral("policy-expired")) expiredState = entry.state;
+    }
+    checkEqual(activeState, QStringLiteral("Active"),
+               QStringLiteral("a live policy is reported Active"));
+    check(activeInForce, QStringLiteral("an Active policy is in force"));
+    checkEqual(expiredState, QStringLiteral("Expired"),
+               QStringLiteral("a past expiration is reported Expired"));
+    check(snapshot.policySummary.contains(QStringLiteral("2 policies"))
+              && snapshot.policySummary.contains(QStringLiteral("1 in force")),
+          QStringLiteral("the policy summary counts matched and in-force policies"));
+    checkEqual(snapshot.policies.value(0).action, QStringLiteral("Throttle"),
+               QStringLiteral("the policy action is shown by name"));
+    checkEqual(snapshot.policies.value(0).origin, QStringLiteral("created by you"),
+               QStringLiteral("the policy origin is explained"));
+    checkEqual(int(snapshot.audit.size()), 2, QStringLiteral("the audit history lists both events"));
+    check(snapshot.audit.first().at > snapshot.audit.last().at,
+          QStringLiteral("the newest audit event is first"));
+    checkEqual(snapshot.audit.first().summary, QStringLiteral("throttle applied"),
+               QStringLiteral("the audit line prefers the reason"));
+    checkEqual(snapshot.auditSummary, QStringLiteral("2 events · newest first"),
+               QStringLiteral("the audit summary counts the entries"));
+
+    auto actionFor = [](const QList<ActionState> &actions, const QString &key) {
+        for (const ActionState &action : actions)
+            if (action.key == key) return action;
+        return ActionState();
+    };
+
+    const auto actions = snapshot.actions;
+    check(actionFor(actions, QStringLiteral("policy")).enabled,
+          QStringLiteral("a policy can be created when a target is known"));
+    check(actionFor(actions, QStringLiteral("internet")).label
+              == QStringLiteral("Block internet access"),
+          QStringLiteral("an unblocked application offers blocking"));
+    check(actionFor(actions, QStringLiteral("throttle")).label
+              == QStringLiteral("Remove bandwidth limit…"),
+          QStringLiteral("a limited application offers removal"));
+    check(actionFor(actions, QStringLiteral("group")).enabled,
+          QStringLiteral("the activity group action is available for a grouped process"));
+    checkEqual(int(actions.size()), 7, QStringLiteral("every reversible action is offered"));
+
+    // An application with no path, scope, or identity still renders, but the
+    // actions that need evidence are disabled with a reason.
+    Input bare;
+    bare.executableName = QStringLiteral("mystery.exe");
+    bare.now = now;
+    const Snapshot bareSnapshot = build(bare);
+    check(bareSnapshot.activityDetail.contains(QStringLiteral("No local rule matched")),
+          QStringLiteral("unclassified activity is explained instead of guessed"));
+    checkEqual(bareSnapshot.title, QStringLiteral("mystery.exe"),
+               QStringLiteral("an unknown application is still named"));
+    check(!actionFor(bareSnapshot.actions, QStringLiteral("policy")).enabled,
+          QStringLiteral("a policy action is unavailable without a target"));
+    check(!actionFor(bareSnapshot.actions, QStringLiteral("internet")).enabled,
+          QStringLiteral("blocking is unavailable without a path"));
+    check(actionFor(bareSnapshot.actions, QStringLiteral("internet")).reason
+              .contains(QStringLiteral("path")),
+          QStringLiteral("the disabled action explains what is missing"));
+    check(bareSnapshot.policySummary.contains(QStringLiteral("No stored policy")),
+          QStringLiteral("an uncovered application says no policy applies"));
+    checkEqual(bareSnapshot.relatedSummary,
+               QStringLiteral("No related process is known. Activity groups are built from "
+                              "identity, publisher, service, and lineage evidence as traffic "
+                              "is observed."),
+               QStringLiteral("an empty related section explains where groups come from"));
+
+    // Audit history is a sample: the store keeps the rest.
+    Input many;
+    many.now = now;
+    for (int index = 0; index < ApplicationDetail::kMaxAuditEntries + 5; ++index) {
+        AuditEvent event;
+        event.timestamp = now.addSecs(index);
+        event.reason = QStringLiteral("event %1").arg(index);
+        many.audit << event;
+    }
+    checkEqual(int(build(many).audit.size()), ApplicationDetail::kMaxAuditEntries,
+               QStringLiteral("the audit history is capped"));
+
+    checkEqual(formatBytes(1536), QStringLiteral("1.5 KiB"),
+               QStringLiteral("bytes are formatted in binary units"));
+    checkEqual(formatRate(0), QStringLiteral("0 B/s"),
+               QStringLiteral("a zero rate is still readable"));
+    checkEqual(signerLabel(ApplicationIdentity::SignerStatus::Signed), QStringLiteral("signed"),
+               QStringLiteral("the signer status is spelled out"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -4786,6 +5125,7 @@ int main(int argc, char *argv[])
     testAuditEventStore();
     testAuditLogModel();
     testNotificationCoordinator();
+    testApplicationDetailModel();
 
     QSettings().clear();
 

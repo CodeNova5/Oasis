@@ -19,6 +19,8 @@
 #include "policyschedule.h"
 #include "policyreconcile.h"
 #include "auditeventstore.h"
+#include "applicationdetail.h"
+#include "policyeditordialog.h"
 #include "attribution/recommendationengine.h"
 #include "attribution/recommendationfeedback.h"
 #include "attribution/aiprovider.h"
@@ -118,6 +120,11 @@ public:
     // NG-045/NG-046: re-read the provider settings saved from the Settings tab
     // so the approval dialog uses them without a restart.
     void reloadAiProviderSettings();
+    // NG-052: open the application detail view for one process, or for an
+    // executable the capture no longer shows. This is also the entry point a
+    // notification uses, so a warning can be followed by its evidence.
+    void showApplicationDetails(quint32 pid, const QString &executablePath,
+                                const QString &processName = QString());
 
 private:
     void populateAdapterCombo();
@@ -131,6 +138,25 @@ private:
     RecommendationContext recommendationContextFor(const ActivityQuery &query,
                                                     quint32 pid,
                                                     const QString &processName) const;
+    // NG-052: the assembled detail snapshot (identity, usage, destinations,
+    // related processes, policies, audit history) for one process or path.
+    ApplicationDetail::Input detailInputFor(quint32 pid, const QString &executablePath,
+                                            const QString &processName);
+    // Policy target for a row or a notification, with the group's publisher and
+    // service evidence filled in when they are available.
+    PolicyTarget policyTargetFor(quint32 pid, const QString &processName,
+                                 const QString &executablePath,
+                                 const QString &groupId = QString()) const;
+    // The row's evidence when the process is still in the model, otherwise the
+    // path/name the caller knows.
+    ActivityQuery queryAndActivityFor(quint32 pid, const QString &processName,
+                                      const QString &executablePath,
+                                      ActivityClassification *activity) const;
+    void createPolicyForTarget(const PolicyTarget &target);
+    void showRecommendationFor(quint32 pid, const QString &processName,
+                               const QString &executablePath);
+    void showApprovalFor(quint32 pid, const QString &processName,
+                         const QString &executablePath);
 
     Ui::NetworkWidget       *ui = nullptr;
     NetworkMonitor          *m_monitor = nullptr;

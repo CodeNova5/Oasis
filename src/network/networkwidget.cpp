@@ -5,6 +5,7 @@
 #include "networkwidget.h"
 #include "ui_networkwidget.h"
 #include "groupdetaildialog.h"
+#include "applicationdetaildialog.h"
 #include "enforcementcoordinator.h"
 #include "policyeditordialog.h"
 #include "policylistdialog.h"
@@ -100,38 +101,35 @@ static QString bandwidthUsageText(const BandwidthEvent &event)
 static bool explicitPolicyCovers(const ActivityQuery &query, quint32 pid)
 {
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    const QString path = query.executablePath.trimmed();
 
     for (const NetworkPolicy &policy : PolicyStore::loadPolicies()) {
         if (!policy.enabled) continue;
         if (policy.expiration.isValid() && policy.expiration <= now) continue;
-
-        const QString scope = policy.scope.trimmed().toLower();
-        const QString target = policy.targetId.trimmed();
-        if (target.isEmpty()) continue;
-
-        if (scope == QLatin1String("pid") && target == QString::number(pid))
-            return true;
-        if ((scope == QLatin1String("path") || scope == QLatin1String("executable"))
-            && !path.isEmpty()
-            && QFileInfo(target).absoluteFilePath().compare(
-                   QFileInfo(path).absoluteFilePath(), Qt::CaseInsensitive) == 0) {
-            return true;
-        }
-        if (scope == QLatin1String("group") && !query.groupId.isEmpty()
-            && target.compare(query.groupId, Qt::CaseInsensitive) == 0) {
-            return true;
-        }
-        if (scope == QLatin1String("service") && !query.serviceName.isEmpty()
-            && target.compare(query.serviceName, Qt::CaseInsensitive) == 0) {
-            return true;
-        }
-        if (scope == QLatin1String("publisher") && !query.publisher.isEmpty()
-            && target.compare(query.publisher, Qt::CaseInsensitive) == 0) {
-            return true;
-        }
+        // NG-052: target matching lives in the detail view's pure rules, so the
+        // recommendation and detail views cannot disagree about coverage.
+        if (ApplicationDetail::policyTargets(policy, query, pid)) return true;
     }
     return false;
+}
+
+// NG-052: the identity and path searches overlap (an event may be stored with
+// both), so identical records are folded before the view sees them.
+static QList<AuditEvent> mergeAuditEvents(const QList<AuditEvent> &first,
+                                          const QList<AuditEvent> &second)
+{
+    QList<AuditEvent> merged = first;
+    for (const AuditEvent &event : second) {
+        bool duplicate = false;
+        for (const AuditEvent &existing : merged) {
+            if (existing.timestamp == event.timestamp && existing.type == event.type
+                && existing.reason == event.reason && existing.result == event.result) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) merged.append(event);
+    }
+    return merged;
 }
 
 // NG-042/NG-046: the evidence snapshot shared by the recommendation and
@@ -152,6 +150,299 @@ RecommendationContext NetworkWidget::recommendationContextFor(const ActivityQuer
     context.exempt = m_bandwidthGuard->isExempt(processName);
     context.explicitPolicyCovers = explicitPolicyCovers(query, pid);
     return context;
+}
+
+// NG-052: the row's own evidence when the process is still in the model. A
+// notification can arrive after the process exited, in which case the caller's
+// path and name are all there is.
+ActivityQuery NetworkWidget::queryAndActivityFor(quint32 pid, const QString &processName,
+                                                 const QString &executablePath,
+                                                 ActivityClassification *activity) const
+{
+    ActivityQuery query;
+    const int row = (m_model && pid != 0) ? m_model->rowForPid(pid) : -1;
+    if (row >= 0) {
+        query = m_model->activityQueryForRow(row);
+        if (activity) *activity = m_model->activityForRow(row);
+    }
+    if (query.executableName.trimmed().isEmpty()) query.executableName = processName;
+    if (query.executablePath.trimmed().isEmpty()) query.executablePath = executablePath;
+    return query;
+}
+
+PolicyTarget NetworkWidget::policyTargetFor(quint32 pid, const QString &processName,
+                                            const QString &executablePath,
+                                            const QString &groupId) const
+{
+    PolicyTarget target;
+    target.pid = pid;
+    target.processName = processName;
+    target.executablePath = executablePath;
+
+    // Prefer the passed group; otherwise find the group whose membership
+    // contains this executable, which is how a notification without a model row
+    // still gets a group-scoped option.
+    QString effectiveGroup = groupId;
+    if (effectiveGroup.isEmpty() && m_monitor && !executablePath.isEmpty()) {
+        for (const NetGuard::ProcessGroup &group : m_monitor->processGroups()) {
+            if (group.contains(NetGuard::GroupMemberType::ExecutablePath, executablePath)) {
+                effectiveGroup = group.id;
+                break;
+            }
+        }
+    }
+    target.groupId = effectiveGroup;
+
+    if (!effectiveGroup.isEmpty() && m_monitor) {
+        for (const NetGuard::ProcessGroup &group : m_monitor->processGroups()) {
+            if (group.id != effectiveGroup) continue;
+            target.groupName = group.name;
+            for (const NetGuard::GroupMember &member : group.members) {
+                if (member.type == NetGuard::GroupMemberType::ExecutablePath &&
+                    member.value.compare(executablePath, Qt::CaseInsensitive) == 0) {
+                    target.publisher = member.publisher;
+                    if (target.processName.isEmpty() && !member.displayName.isEmpty())
+                        target.processName = member.displayName;
+                } else if (member.type == NetGuard::GroupMemberType::Service &&
+                           target.serviceName.isEmpty()) {
+                    target.serviceName = member.value;
+                }
+            }
+            break;
+        }
+    }
+
+    return target;
+}
+
+void NetworkWidget::createPolicyForTarget(const PolicyTarget &target)
+{
+    PolicyEditorDialog dlg(target, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    policies.append(dlg.policy());
+    if (!PolicyStore::savePolicies(policies)) {
+        QMessageBox::warning(this, QStringLiteral("Create policy"),
+                             QStringLiteral("The policy could not be saved."));
+        return;
+    }
+
+    AuditEvent audit;
+    audit.type = AuditEvent::EventType::PolicyChange;
+    audit.scope = dlg.policy().scope;
+    audit.reason = QStringLiteral("user created a policy");
+    audit.result = QStringLiteral("saved");
+    audit.relatedPolicyId = dlg.policy().id;
+    audit.details = dlg.policy().description;
+    m_auditStore.append(audit);
+
+    ui->lblStatus->setText(QStringLiteral("Policy saved."));
+    // The scheduler has not seen this policy yet, so this counts as an
+    // activation change and applies it now when it is in force.
+    m_policyScheduler->evaluateNow();
+}
+
+void NetworkWidget::showRecommendationFor(quint32 pid, const QString &processName,
+                                          const QString &executablePath)
+{
+    ActivityClassification activity;
+    ActivityQuery query = queryAndActivityFor(pid, processName, executablePath, &activity);
+
+    RecommendationContext context = recommendationContextFor(query, pid, processName);
+    context.activity = activity;
+
+    RecommendationDialog dlg(context, m_recommendationEngine, &m_recommendationFeedback, this);
+    dlg.exec();
+}
+
+void NetworkWidget::showApprovalFor(quint32 pid, const QString &processName,
+                                    const QString &executablePath)
+{
+    ActivityClassification activity;
+    ActivityQuery query = queryAndActivityFor(pid, processName, executablePath, &activity);
+
+    RecommendationContext context = recommendationContextFor(query, pid, processName);
+    context.activity = activity;
+
+    AiApprovalDialog dlg(context, m_recommendationEngine, &m_aiAssistant, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    if (!aiApprovalApprove(dlg.approvedPolicy())) {
+        QMessageBox::warning(this, QStringLiteral("Approve policy"),
+                             QStringLiteral("The approved policy could not be saved."));
+        return;
+    }
+
+    ui->lblStatus->setText(QStringLiteral("Policy approved and saved."));
+    // The scheduler has not seen the approved policy yet, so this counts as an
+    // activation change and applies it now when it is in force.
+    m_policyScheduler->evaluateNow();
+}
+
+ApplicationDetail::Input NetworkWidget::detailInputFor(quint32 pid,
+                                                       const QString &executablePath,
+                                                       const QString &processName)
+{
+    ApplicationDetail::Input input;
+    input.pid = pid;
+    input.executableName = processName;
+    input.executablePath = executablePath;
+    input.now = QDateTime::currentDateTimeUtc();
+
+    const int row = (m_model && pid != 0) ? m_model->rowForPid(pid) : -1;
+    const ProcessRowSnapshot snapshot = row >= 0 ? m_model->snapshotForRow(row)
+                                                 : ProcessRowSnapshot();
+
+    if (snapshot.isValid()) {
+        if (!snapshot.name.isEmpty()) input.executableName = snapshot.name;
+        if (input.executablePath.isEmpty())
+            input.executablePath = getExactProcessPath(snapshot.pid, snapshot.name);
+        input.identityId = snapshot.identityId;
+        input.displayName = snapshot.identityName;
+        input.publisher = snapshot.publisher;
+        input.signerStatus = snapshot.signerStatus;
+        input.processStartMs = snapshot.processStartMs;
+        input.groupId = snapshot.groupId;
+        input.groupName = snapshot.groupName;
+        input.services = snapshot.services;
+        input.query = snapshot.query;
+        input.activity = snapshot.activity;
+
+        input.usage.rxBytes = snapshot.rxBytes;
+        input.usage.txBytes = snapshot.txBytes;
+        input.usage.rxBytesPerSecond = snapshot.rxBytesPerSecond;
+        input.usage.txBytesPerSecond = snapshot.txBytesPerSecond;
+        input.usage.packets = snapshot.packets;
+        input.usage.foreground =
+            snapshot.foreground == NetGuard::ForegroundAssociation::ForegroundApp;
+        input.usage.foregroundHelper =
+            snapshot.foreground == NetGuard::ForegroundAssociation::ForegroundChild;
+
+        // NG-031/NG-032: the names behind each remote address the row is
+        // connected to. Expired records are already filtered by the monitor.
+        QStringList addresses;
+        for (const ConnectionStat &connection : snapshot.connections) {
+            const QString address = connection.remoteAddress.trimmed();
+            if (!address.isEmpty() && !addresses.contains(address)) addresses << address;
+        }
+        for (const QString &address : addresses) {
+            const DestinationNameSummary summary =
+                summarizeDestinationNames(m_monitor->attributionsForAddress(address), address);
+            input.destinations << ApplicationDetail::destinationFromSummary(summary);
+        }
+
+        if (snapshot.parentPid != 0) {
+            ApplicationDetail::RelatedProcess parent;
+            parent.pid = snapshot.parentPid;
+            parent.name = snapshot.parentName;
+            parent.role = QStringLiteral("Parent process");
+            input.related << parent;
+        }
+    } else {
+        input.query.executableName = processName;
+        input.query.executablePath = executablePath;
+    }
+
+    // Other live members of the same activity group, which is how the user sees
+    // the helpers and services that act on this application's behalf.
+    if (!input.groupId.isEmpty() && m_monitor) {
+        for (const NetGuard::ProcessGroup &group : m_monitor->processGroups()) {
+            if (group.id != input.groupId) continue;
+            for (const NetGuard::GroupMember &member : group.members) {
+                if (member.observedPid == 0 || member.observedPid == input.pid) continue;
+                ApplicationDetail::RelatedProcess related;
+                related.pid = member.observedPid;
+                related.name = member.displayName.trimmed().isEmpty()
+                                   ? QFileInfo(member.value).fileName()
+                                   : member.displayName;
+                related.role = QStringLiteral("Live member of the activity group");
+                input.related << related;
+            }
+            break;
+        }
+    }
+
+    input.policies = PolicyStore::loadPolicies();
+
+    // NG-050: the audit trail this application appears in. The identity is the
+    // durable link; a path search covers events recorded before an identity was
+    // resolved.
+    QList<AuditEvent> events;
+    if (!input.identityId.isEmpty()) {
+        AuditQuery byIdentity;
+        byIdentity.identityId = input.identityId;
+        events = m_auditStore.query(byIdentity);
+    }
+    if (!input.executablePath.isEmpty()) {
+        AuditQuery byPath;
+        byPath.text = input.executablePath;
+        events = mergeAuditEvents(events, m_auditStore.query(byPath));
+    }
+    input.audit = events;
+
+    const QString path = input.executablePath.trimmed();
+    input.internetBlocked = m_firewall && !path.isEmpty() && m_firewall->isBlocked(path);
+    input.throttleApplied = m_throttlePolicies && !path.isEmpty()
+                            && m_throttlePolicies->isThrottled(path);
+    if (input.throttleApplied) {
+        const QString ownerId = m_throttlePolicies->policyAttribution().value(
+            ThrottlePolicyManager::normalizePath(path));
+        for (const NetworkPolicy &policy : input.policies) {
+            if (policy.id != ownerId) continue;
+            input.throttleOwner = policy.description.trimmed().isEmpty()
+                                      ? ApplicationDetail::policySummaryText(policy)
+                                      : policy.description;
+            break;
+        }
+    }
+
+    return input;
+}
+
+void NetworkWidget::showApplicationDetails(quint32 pid, const QString &executablePath,
+                                           const QString &processName)
+{
+    QString name = processName.trimmed();
+    QString path = executablePath.trimmed();
+    const int row = (m_model && pid != 0) ? m_model->rowForPid(pid) : -1;
+    if (name.isEmpty() && row >= 0) name = m_model->snapshotForRow(row).name;
+    if (path.isEmpty()) path = getExactProcessPath(pid, name);
+
+    ApplicationDetailDialog dlg(path, detailInputFor(pid, path, name), this);
+
+    // Every action is the existing one, performed by this widget; the dialog is
+    // handed a fresh snapshot afterwards so the new limit, block, or policy is
+    // visible without reopening the view.
+    connect(&dlg, &ApplicationDetailDialog::refreshRequested, this, [&]() {
+        dlg.setInput(detailInputFor(pid, path, name));
+    });
+    connect(&dlg, &ApplicationDetailDialog::actionRequested, this,
+            [&](const QString &key) {
+        if (key == QLatin1String("policy")) {
+            createPolicyForTarget(policyTargetFor(pid, name, path));
+        } else if (key == QLatin1String("recommendation")) {
+            showRecommendationFor(pid, name, path);
+        } else if (key == QLatin1String("approval")) {
+            showApprovalFor(pid, name, path);
+        } else if (key == QLatin1String("internet")) {
+            toggleInternetAccess(name, path);
+        } else if (key == QLatin1String("throttle")) {
+            requestThrottlePath(path);
+        } else if (key == QLatin1String("verify")) {
+            schedulePolicyReconciliation();
+            ui->lblStatus->setText(QStringLiteral("Verifying stored policies against the system…"));
+        } else if (key == QLatin1String("group")) {
+            const QString groupId = detailInputFor(pid, path, name).groupId;
+            if (!groupId.isEmpty()) {
+                GroupDetailDialog group(m_monitor, groupId, m_bandwidthGuard, this);
+                group.exec();
+            }
+        }
+        dlg.setInput(detailInputFor(pid, path, name));
+    });
+
+    dlg.exec();
 }
 
 // ============================================================================
@@ -662,6 +953,16 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
             dlg.exec();
         });
 
+        // NG-052: one view with identity, usage, destinations, related
+        // processes, policy state, and audit history, from which every action
+        // below is also available. The evidence is captured now, so the dialog
+        // describes the row that was right-clicked even after a refresh.
+        const QString rowPath = getExactProcessPath(pid, name);
+        QAction *actDetails = menu.addAction("🔍 Details & evidence...");
+        connect(actDetails, &QAction::triggered, this, [this, pid, name, rowPath]() {
+            showApplicationDetails(pid, rowPath, name);
+        });
+
         // NG-016: inspect the activity group this process was grouped into and
         // edit its members without touching any configuration file.
         const QString groupId = idx.data(Qt::UserRole + 7).toString();
@@ -678,109 +979,25 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
         // group policy targets the group id so future members inherit it.
         QAction *actPolicy = menu.addAction("🛡 Create policy...");
         connect(actPolicy, &QAction::triggered, this, [this, pid, name, groupId]() {
-            PolicyTarget target;
-            target.pid = pid;
-            target.processName = name;
-            target.executablePath = getExactProcessPath(pid, name);
-            target.groupId = groupId;
-
-            if (!groupId.isEmpty()) {
-                const QList<NetGuard::ProcessGroup> groups = m_monitor->processGroups();
-                for (const NetGuard::ProcessGroup &group : groups) {
-                    if (group.id != groupId) continue;
-                    target.groupName = group.name;
-                    for (const NetGuard::GroupMember &member : group.members) {
-                        if (member.type == NetGuard::GroupMemberType::ExecutablePath &&
-                            member.value.compare(target.executablePath,
-                                                 Qt::CaseInsensitive) == 0) {
-                            target.publisher = member.publisher;
-                        } else if (member.type == NetGuard::GroupMemberType::Service &&
-                                   target.serviceName.isEmpty()) {
-                            target.serviceName = member.value;
-                        }
-                    }
-                    break;
-                }
-            }
-
-            PolicyEditorDialog dlg(target, this);
-            if (dlg.exec() != QDialog::Accepted) return;
-
-            QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
-            policies.append(dlg.policy());
-            if (!PolicyStore::savePolicies(policies)) {
-                QMessageBox::warning(this, QStringLiteral("Create policy"),
-                                     QStringLiteral("The policy could not be saved."));
-                return;
-            }
-
-            AuditEvent audit;
-            audit.type = AuditEvent::EventType::PolicyChange;
-            audit.scope = dlg.policy().scope;
-            audit.reason = QStringLiteral("user created a policy");
-            audit.result = QStringLiteral("saved");
-            audit.relatedPolicyId = dlg.policy().id;
-            audit.details = dlg.policy().description;
-            m_auditStore.append(audit);
-
-            ui->lblStatus->setText(QStringLiteral("Policy saved."));
-            // The scheduler has not seen this policy yet, so this counts as an
-            // activation change and applies it now when it is in force.
-            m_policyScheduler->evaluateNow();
+            createPolicyForTarget(policyTargetFor(pid, name,
+                                                  getExactProcessPath(pid, name), groupId));
         });
 
         // NG-042/NG-043: show the deterministic recommendation for this row and
         // let the user record whether it was useful, incorrect, or unwanted.
         // The evidence is captured before the menu's event loop can change the
         // model, so the dialog always describes the row that was right-clicked.
-        const ActivityQuery recommendationQuery =
-            m_model->activityQueryForRow(idx.row());
-        const ActivityClassification recommendationActivity =
-            m_model->activityForRow(idx.row());
-
         QAction *actRecommend = menu.addAction("💡 Recommendation...");
-        connect(actRecommend, &QAction::triggered, this,
-                [this, pid, name, recommendationQuery, recommendationActivity]() {
-            ActivityQuery query = recommendationQuery;
-            if (query.executablePath.trimmed().isEmpty())
-                query.executablePath = getExactProcessPath(pid, name);
-
-            RecommendationContext context = recommendationContextFor(query, pid, name);
-            context.activity = recommendationActivity;
-
-            RecommendationDialog dlg(context, m_recommendationEngine,
-                                     &m_recommendationFeedback, this);
-            dlg.exec();
+        connect(actRecommend, &QAction::triggered, this, [this, pid, name, rowPath]() {
+            showRecommendationFor(pid, name, rowPath);
         });
 
         // NG-046: review an optional AI explanation and approve the local
         // recommendation as one ordinary user policy with an explicit scope
         // and duration. Rejecting the dialog writes nothing.
         QAction *actApproval = menu.addAction("🧠 Review AI explanation & approve policy...");
-        connect(actApproval, &QAction::triggered, this,
-                [this, pid, name, recommendationQuery, recommendationActivity]() {
-            ActivityQuery query = recommendationQuery;
-            if (query.executablePath.trimmed().isEmpty())
-                query.executablePath = getExactProcessPath(pid, name);
-
-            RecommendationContext context = recommendationContextFor(query, pid, name);
-            context.activity = recommendationActivity;
-
-            AiApprovalDialog dlg(context, m_recommendationEngine,
-                                 &m_aiAssistant, this);
-            if (dlg.exec() != QDialog::Accepted) return;
-
-            if (!aiApprovalApprove(dlg.approvedPolicy())) {
-                QMessageBox::warning(this, QStringLiteral("Approve policy"),
-                                     QStringLiteral("The approved policy could not be "
-                                                    "saved."));
-                return;
-            }
-
-            ui->lblStatus->setText(QStringLiteral("Policy approved and saved."));
-            // The scheduler has not seen the approved policy yet, so this counts
-            // as an activation change and applies it now when it is in force.
-            m_policyScheduler->evaluateNow();
+        connect(actApproval, &QAction::triggered, this, [this, pid, name, rowPath]() {
+            showApprovalFor(pid, name, rowPath);
         });
 
         menu.addSeparator();

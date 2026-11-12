@@ -48,6 +48,9 @@ public:
 protected:
     void closeEvent  (QCloseEvent *event) override;
     void changeEvent (QEvent *event)      override;
+    // NG-052: the status line is the in-app half of a notification; clicking it
+    // opens the detail view of the application the notification was about.
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void onToggleTheme();
@@ -63,6 +66,10 @@ private slots:
     void saveSettings();
     void applySettingsToOverlay();
     void applyRunAtStartup(bool enable);
+
+    // NG-052: follow a notification to its evidence. A no-op until a
+    // notification has named an application.
+    void openLastNotificationSubject();
 
     void onExportHistory();
     void onClearHistory();
@@ -101,6 +108,10 @@ private:
     // NG-051: one place decides whether a notification reaches the tray, the
     // in-app status line, both, or neither.
     void postNotification(const AppNotification &notification);
+    // NG-052: which application the latest notification was about, so a tray
+    // click or the status line can open its detail view.
+    void rememberNotificationSubject(quint32 pid, const QString &path,
+                                     const QString &name);
     void animateLiveBadge();
     void loadSettings();
     void initHistoryManager();
@@ -120,6 +131,9 @@ private:
     QSystemTrayIcon   *m_tray      = nullptr;
     QMenu             *m_trayMenu  = nullptr;
     NotificationCoordinator m_notifications;
+    quint32            m_notificationPid  = 0;
+    QString            m_notificationPath;
+    QString            m_notificationName;
 
     AppTheme::Mode     m_theme     = AppTheme::Dark;
 
