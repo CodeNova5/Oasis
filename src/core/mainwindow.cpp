@@ -19,6 +19,7 @@
 #include "attribution/aiprovider.h"
 #include "network/diagnostics.h"
 #include "network/auditlogmodel.h"
+#include "network/evidenceexport.h"
 #include "network/notificationcoordinator.h"
 #include "network/networkmonitor.h"
 #include "firewall/firewallwidget.h"
@@ -51,6 +52,14 @@
 #include <QTextStream>
 #include <QMessageBox>
 #include <QTableWidgetItem>
+
+// How an export says whether destinations were redacted, appended to every
+// success message so the file's contents are never a surprise.
+static QString exportRedactionNote(bool redacted)
+{
+    return redacted ? QStringLiteral(" (destinations redacted)")
+                    : QStringLiteral(" (verbatim destinations)");
+}
 
 // ============================================================================
 // Initialization & Core Setup
@@ -564,6 +573,8 @@ void MainWindow::setupAuditLogView()
     connect(m_auditModel, &QAbstractItemModel::modelReset,
             this, &MainWindow::refreshAuditSummary);
     connect(ui->btnExportAuditLog, &QPushButton::clicked, this, &MainWindow::onExportAuditLog);
+    connect(ui->btnExportAuditLogCsv, &QPushButton::clicked,
+            this, &MainWindow::onExportAuditLogCsv);
     connect(ui->btnClearAuditLog, &QPushButton::clicked, this, &MainWindow::onClearAuditLog);
 
     applyFilters();
@@ -616,19 +627,109 @@ void MainWindow::onExportAuditLog()
     if (fileName.isEmpty())
         return;
 
+    // The export mirrors the visible (filtered) rows with the same versioned
+    // envelope as the whole log, so support can receive exactly what is shown.
+    // NG-055: destinations are redacted unless the user turns that off.
+    const bool redact = ui->chkRedactDestinations->isChecked();
+    if (!writeExportFile(fileName, audit->exportJson(events, redact)))
+        return;
+
+    QMessageBox::information(
+        this, QStringLiteral("Export successful"),
+        QStringLiteral("Exported %1 audit events%2.")
+            .arg(events.size())
+            .arg(exportRedactionNote(redact)));
+}
+
+void MainWindow::onExportAuditLogCsv()
+{
+    AuditEventStore *audit = m_netWidget ? m_netWidget->auditStore() : nullptr;
+    if (!audit || !m_auditModel)
+        return;
+
+    const QList<AuditEvent> events = m_auditModel->visibleEvents();
+    if (events.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Export audit log"),
+                                 QStringLiteral("No audit events match the current filter."));
+        return;
+    }
+
+    const QString fileName = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Export audit log"),
+        QDir::homePath() + "/NetGuard_AuditLog.csv",
+        QStringLiteral("CSV Files (*.csv)"));
+    if (fileName.isEmpty())
+        return;
+
+    const bool redact = ui->chkRedactDestinations->isChecked();
+    if (!writeExportFile(fileName, audit->exportCsv(events, redact)))
+        return;
+
+    QMessageBox::information(
+        this, QStringLiteral("Export successful"),
+        QStringLiteral("Exported %1 audit events%2.")
+            .arg(events.size())
+            .arg(exportRedactionNote(redact)));
+}
+
+void MainWindow::onExportAttribution()
+{
+    NetworkMonitor *monitor = m_netWidget ? m_netWidget->networkMonitor() : nullptr;
+    if (!monitor)
+        return;
+
+    const QList<DestinationNameSummary> destinations = monitor->attributionSummaries();
+    if (destinations.isEmpty()) {
+        QMessageBox::information(
+            this, QStringLiteral("Export attribution data"),
+            QStringLiteral("No destination attributions are retained. "
+                           "DNS or TLS metadata has to be observed first."));
+        return;
+    }
+
+    QFileDialog dialog(this, QStringLiteral("Export attribution data"),
+                       QDir::homePath() + "/NetGuard_Attribution.json");
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setNameFilters({QStringLiteral("JSON Files (*.json)"),
+                           QStringLiteral("CSV Files (*.csv)")});
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    QString fileName = dialog.selectedFiles().value(0);
+    if (fileName.isEmpty())
+        return;
+
+    const bool csv = dialog.selectedNameFilter().contains(QStringLiteral("*.csv"));
+    if (!fileName.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive) &&
+        !fileName.endsWith(QStringLiteral(".csv"), Qt::CaseInsensitive)) {
+        fileName += csv ? QStringLiteral(".csv") : QStringLiteral(".json");
+    }
+
+    const bool redact = ui->chkRedactDestinations->isChecked();
+    const QString contents = csv ? EvidenceExport::attributionCsv(destinations, redact)
+                                 : EvidenceExport::attributionJson(destinations, redact);
+    if (!writeExportFile(fileName, contents))
+        return;
+
+    QMessageBox::information(
+        this, QStringLiteral("Export successful"),
+        QStringLiteral("Exported %1 destinations%2.")
+            .arg(destinations.size())
+            .arg(exportRedactionNote(redact)));
+}
+
+bool MainWindow::writeExportFile(const QString &fileName, const QString &contents)
+{
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QMessageBox::critical(this, QStringLiteral("Export error"),
                               QStringLiteral("Could not create the file."));
-        return;
+        return false;
     }
 
-    // The export mirrors the visible (filtered) rows with the same versioned
-    // envelope as the whole log, so support can receive exactly what is shown.
-    file.write(audit->exportJson(events).toUtf8());
+    file.write(contents.toUtf8());
     file.close();
-    QMessageBox::information(this, QStringLiteral("Export successful"),
-                             QStringLiteral("Exported %1 audit events.").arg(events.size()));
+    return true;
 }
 
 void MainWindow::onClearAuditLog()
@@ -677,6 +778,8 @@ void MainWindow::setupAttributionPrivacyView()
             this, &MainWindow::applyAttributionPrivacy);
     connect(ui->btnClearAttribution, &QPushButton::clicked,
             this, &MainWindow::onClearAttributionHistory);
+    connect(ui->btnExportAttribution, &QPushButton::clicked,
+            this, &MainWindow::onExportAttribution);
 
     applyAttributionPrivacy();
 }

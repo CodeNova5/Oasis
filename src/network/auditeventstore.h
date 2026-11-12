@@ -115,8 +115,18 @@ public:
     // payloads and no key outside the documented event fields. The overload
     // exports a caller-selected list (for example the currently filtered view)
     // with the same envelope.
+    //
+    // Destination addresses and host names in the free-text fields are redacted
+    // by default (NG-055); `redacted` in the envelope records which form the
+    // file is in. Pass false only for an explicit, user-requested verbatim
+    // export.
     QString exportJson() const;
-    QString exportJson(const QList<AuditEvent> &events) const;
+    QString exportJson(const QList<AuditEvent> &events, bool redactDestinations = true) const;
+
+    // The same rows as CSV, for a spreadsheet: metadata lines carrying the
+    // format, schema version, export time, and redaction state, one header row,
+    // and one row per event. Fields are quoted only when they must be.
+    QString exportCsv(const QList<AuditEvent> &events, bool redactDestinations = true) const;
 
     bool load();
     bool save() const;

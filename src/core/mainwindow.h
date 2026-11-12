@@ -82,6 +82,8 @@ private slots:
     // NG-050: the audit view's summary, filtered JSON export, and clear action.
     void refreshAuditSummary();
     void onExportAuditLog();
+    void onExportAuditLogCsv();
+    void onExportAttribution();
     void onClearAuditLog();
 
     // NG-036: attribution collection, retention, redaction, and history clearing.
@@ -104,6 +106,9 @@ private:
     void setupAiProviderView();
     void refreshAiProviderUi();
     void refreshAttributionHistory();
+    // NG-055: writes an export payload, reporting a failure once so the three
+    // export actions behave the same way.
+    bool writeExportFile(const QString &fileName, const QString &contents);
     void setupTray();
     // NG-051: one place decides whether a notification reaches the tray, the
     // in-app status line, both, or neither.

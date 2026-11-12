@@ -13,6 +13,8 @@
 
 #include <algorithm>
 
+#include "evidenceexport.h"
+
 namespace {
 
 constexpr const char *kSettingsGroup = "NetGuard/Audit";
@@ -240,25 +242,16 @@ QString AuditEventStore::exportJson() const
     return exportJson(m_events);
 }
 
-QString AuditEventStore::exportJson(const QList<AuditEvent> &eventsToExport) const
+QString AuditEventStore::exportJson(const QList<AuditEvent> &eventsToExport,
+                                    bool redactDestinations) const
 {
-    QJsonArray events;
-    for (const AuditEvent &event : eventsToExport)
-        events.append(auditEventToObject(event));
+    return EvidenceExport::auditJson(eventsToExport, m_retention, redactDestinations);
+}
 
-    QJsonObject retentionObject;
-    retentionObject[QStringLiteral("days")]      = m_retention.retentionDays;
-    retentionObject[QStringLiteral("maxEvents")] = m_retention.maxEvents;
-
-    QJsonObject root;
-    root[QStringLiteral("format")]        = QLatin1String(AuditStore::kFormat);
-    root[QStringLiteral("schemaVersion")] = AuditStore::kSchemaVersion;
-    root[QStringLiteral("exportedAt")]    = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
-    root[QStringLiteral("retention")]     = retentionObject;
-    root[QStringLiteral("count")]         = events.size();
-    root[QStringLiteral("events")]        = events;
-
-    return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Indented));
+QString AuditEventStore::exportCsv(const QList<AuditEvent> &eventsToExport,
+                                   bool redactDestinations) const
+{
+    return EvidenceExport::auditCsv(eventsToExport, redactDestinations);
 }
 
 bool AuditEventStore::load()

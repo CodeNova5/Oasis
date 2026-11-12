@@ -107,6 +107,13 @@ public:
         const QString &address,
         const QDateTime &now = QDateTime::currentDateTimeUtc()) const;
 
+    /// Every live address as one resolved summary, sorted by address. Used by
+    /// the NG-055 attribution export, so it returns the same combined view the
+    /// tree shows rather than the per-source records. Addresses whose records
+    /// have all expired are omitted even if pruning has not run yet.
+    QList<DestinationNameSummary> summaries(
+        const QDateTime &now = QDateTime::currentDateTimeUtc()) const;
+
     /// NG-036: bound how long a record may live, in seconds. New records are
     /// capped to this window and records last seen outside it are dropped, so
     /// lowering retention immediately shortens what was already stored.

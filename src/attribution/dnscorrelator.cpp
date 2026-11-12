@@ -245,6 +245,42 @@ QList<DomainAttribution> DnsCorrelator::lookup(const QString &address,
     return result;
 }
 
+QList<DestinationNameSummary> DnsCorrelator::summaries(const QDateTime &now) const
+{
+    QList<DestinationNameSummary> result;
+
+    QMutexLocker locker(&m_mutex);
+    for (auto it = m_byAddress.constBegin(); it != m_byAddress.constEnd(); ++it) {
+        // The same two bounds lookup() applies, so an export can never include a
+        // name that the tree would already have stopped showing.
+        QList<DomainAttribution> live;
+        for (const DomainAttribution &record : it.value()) {
+            if (record.expiresAt > now &&
+                record.lastSeen.addSecs(m_retentionSeconds) > now) {
+                live.append(record);
+            }
+        }
+        if (live.isEmpty()) continue;
+
+        std::sort(live.begin(), live.end(),
+                  [](const DomainAttribution &left, const DomainAttribution &right) {
+                      if (left.lastSeen != right.lastSeen) {
+                          return left.lastSeen > right.lastSeen;
+                      }
+                      return left.name < right.name;
+                  });
+
+        const DestinationNameSummary summary = summarizeDestinationNames(live, it.key());
+        if (!summary.name.isEmpty()) result.append(summary);
+    }
+
+    std::sort(result.begin(), result.end(),
+              [](const DestinationNameSummary &left, const DestinationNameSummary &right) {
+                  return left.address < right.address;
+              });
+    return result;
+}
+
 void DnsCorrelator::pruneLocked(const QDateTime &now)
 {
     for (auto it = m_byAddress.begin(); it != m_byAddress.end();) {

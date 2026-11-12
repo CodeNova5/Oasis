@@ -44,6 +44,7 @@
 #include "network/auditlogmodel.h"
 #include "network/notificationcoordinator.h"
 #include "network/applicationdetail.h"
+#include "network/evidenceexport.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/policy.h"
@@ -5079,6 +5080,193 @@ void testApplicationDetailModel()
                QStringLiteral("the signer status is spelled out"));
 }
 
+// ─── NG-055: filtered evidence exports ──────────────────────────────────────
+void testEvidenceExport()
+{
+    // CSV escaping: only the fields that need it are quoted, and an embedded
+    // quote is doubled rather than dropped.
+    checkEqual(EvidenceExport::csvField(QStringLiteral("plain")), QStringLiteral("plain"),
+               QStringLiteral("a plain CSV field stays unquoted"));
+    checkEqual(EvidenceExport::csvField(QStringLiteral("a,b")), QStringLiteral("\"a,b\""),
+               QStringLiteral("a field with a comma is quoted"));
+    checkEqual(EvidenceExport::csvField(QStringLiteral("say \"hi\"")),
+               QStringLiteral("\"say \"\"hi\"\"\""),
+               QStringLiteral("an embedded quote is doubled"));
+    checkEqual(EvidenceExport::csvField(QStringLiteral("line\nbreak")), QStringLiteral("\"line\nbreak\""),
+               QStringLiteral("a field with a line break is quoted"));
+    checkEqual(EvidenceExport::csvField(QStringLiteral(" padded ")), QStringLiteral("\" padded \""),
+               QStringLiteral("leading or trailing spaces force quotes"));
+    checkEqual(EvidenceExport::csvRow({QStringLiteral("a"), QStringLiteral("b,c")}),
+               QStringLiteral("a,\"b,c\"\n"),
+               QStringLiteral("a CSV row joins quoted fields"));
+
+    const QString stamp = QStringLiteral("2026-11-12T10:00:00.000Z");
+    const QDateTime when = QDateTime::fromString(stamp, Qt::ISODate);
+
+    AuditEvent event;
+    event.timestamp = when;
+    event.type = AuditEvent::EventType::EnforcementResult;
+    event.scope = QStringLiteral("path:C:/Apps/browser.exe");
+    event.reason = QStringLiteral("connected to example.com and 93.184.216.34");
+    event.result = QStringLiteral("blocked");
+    event.details = QStringLiteral("host api.example.com:443, file C:/Apps/browser.exe");
+
+    AuditRetentionSettings retention;
+    retention.retentionDays = 7;
+    retention.maxEvents = 100;
+
+    const QJsonObject auditVerbatim =
+        objectOf(EvidenceExport::auditJson({event}, retention, false, stamp));
+    checkEqual(auditVerbatim.value(QStringLiteral("format")).toString(),
+               QStringLiteral("netguard.audit-log"),
+               QStringLiteral("the audit export keeps its format marker"));
+    checkEqual(auditVerbatim.value(QStringLiteral("schemaVersion")).toInt(), 1,
+               QStringLiteral("the audit export carries the schema version"));
+    checkEqual(auditVerbatim.value(QStringLiteral("exportedAt")).toString(), stamp,
+               QStringLiteral("the audit export uses the injected timestamp"));
+    checkEqual(auditVerbatim.value(QStringLiteral("redacted")).toBool(true), false,
+               QStringLiteral("the verbatim audit export says it is not redacted"));
+    checkEqual(auditVerbatim.value(QStringLiteral("count")).toInt(), 1,
+               QStringLiteral("the audit export counts its rows"));
+    checkEqual(auditVerbatim.value(QStringLiteral("retention")).toObject()
+                   .value(QStringLiteral("days")).toInt(),
+               7, QStringLiteral("the audit export reports the retention window"));
+    const QString verbatimReason = auditVerbatim.value(QStringLiteral("events")).toArray()
+                                       .first().toObject()
+                                       .value(QStringLiteral("reason")).toString();
+    check(verbatimReason.contains(QStringLiteral("example.com")) &&
+              verbatimReason.contains(QStringLiteral("93.184.216.34")),
+          QStringLiteral("a verbatim audit export keeps the destination"));
+
+    const QJsonObject auditRedacted =
+        objectOf(EvidenceExport::auditJson({event}, retention, true, stamp));
+    checkEqual(auditRedacted.value(QStringLiteral("redacted")).toBool(false), true,
+               QStringLiteral("the redacted audit export says so"));
+    const QJsonObject redactedAuditEvent =
+        auditRedacted.value(QStringLiteral("events")).toArray().first().toObject();
+    const QString redactedReason = redactedAuditEvent.value(QStringLiteral("reason")).toString();
+    check(!redactedReason.contains(QStringLiteral("example.com")) &&
+              redactedReason.contains(QStringLiteral("***.com")),
+          QStringLiteral("a host name in the audit export is redacted"));
+    check(redactedReason.contains(QStringLiteral("93.184.216.x")) &&
+              !redactedReason.contains(QStringLiteral("93.184.216.34")),
+          QStringLiteral("an address in the audit export is redacted"));
+    check(redactedAuditEvent.value(QStringLiteral("scope")).toString()
+              .endsWith(QStringLiteral("browser.exe")),
+          QStringLiteral("the executable path is not mistaken for a destination"));
+    check(redactedAuditEvent.value(QStringLiteral("details")).toString()
+              .contains(QStringLiteral("***.com:443")),
+          QStringLiteral("a host with a port keeps the port"));
+
+    // The JSON stays metadata-only: no payload key anywhere in the export.
+    const QString auditText = EvidenceExport::auditJson({event}, retention, true).toLower();
+    check(!auditText.contains(QStringLiteral("payload")) &&
+              !auditText.contains(QStringLiteral("packetcontent")),
+          QStringLiteral("the audit export adds no payload key"));
+
+    const QString auditCsv = EvidenceExport::auditCsv({event}, true, stamp);
+    const QStringList auditLines = auditCsv.split(QLatin1Char('\n'));
+    checkEqual(auditLines.value(0), QStringLiteral("# format netguard.audit-log"),
+               QStringLiteral("the CSV names its format"));
+    checkEqual(auditLines.value(1), QStringLiteral("# schemaVersion 1"),
+               QStringLiteral("the CSV carries the schema version"));
+    checkEqual(auditLines.value(2), QStringLiteral("# exportedAt %1").arg(stamp),
+               QStringLiteral("the CSV is timestamped"));
+    checkEqual(auditLines.value(3), QStringLiteral("# redacted true"),
+               QStringLiteral("the CSV records the redaction state"));
+    checkEqual(auditLines.value(4),
+               QStringLiteral("timestamp,type,scope,reason,result,errorInfo,"
+                              "relatedIdentityId,relatedPolicyId,details"),
+               QStringLiteral("the CSV has one documented header row"));
+    checkEqual(int(auditLines.size()), 7,
+               QStringLiteral("the CSV has one metadata block, a header, and one row"));
+    check(auditLines.value(5).startsWith(QStringLiteral("2026-11-12T10:00:00.000")),
+          QStringLiteral("the CSV row starts with the event time"));
+    check(auditLines.value(5).contains(QStringLiteral("EnforcementResult")),
+          QStringLiteral("the CSV row names the event type in plain words"));
+    check(auditLines.value(5).contains(QStringLiteral("\"host ***.com:443, file")),
+          QStringLiteral("the CSV row is quoted when it contains a comma and is redacted"));
+
+    // Attribution: one resolved destination with its confidence and evidence.
+    DestinationNameSummary summary;
+    summary.address = QStringLiteral("93.184.216.34");
+    summary.name = QStringLiteral("example.com");
+    summary.names << QStringLiteral("example.com") << QStringLiteral("cdn.example.net");
+    summary.source = AttributionSource::DnsAndTls;
+    summary.confidence = ApplicationIdentity::Confidence::Confirmed;
+    summary.expiresAt = QDateTime::fromString(QStringLiteral("2026-11-12T11:00:00Z"), Qt::ISODate);
+    summary.evidence << QStringLiteral("DNS answer observed")
+                     << QStringLiteral("TLS SNI observed for example.com")
+                     << QStringLiteral("endpoint 93.184.216.34");
+
+    const QJsonObject attributionVerbatim =
+        objectOf(EvidenceExport::attributionJson({summary}, false, stamp));
+    checkEqual(attributionVerbatim.value(QStringLiteral("format")).toString(),
+               QStringLiteral("netguard.attribution"),
+               QStringLiteral("the attribution export has its own format marker"));
+    checkEqual(attributionVerbatim.value(QStringLiteral("schemaVersion")).toInt(), 1,
+               QStringLiteral("the attribution export carries the schema version"));
+    checkEqual(attributionVerbatim.value(QStringLiteral("count")).toInt(), 1,
+               QStringLiteral("the attribution export counts its destinations"));
+    const QJsonObject verbatimSummary = attributionVerbatim
+        .value(QStringLiteral("destinations")).toArray().first().toObject();
+    checkEqual(verbatimSummary.value(QStringLiteral("confidence")).toString(),
+               QStringLiteral("confirmed"),
+               QStringLiteral("the attribution export names the confidence"));
+    checkEqual(verbatimSummary.value(QStringLiteral("source")).toString(),
+               QStringLiteral("DNS answer + TLS SNI"),
+               QStringLiteral("the attribution export names the sources"));
+    checkEqual(verbatimSummary.value(QStringLiteral("name")).toString(),
+               QStringLiteral("example.com"),
+               QStringLiteral("a verbatim attribution export keeps the name"));
+
+    const QJsonObject attributionRedacted =
+        objectOf(EvidenceExport::attributionJson({summary}, true, stamp));
+    checkEqual(attributionRedacted.value(QStringLiteral("redacted")).toBool(false), true,
+               QStringLiteral("the redacted attribution export says so"));
+    const QJsonObject redactedSummary = attributionRedacted
+        .value(QStringLiteral("destinations")).toArray().first().toObject();
+    checkEqual(redactedSummary.value(QStringLiteral("address")).toString(),
+               QStringLiteral("93.184.216.x"),
+               QStringLiteral("a redacted destination keeps its network part"));
+    checkEqual(redactedSummary.value(QStringLiteral("name")).toString(),
+               QStringLiteral("***.com"),
+               QStringLiteral("a redacted destination keeps its top-level label"));
+    checkEqual(redactedSummary.value(QStringLiteral("confidence")).toString(),
+               QStringLiteral("confirmed"),
+               QStringLiteral("redaction does not touch the confidence"));
+    checkEqual(int(redactedSummary.value(QStringLiteral("names")).toArray().size()), 2,
+               QStringLiteral("every observed name is exported"));
+    checkEqual(redactedSummary.value(QStringLiteral("names")).toArray().at(1).toString(),
+               QStringLiteral("***.net"),
+               QStringLiteral("each exported name is redacted"));
+    const QString redactedEvidence = redactedSummary.value(QStringLiteral("evidence"))
+                                         .toArray().at(1).toString();
+    check(!redactedEvidence.contains(QStringLiteral("example.com")) &&
+              redactedEvidence.contains(QStringLiteral("***.com")),
+          QStringLiteral("the exported evidence is redacted too"));
+
+    const QString attributionCsv = EvidenceExport::attributionCsv({summary}, true, stamp);
+    const QStringList attributionLines = attributionCsv.split(QLatin1Char('\n'));
+    checkEqual(attributionLines.value(0), QStringLiteral("# format netguard.attribution"),
+               QStringLiteral("the attribution CSV names its format"));
+    checkEqual(attributionLines.value(4),
+               QStringLiteral("address,name,names,source,confidence,expiresAt,evidence"),
+               QStringLiteral("the attribution CSV has a confidence column"));
+    check(attributionLines.value(5).contains(QStringLiteral("***.com; ***.net")),
+          QStringLiteral("the attribution CSV joins every observed name"));
+    check(attributionLines.value(5).contains(QStringLiteral("confirmed")),
+          QStringLiteral("the attribution CSV row carries the confidence"));
+
+    // An empty selection still produces a valid, readable file.
+    const QJsonObject emptyAttribution =
+        objectOf(EvidenceExport::attributionJson({}, true, stamp));
+    checkEqual(emptyAttribution.value(QStringLiteral("count")).toInt(), 0,
+               QStringLiteral("an empty attribution export claims no rows"));
+    checkEqual(int(EvidenceExport::attributionCsv({}, true, stamp).split(QLatin1Char('\n')).size()),
+               6, QStringLiteral("an empty attribution CSV is metadata plus a header"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -5126,6 +5314,7 @@ int main(int argc, char *argv[])
     testAuditLogModel();
     testNotificationCoordinator();
     testApplicationDetailModel();
+    testEvidenceExport();
 
     QSettings().clear();
 

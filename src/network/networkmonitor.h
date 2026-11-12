@@ -91,6 +91,11 @@ public:
     // connection never inherits a stale name.
     QList<DomainAttribution> attributionsForAddress(const QString &address) const;
 
+    // Every live address as one combined summary, sorted by address. Used by the
+    // NG-055 attribution export so support receives the same resolution the
+    // tree shows, including each name's confidence and evidence.
+    QList<DestinationNameSummary> attributionSummaries() const;
+
     // NG-036: attribution privacy controls. The collection flags are read by
     // the capture thread on every packet, so they are atomics rather than a
     // mutex-guarded struct; retention is applied to the correlator under its

@@ -46,6 +46,7 @@ SOURCES += \
     src/network/testfixtures.cpp \
     src/network/policy.cpp \
     src/network/auditeventstore.cpp \
+    src/network/evidenceexport.cpp \
     src/network/auditlogmodel.cpp \
     src/network/notificationcoordinator.cpp \
     src/network/applicationdetail.cpp \
@@ -113,6 +114,7 @@ HEADERS += \
     src/network/testfixtures.h \
     src/network/policy.h \
     src/network/auditeventstore.h \
+    src/network/evidenceexport.h \
     src/network/auditlogmodel.h \
     src/network/notificationcoordinator.h \
     src/network/applicationdetail.h \
