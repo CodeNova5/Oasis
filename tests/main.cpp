@@ -48,6 +48,8 @@
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/policy.h"
+#include "network/policyschedule.h"
+#include "network/policyscope.h"
 #include "network/policyreconcile.h"
 #include "network/testfixtures.h"
 
@@ -5267,6 +5269,152 @@ void testEvidenceExport()
                6, QStringLiteral("an empty attribution CSV is metadata plus a header"));
 }
 
+// ─── NG-053: scope, effect, duration, and enforcement wording ─────────────
+void testPolicyScopePresentation()
+{
+    PolicyScopeKind parsed = PolicyScopeKind::Service;
+    check(policyScopeKindFromKey(QStringLiteral(" group "), &parsed) &&
+              parsed == PolicyScopeKind::ApplicationGroup,
+          QStringLiteral("a padded group key parses to the group scope"));
+    check(!policyScopeKindFromKey(QStringLiteral("package"), &parsed),
+          QStringLiteral("a scope the editor cannot represent is reported as unknown"));
+
+    check(policyScopeIsBroad(PolicyScopeKind::Publisher),
+          QStringLiteral("publisher scope is broad"));
+    check(policyScopeIsBroad(PolicyScopeKind::ApplicationGroup),
+          QStringLiteral("application-group scope is broad"));
+    check(!policyScopeIsBroad(PolicyScopeKind::Pid) &&
+              !policyScopeIsBroad(PolicyScopeKind::ExecutablePath),
+          QStringLiteral("PID and path scopes are not broad"));
+
+    check(policyScopeRequiresConfirmation(PolicyScopeKind::Publisher, true),
+          QStringLiteral("an enabled publisher policy is confirmed"));
+    check(policyScopeRequiresConfirmation(PolicyScopeKind::ApplicationGroup, true),
+          QStringLiteral("an enabled group policy is confirmed"));
+    check(!policyScopeRequiresConfirmation(PolicyScopeKind::Publisher, false),
+          QStringLiteral("a disabled broad policy does not interrupt"));
+    check(!policyScopeRequiresConfirmation(PolicyScopeKind::ExecutablePath, true),
+          QStringLiteral("a narrow policy is saved without a confirmation"));
+
+    checkEqual(policyRateText(400000), QStringLiteral("0.40 Mbit/s"),
+               QStringLiteral("a stored rate is shown in Mbit/s"));
+    checkEqual(policyRateText(kEnforcedThrottleBitsPerSecond),
+               QStringLiteral("0.41 Mbit/s"),
+               QStringLiteral("the enforced default rate is shown too"));
+    checkEqual(policyEffectSummary(NetworkPolicy::Action::Throttle, NetworkDirection::Both,
+                                   400000),
+               QStringLiteral("Throttle to 0.40 Mbit/s, both directions"),
+               QStringLiteral("a throttle effect names the rate and direction"));
+    checkEqual(policyEffectSummary(NetworkPolicy::Action::Block, NetworkDirection::Download, 0),
+               QStringLiteral("Block, downloads"),
+               QStringLiteral("a block effect names the direction"));
+
+    checkEqual(humanizedPolicyDuration(45), QStringLiteral("45 s"),
+               QStringLiteral("seconds are shown below a minute"));
+    checkEqual(humanizedPolicyDuration(3600), QStringLiteral("1 h"),
+               QStringLiteral("a whole hour has no trailing minutes"));
+    checkEqual(humanizedPolicyDuration(5400), QStringLiteral("1 h 30 min"),
+               QStringLiteral("hours and minutes combine"));
+    checkEqual(humanizedPolicyDuration(90000), QStringLiteral("1 d 1 h"),
+               QStringLiteral("days and hours combine"));
+
+    const QDateTime now(QDate(2026, 11, 12), QTime(9, 0));
+    checkEqual(policyExpirationSummary(QDateTime(), now), QStringLiteral("No expiration"),
+               QStringLiteral("a persistent policy says so"));
+    checkEqual(policyExpirationSummary(now.addSecs(1800), now),
+               QStringLiteral("Expires in 30 min (2026-11-12 09:30)"),
+               QStringLiteral("a temporary policy shows its remaining time and stamp"));
+    checkEqual(policyExpirationSummary(now.addSecs(-7200), now),
+               QStringLiteral("Expired 2 h ago (2026-11-12 07:00)"),
+               QStringLiteral("an expired policy shows how long ago"));
+
+    PolicyImpact publisher;
+    publisher.scope = PolicyScopeKind::Publisher;
+    publisher.target = QStringLiteral("Contoso Ltd.");
+    publisher.action = NetworkPolicy::Action::Throttle;
+    publisher.direction = NetworkDirection::Both;
+    publisher.rateBitsPerSecond = 400000;
+    publisher.expiration = now.addSecs(3600);
+
+    const QString impact = policyImpactSummary(publisher, now);
+    check(impact.contains(QStringLiteral("Scope: This publisher (Broad)")),
+          QStringLiteral("the preview states the scope and its breadth"));
+    check(impact.contains(QStringLiteral("Target: Contoso Ltd.")),
+          QStringLiteral("the preview states the target"));
+    check(impact.contains(
+              QStringLiteral("Effect: Throttle to 0.40 Mbit/s, both directions.")),
+          QStringLiteral("the preview states the effect and rate"));
+    check(impact.contains(QStringLiteral("Duration: Expires in 1 h (2026-11-12 10:00).")),
+          QStringLiteral("the preview states the duration"));
+    check(impact.contains(QStringLiteral("State: enabled.")),
+          QStringLiteral("the preview states the enabled switch"));
+    check(impact.contains(
+              QStringLiteral("Enforcement: Stored only: this build cannot resolve "
+                             "publisher policies")),
+          QStringLiteral("the preview admits a stored-only scope"));
+    check(impact.contains(QStringLiteral("0.41 Mbit/s")),
+          QStringLiteral("the preview names the rate this build actually applies"));
+    check(impact.contains(QStringLiteral("processes that appear later")),
+          QStringLiteral("the preview says the scope reaches future processes"));
+    check(!impact.contains(QStringLiteral("Window:")),
+          QStringLiteral("no recurring-window line without a schedule"));
+
+    publisher.schedule = QStringLiteral("work-hours");
+    const QString windowed = policyImpactSummary(publisher, now);
+    check(windowed.contains(QStringLiteral("Window: work-hours (in force now? yes).")),
+          QStringLiteral("a recurring window says whether it is in force now"));
+
+    const QString confirmation = policyConfirmationText(publisher, now);
+    check(confirmation.startsWith(
+              QStringLiteral("Apply this policy to every process signed by "
+                             "\"Contoso Ltd.\"?")),
+          QStringLiteral("the confirmation names what the broad scope covers"));
+    check(confirmation.contains(QStringLiteral("Effect: Throttle to 0.40 Mbit/s")),
+          QStringLiteral("the confirmation repeats the impact"));
+
+    PolicyImpact group = publisher;
+    group.scope = PolicyScopeKind::ApplicationGroup;
+    group.schedule.clear();
+    check(policyConfirmationText(group, now).startsWith(
+              QStringLiteral("Apply this policy to every member of the group")),
+          QStringLiteral("a group confirmation names future members"));
+
+    publisher.enabled = false;
+    check(policyImpactSummary(publisher, now).contains(
+              QStringLiteral("State: disabled by the user")),
+          QStringLiteral("a disabled policy says it is not enforced"));
+
+    NetworkPolicy pathPolicy;
+    pathPolicy.scope = QStringLiteral("path");
+    pathPolicy.action = NetworkPolicy::Action::Allow;
+    checkEqual(policyEnforcementSummary(pathPolicy), QStringLiteral("Enforced"),
+               QStringLiteral("a path policy is enforced by this build"));
+    pathPolicy.action = NetworkPolicy::Action::Throttle;
+    pathPolicy.rateBitsPerSecond = 400000;
+    checkEqual(policyEnforcementSummary(pathPolicy),
+               QStringLiteral("Enforced at 0.41 Mbit/s (stored rate differs)"),
+               QStringLiteral("the list shows when the applied rate is not the stored one"));
+
+    NetworkPolicy publisherPolicy;
+    publisherPolicy.scope = QStringLiteral("publisher");
+    check(policyEnforcementSummary(publisherPolicy).startsWith(QStringLiteral("Stored only")),
+          QStringLiteral("a publisher policy is listed as stored only"));
+    check(policyEnforcementSummary(publisherPolicy).contains(QStringLiteral("publisher scope")),
+          QStringLiteral("the stored-only line names the unresolved scope"));
+    publisherPolicy.enabled = false;
+    checkEqual(policyEnforcementSummary(publisherPolicy), QStringLiteral("Not enforced (disabled)"),
+               QStringLiteral("a disabled policy is reported as not enforced"));
+
+    NetworkPolicy packagePolicy;
+    packagePolicy.scope = QStringLiteral("package");
+    check(policyEnforcementSummary(packagePolicy).contains(
+              QStringLiteral("not known to this build")),
+          QStringLiteral("an unknown stored scope is not guessed at"));
+
+    check(policyScopeRiskSummary(PolicyScopeKind::Publisher).contains(QStringLiteral("Broad")),
+          QStringLiteral("the risk summary still starts from the breadth"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -5315,6 +5463,7 @@ int main(int argc, char *argv[])
     testNotificationCoordinator();
     testApplicationDetailModel();
     testEvidenceExport();
+    testPolicyScopePresentation();
 
     QSettings().clear();
 

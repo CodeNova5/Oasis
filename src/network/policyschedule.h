@@ -62,6 +62,15 @@ bool scheduleIsSupported(const QString &schedule);
 
 PolicyActivationState policyActivationAt(const NetworkPolicy &policy, const QDateTime &now);
 
+// "45 s", "5 min", "2 h 10 min", "1 d 3 h" — coarse on purpose: a policy's
+// remaining lifetime does not need to read like a stopwatch.
+QString humanizedPolicyDuration(qint64 seconds);
+
+// How long a temporary policy has left, with the absolute time so the reader
+// can check it against a calendar: "Expires in 3 h 12 min (2026-11-12 18:00)",
+// "Expired 5 min ago (...)", or "No expiration" when the policy is persistent.
+QString policyExpirationSummary(const QDateTime &expiration, const QDateTime &now);
+
 struct PolicyActivation
 {
     NetworkPolicy policy;

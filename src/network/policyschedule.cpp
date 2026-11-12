@@ -195,6 +195,42 @@ PolicyActivationState policyActivationAt(const NetworkPolicy &policy, const QDat
     return PolicyActivationState::Active;
 }
 
+QString humanizedPolicyDuration(qint64 seconds)
+{
+    const qint64 secs = seconds < 0 ? -seconds : seconds;
+    if (secs >= 86400) {
+        const qint64 days = secs / 86400;
+        const qint64 hours = (secs % 86400) / 3600;
+        return hours > 0
+            ? QStringLiteral("%1 d %2 h").arg(days).arg(hours)
+            : QStringLiteral("%1 d").arg(days);
+    }
+    if (secs >= 3600) {
+        const qint64 hours = secs / 3600;
+        const qint64 minutes = (secs % 3600) / 60;
+        return minutes > 0
+            ? QStringLiteral("%1 h %2 min").arg(hours).arg(minutes)
+            : QStringLiteral("%1 h").arg(hours);
+    }
+    if (secs >= 60)
+        return QStringLiteral("%1 min").arg(secs / 60);
+    return QStringLiteral("%1 s").arg(secs);
+}
+
+QString policyExpirationSummary(const QDateTime &expiration, const QDateTime &now)
+{
+    if (!expiration.isValid()) return QStringLiteral("No expiration");
+
+    const QString stamp = expiration.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+    const qint64 secs = now.secsTo(expiration);
+    if (secs <= 0) {
+        return QStringLiteral("Expired %1 ago (%2)")
+            .arg(humanizedPolicyDuration(-secs), stamp);
+    }
+    return QStringLiteral("Expires in %1 (%2)")
+        .arg(humanizedPolicyDuration(secs), stamp);
+}
+
 // ─── Scheduler ──────────────────────────────────────────────────────────────
 
 PolicyScheduler::PolicyScheduler(QObject *parent)

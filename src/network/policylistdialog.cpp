@@ -8,6 +8,7 @@
 
 #include "policyschedule.h"
 #include "policyeditordialog.h"
+#include "policyscope.h"
 
 #include <QAbstractItemView>
 #include <QDateTime>
@@ -32,6 +33,7 @@ enum Column {
     RateColumn,
     WindowColumn,
     ExpiresColumn,
+    EnforcementColumn,
     SourceColumn,
     ColumnCount
 };
@@ -109,7 +111,8 @@ PolicyListDialog::PolicyListDialog(QWidget *parent)
     m_table->setHorizontalHeaderLabels({
         QStringLiteral("State"), QStringLiteral("Scope"), QStringLiteral("Target"),
         QStringLiteral("Action"), QStringLiteral("Direction"), QStringLiteral("Rate"),
-        QStringLiteral("Window"), QStringLiteral("Expires"), QStringLiteral("Source")
+        QStringLiteral("Window"), QStringLiteral("Expires"),
+        QStringLiteral("Enforcement"), QStringLiteral("Source")
     });
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -156,6 +159,7 @@ void PolicyListDialog::refresh()
     m_table->setRowCount(m_policies.size());
 
     const QDateTime now = QDateTime::currentDateTime();
+    int storedOnly = 0;
     for (int row = 0; row < m_policies.size(); ++row) {
         const NetworkPolicy &policy = m_policies.at(row);
         const QString values[ColumnCount] = {
@@ -167,27 +171,57 @@ void PolicyListDialog::refresh()
             rateName(policy),
             policy.schedule.isEmpty() ? QStringLiteral("—") : policy.schedule,
             policy.expiration.isValid()
-                ? policy.expiration.toString(QStringLiteral("yyyy-MM-dd HH:mm"))
+                ? policyExpirationSummary(policy.expiration, now)
                 : QStringLiteral("—"),
+            policyEnforcementSummary(policy),
             policy.source.isEmpty() ? QStringLiteral("unknown") : policy.source
         };
 
+        if (values[EnforcementColumn].startsWith(QStringLiteral("Stored only")))
+            ++storedOnly;
+
+        const QString activationReason = policy.enabled
+            ? QString() : QStringLiteral("Disabled by the user");
+        const QString expiryTip = policy.expiration.isValid()
+            ? policyExpirationSummary(policy.expiration, now)
+            : QStringLiteral("This policy has no expiration");
+
         for (int column = 0; column < ColumnCount; ++column) {
             auto *item = new QTableWidgetItem(values[column]);
-            if (column == StateColumn && !policy.enabled)
-                item->setToolTip(QStringLiteral("Disabled by the user"));
+            if (column == StateColumn && !activationReason.isEmpty())
+                item->setToolTip(activationReason);
+            if (column == ExpiresColumn)
+                item->setToolTip(expiryTip);
+            if (column == EnforcementColumn)
+                item->setToolTip(values[EnforcementColumn].startsWith(
+                                     QStringLiteral("Stored only"))
+                    ? QStringLiteral("The policy is saved and listed, but this build "
+                                     "does not resolve its scope, so nothing is "
+                                     "blocked, allowed, or shaped by it.")
+                    : QStringLiteral("This policy's effect is applied by this build"));
             m_table->setItem(row, column, item);
         }
     }
 
     m_table->resizeColumnsToContents();
-    m_summary->setText(
-        m_policies.isEmpty()
-            ? QStringLiteral("No policies are stored. Create one from a process row.")
-            : QStringLiteral("%1 stored %2. Changes are saved immediately.")
-                  .arg(m_policies.size())
-                  .arg(m_policies.size() == 1 ? QStringLiteral("policy")
-                                              : QStringLiteral("policies")));
+    if (m_policies.isEmpty()) {
+        m_summary->setText(
+            QStringLiteral("No policies are stored. Create one from a process row."));
+    } else {
+        QString summary = QStringLiteral("%1 stored %2. Changes are saved immediately.")
+            .arg(m_policies.size())
+            .arg(m_policies.size() == 1 ? QStringLiteral("policy")
+                                        : QStringLiteral("policies"));
+        if (storedOnly > 0) {
+            summary += QStringLiteral(" %1 %2 only listed, not enforced: this build "
+                                      "cannot resolve PID, publisher, or service "
+                                      "scopes yet.")
+                           .arg(storedOnly)
+                           .arg(storedOnly == 1 ? QStringLiteral("policy is")
+                                                : QStringLiteral("policies are"));
+        }
+        m_summary->setText(summary);
+    }
 
     updateButtons();
 }

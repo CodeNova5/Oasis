@@ -40,6 +40,7 @@ SOURCES += \
     ../src/network/diagnostics.cpp \
     ../src/network/enforcementrestore.cpp \
     ../src/network/policyschedule.cpp \
+    ../src/network/policyscope.cpp \
     ../src/network/policyreconcileplan.cpp \
     ../src/attribution/dnsobserver.cpp \
     ../src/attribution/attributionprivacy.cpp \
@@ -72,6 +73,7 @@ HEADERS += \
     ../src/network/diagnostics.h \
     ../src/network/enforcementrestore.h \
     ../src/network/policyschedule.h \
+    ../src/network/policyscope.h \
     ../src/network/policyreconcile.h \
     ../src/attribution/dnsobserver.h \
     ../src/attribution/attributionprivacy.h \

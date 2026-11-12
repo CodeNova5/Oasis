@@ -23,124 +23,6 @@
 #include <QUuid>
 #include <QVBoxLayout>
 
-// ─── Scope descriptions ─────────────────────────────────────────────────────
-
-QString policyScopeDisplayName(PolicyScopeKind scope)
-{
-    switch (scope) {
-    case PolicyScopeKind::Pid: return QStringLiteral("This process only (PID)");
-    case PolicyScopeKind::ExecutablePath: return QStringLiteral("This executable path");
-    case PolicyScopeKind::Publisher: return QStringLiteral("This publisher");
-    case PolicyScopeKind::Service: return QStringLiteral("This Windows service");
-    case PolicyScopeKind::ApplicationGroup: return QStringLiteral("This application group");
-    }
-    return QString();
-}
-
-QString policyScopeKey(PolicyScopeKind scope)
-{
-    switch (scope) {
-    case PolicyScopeKind::Pid: return QStringLiteral("pid");
-    case PolicyScopeKind::ExecutablePath: return QStringLiteral("path");
-    case PolicyScopeKind::Publisher: return QStringLiteral("publisher");
-    case PolicyScopeKind::Service: return QStringLiteral("service");
-    case PolicyScopeKind::ApplicationGroup: return QStringLiteral("group");
-    }
-    return QString();
-}
-
-namespace {
-
-bool policyScopeFromKey(const QString &key, PolicyScopeKind *scope)
-{
-    const QString k = key.trimmed().toLower();
-    if (k == QLatin1String("pid")) { *scope = PolicyScopeKind::Pid; return true; }
-    if (k == QLatin1String("path") || k == QLatin1String("executable")) {
-        *scope = PolicyScopeKind::ExecutablePath;
-        return true;
-    }
-    if (k == QLatin1String("publisher")) { *scope = PolicyScopeKind::Publisher; return true; }
-    if (k == QLatin1String("service")) { *scope = PolicyScopeKind::Service; return true; }
-    if (k == QLatin1String("group")) { *scope = PolicyScopeKind::ApplicationGroup; return true; }
-    return false;
-}
-
-} // namespace
-
-QString policyScopeBreadth(PolicyScopeKind scope)
-{
-    switch (scope) {
-    case PolicyScopeKind::Pid: return QStringLiteral("Narrowest");
-    case PolicyScopeKind::ExecutablePath: return QStringLiteral("One file");
-    case PolicyScopeKind::Publisher: return QStringLiteral("Broad");
-    case PolicyScopeKind::Service: return QStringLiteral("One service");
-    case PolicyScopeKind::ApplicationGroup: return QStringLiteral("Broad");
-    }
-    return QString();
-}
-
-QString policyScopeExplanation(PolicyScopeKind scope)
-{
-    switch (scope) {
-    case PolicyScopeKind::Pid:
-        return QStringLiteral(
-            "Applies only while this process instance is running. A restart, a "
-            "respawn, or a reused PID is a different process, so the policy "
-            "does not follow it.");
-    case PolicyScopeKind::ExecutablePath:
-        return QStringLiteral(
-            "Applies to the file at this path, now and on later runs. A copy of "
-            "the file elsewhere, or an update installed to a new path, is not "
-            "covered.");
-    case PolicyScopeKind::Publisher:
-        return QStringLiteral(
-            "Applies to every process signed by this publisher, including "
-            "products and updates you have not seen yet. A broad certificate "
-            "affects unrelated software too.");
-    case PolicyScopeKind::Service:
-        return QStringLiteral(
-            "Applies to this Windows service and the processes that host it, "
-            "including instances started later.");
-    case PolicyScopeKind::ApplicationGroup:
-        return QStringLiteral(
-            "Applies to every current and future member of this activity group, "
-            "including helpers and updaters that appear later. Adding a member "
-            "to the group widens what the policy affects.");
-    }
-    return QString();
-}
-
-bool policyScopeAffectsFutureProcesses(PolicyScopeKind scope)
-{
-    return scope != PolicyScopeKind::Pid;
-}
-
-bool policyScopeEnforcedByThisBuild(PolicyScopeKind scope)
-{
-    // Path and group policies are resolved to executables and applied by the
-    // enforcement coordinator; the other scopes are stored but not resolved.
-    return scope == PolicyScopeKind::ExecutablePath ||
-           scope == PolicyScopeKind::ApplicationGroup;
-}
-
-QString policyScopeRiskSummary(PolicyScopeKind scope)
-{
-    QString text = policyScopeBreadth(scope) + QStringLiteral(": ") +
-                   policyScopeExplanation(scope);
-
-    if (policyScopeAffectsFutureProcesses(scope))
-        text += QStringLiteral("\n\nThis scope also affects processes that appear later.");
-
-    if (!policyScopeEnforcedByThisBuild(scope)) {
-        text += QStringLiteral(
-            "\n\nNot enforced yet: this build stores the policy but cannot "
-            "resolve this scope to running processes, so no firewall or "
-            "shaping action is taken.");
-    }
-
-    return text;
-}
-
 // ─── Dialog ─────────────────────────────────────────────────────────────────
 
 PolicyEditorDialog::PolicyEditorDialog(const PolicyTarget &target, QWidget *parent)
@@ -149,8 +31,9 @@ PolicyEditorDialog::PolicyEditorDialog(const PolicyTarget &target, QWidget *pare
 {
     buildUi();
     setWindowTitle(QStringLiteral("Create policy"));
-    updateScopeDescription();
+    updateScopeTarget();
     updateActionControls();
+    updateImpactPreview();
 }
 
 PolicyEditorDialog::PolicyEditorDialog(const NetworkPolicy &policy, QWidget *parent)
@@ -161,7 +44,7 @@ PolicyEditorDialog::PolicyEditorDialog(const NetworkPolicy &policy, QWidget *par
     m_policySource = policy.source;
 
     PolicyScopeKind scope = PolicyScopeKind::ExecutablePath;
-    policyScopeFromKey(policy.scope, &scope);
+    policyScopeKindFromKey(policy.scope, &scope);
     switch (scope) {
     case PolicyScopeKind::Pid:
         m_target.pid = policy.targetId.toUInt();
@@ -185,7 +68,7 @@ PolicyEditorDialog::PolicyEditorDialog(const NetworkPolicy &policy, QWidget *par
 
     const int scopeIndex = m_scopeCombo->findData(static_cast<int>(scope));
     if (scopeIndex >= 0) m_scopeCombo->setCurrentIndex(scopeIndex);
-    updateScopeDescription();
+    updateScopeTarget();
 
     const int actionIndex = m_actionCombo->findData(static_cast<int>(policy.action));
     if (actionIndex >= 0) m_actionCombo->setCurrentIndex(actionIndex);
@@ -199,6 +82,7 @@ PolicyEditorDialog::PolicyEditorDialog(const NetworkPolicy &policy, QWidget *par
     m_enabledCheck->setChecked(policy.enabled);
     m_descriptionEdit->setText(policy.description);
     updateActionControls();
+    updateImpactPreview();
 }
 
 void PolicyEditorDialog::buildUi()
@@ -228,14 +112,6 @@ void PolicyEditorDialog::buildUi()
 
     m_targetEdit = new QLineEdit(scopeBox);
     scopeLayout->addRow(QStringLiteral("Target:"), m_targetEdit);
-
-    m_riskLabel = new QLabel(scopeBox);
-    m_riskLabel->setWordWrap(true);
-    m_riskLabel->setTextFormat(Qt::PlainText);
-    m_riskLabel->setMinimumHeight(110);
-    m_riskLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    m_riskLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
-    scopeLayout->addRow(QStringLiteral("Breadth and risk:"), m_riskLabel);
 
     layout->addWidget(scopeBox);
 
@@ -321,6 +197,19 @@ void PolicyEditorDialog::buildUi()
 
     layout->addWidget(effectBox);
 
+    // NG-053: scope, effect, duration, and enforcement in one place, updated
+    // from the controls so the user reviews what will actually be stored.
+    auto *impactBox = new QGroupBox(QStringLiteral("Impact"), this);
+    auto *impactLayout = new QVBoxLayout(impactBox);
+    m_impactLabel = new QLabel(impactBox);
+    m_impactLabel->setWordWrap(true);
+    m_impactLabel->setTextFormat(Qt::PlainText);
+    m_impactLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_impactLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    m_impactLabel->setStyleSheet(QStringLiteral("color: palette(window-text);"));
+    impactLayout->addWidget(m_impactLabel);
+    layout->addWidget(impactBox);
+
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     layout->addWidget(buttons);
@@ -328,10 +217,28 @@ void PolicyEditorDialog::buildUi()
     connect(buttons, &QDialogButtonBox::accepted, this, &PolicyEditorDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &PolicyEditorDialog::reject);
     connect(m_scopeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PolicyEditorDialog::updateScopeDescription);
+            this, &PolicyEditorDialog::updateScopeTarget);
+    connect(m_scopeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PolicyEditorDialog::updateImpactPreview);
+    connect(m_targetEdit, &QLineEdit::textChanged,
+            this, &PolicyEditorDialog::updateImpactPreview);
     connect(m_actionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &PolicyEditorDialog::updateActionControls);
+    connect(m_actionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PolicyEditorDialog::updateImpactPreview);
+    connect(m_directionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PolicyEditorDialog::updateImpactPreview);
+    connect(m_rateSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &PolicyEditorDialog::updateImpactPreview);
+    connect(m_scheduleCombo, &QComboBox::currentTextChanged,
+            this, &PolicyEditorDialog::updateImpactPreview);
+    connect(m_enabledCheck, &QCheckBox::toggled,
+            this, &PolicyEditorDialog::updateImpactPreview);
     connect(m_expiresCheck, &QCheckBox::toggled, m_expirationEdit, &QWidget::setEnabled);
+    connect(m_expiresCheck, &QCheckBox::toggled,
+            this, &PolicyEditorDialog::updateImpactPreview);
+    connect(m_expirationEdit, &QDateTimeEdit::dateTimeChanged,
+            this, &PolicyEditorDialog::updateImpactPreview);
 }
 
 PolicyScopeKind PolicyEditorDialog::currentScope() const
@@ -344,10 +251,9 @@ NetworkPolicy::Action PolicyEditorDialog::currentAction() const
     return static_cast<NetworkPolicy::Action>(m_actionCombo->currentData().toInt());
 }
 
-void PolicyEditorDialog::updateScopeDescription()
+void PolicyEditorDialog::updateScopeTarget()
 {
     const PolicyScopeKind scope = currentScope();
-    m_riskLabel->setText(policyScopeRiskSummary(scope));
 
     // The target follows the scope: switching to publisher must not silently
     // keep a path in the field and save a policy that matches nothing.
@@ -390,6 +296,36 @@ void PolicyEditorDialog::updateActionControls()
     m_rateSpin->setEnabled(shaping);
     // Direction is stored either way, but only shaping uses it in this build.
     m_directionCombo->setEnabled(shaping);
+}
+
+PolicyImpact PolicyEditorDialog::currentImpact() const
+{
+    PolicyImpact impact;
+    impact.scope = currentScope();
+    // PID and group policies are saved by id, but the preview and the
+    // confirmation should name the thing the user recognises, so they reuse the
+    // read-only target field that carries the process name or group name.
+    impact.target = (impact.scope == PolicyScopeKind::Pid ||
+                     impact.scope == PolicyScopeKind::ApplicationGroup)
+        ? m_targetEdit->text().trimmed()
+        : targetForScope();
+    impact.action = currentAction();
+    impact.direction = static_cast<NetworkDirection>(
+        m_directionCombo->currentData().toInt());
+    impact.rateBitsPerSecond = impact.action == NetworkPolicy::Action::Throttle
+        ? static_cast<quint64>(qRound64(m_rateSpin->value() * 1000000.0))
+        : 0;
+    impact.expiration = m_expiresCheck->isChecked()
+        ? m_expirationEdit->dateTime() : QDateTime();
+    impact.schedule = m_scheduleCombo->currentText().trimmed();
+    impact.enabled = m_enabledCheck->isChecked();
+    return impact;
+}
+
+void PolicyEditorDialog::updateImpactPreview()
+{
+    m_impactLabel->setText(
+        policyImpactSummary(currentImpact(), QDateTime::currentDateTime()));
 }
 
 QString PolicyEditorDialog::targetForScope() const
@@ -456,6 +392,18 @@ void PolicyEditorDialog::accept()
                              QStringLiteral("The expiration must be in the future."));
         m_expirationEdit->setFocus();
         return;
+    }
+
+    // NG-053: a publisher or group policy covers software the user did not pick
+    // directly, so it is confirmed with its impact spelled out. Cancel is the
+    // default button: an accidental Enter must not widen enforcement.
+    const PolicyImpact impact = currentImpact();
+    if (policyScopeRequiresConfirmation(impact.scope, impact.enabled)) {
+        const QMessageBox::StandardButton answer = QMessageBox::question(
+            this, QStringLiteral("Confirm broad policy"),
+            policyConfirmationText(impact, now),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) return;
     }
 
     m_policy = NetworkPolicy();

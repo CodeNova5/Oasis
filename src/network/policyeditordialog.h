@@ -20,6 +20,7 @@
 #include <QString>
 
 #include "network/policy.h"
+#include "network/policyscope.h"
 
 class QCheckBox;
 class QComboBox;
@@ -28,27 +29,8 @@ class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 
-// ─── Scopes the editor offers (PRD 9.3) ─────────────────────────────────────
-enum class PolicyScopeKind {
-    Pid,              // this process instance only
-    ExecutablePath,   // this file at this path
-    Publisher,        // every process signed by this publisher
-    Service,          // this Windows service and its hosts
-    ApplicationGroup  // every current and future member of the group
-};
-
-QString policyScopeDisplayName(PolicyScopeKind scope);
-QString policyScopeKey(PolicyScopeKind scope);
-QString policyScopeBreadth(PolicyScopeKind scope);
-QString policyScopeExplanation(PolicyScopeKind scope);
-bool policyScopeAffectsFutureProcesses(PolicyScopeKind scope);
-// False for scopes this build stores but cannot resolve to running processes
-// yet; the dialog says so instead of implying the policy is in force.
-bool policyScopeEnforcedByThisBuild(PolicyScopeKind scope);
-
-// Breadth, explanation, future-process note, and enforcement note, as shown in
-// the dialog.
-QString policyScopeRiskSummary(PolicyScopeKind scope);
+// The scope wording and impact preview live in policyscope.h, so the list
+// dialog and the harness use exactly the same text as this editor.
 
 // What the selected tree row and its activity group can fill in. Every field
 // is optional: a publisher or service the group does not know is left for the
@@ -82,8 +64,12 @@ private:
     void buildUi();
     PolicyScopeKind currentScope() const;
     NetworkPolicy::Action currentAction() const;
-    void updateScopeDescription();
+    // Fills the target field for the newly selected scope.
+    void updateScopeTarget();
+    // Rebuilds the impact preview from every control, without touching them.
+    void updateImpactPreview();
     void updateActionControls();
+    PolicyImpact currentImpact() const;
     QString targetForScope() const;
 
     PolicyTarget m_target;
@@ -94,7 +80,7 @@ private:
 
     QComboBox *m_scopeCombo = nullptr;
     QLineEdit *m_targetEdit = nullptr;
-    QLabel *m_riskLabel = nullptr;
+    QLabel *m_impactLabel = nullptr;
     QComboBox *m_actionCombo = nullptr;
     QComboBox *m_directionCombo = nullptr;
     QDoubleSpinBox *m_rateSpin = nullptr;

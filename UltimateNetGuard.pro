@@ -56,6 +56,7 @@ SOURCES += \
     src/network/enforcementcoordinator.cpp \
     src/network/policyschedule.cpp \
     src/network/policyeditordialog.cpp \
+    src/network/policyscope.cpp \
     src/network/policylistdialog.cpp \
     src/network/policyreconcile.cpp \
     src/network/bandwidthlimitsdialog.cpp \
@@ -124,6 +125,7 @@ HEADERS += \
     src/network/enforcementcoordinator.h \
     src/network/policyschedule.h \
     src/network/policyeditordialog.h \
+    src/network/policyscope.h \
     src/network/policylistdialog.h \
     src/network/policyreconcile.h \
     src/network/policyreconcileservice.h \
