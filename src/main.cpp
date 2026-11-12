@@ -41,7 +41,7 @@
 // -- Project ------------------------------------------------------------------
 #include "core/version.h"
 #include "core/mainwindow.h"
-#include "core/apptheme.h"
+#include "ui/theme/thememanager.h"
 #include "core/appinstaller.h"
 #include "hardware/hardwaremonitor.h"    // Q_DECLARE_METATYPE(HardwareSnapshot)
 #include "network/packetparser.h"        // Q_DECLARE_METATYPE(ParsedPacket)
@@ -144,15 +144,10 @@ int main(int argc, char *argv[])
     // Set the global window icon for the entire application
     QApplication::setWindowIcon(appIcon);
 
-    // -- Apply dark theme -----------------------------------------------------
-    AppTheme::apply(&app, AppTheme::Dark);
-
-    // -- Font Setup -----------------------------------------------------------
-    // Removed dynamic scaling logic since the app is now completely DPI Unaware.
-    // Windows Desktop Window Manager (DWM) will handle bitmap scaling automatically.
-    QFont f("Segoe UI", 9);
-    f.setHintingPreference(QFont::PreferFullHinting);
-    app.setFont(f);
+    // -- Apply theme ----------------------------------------------------------
+    // Resolves design tokens (src/ui/theme) into styles.qss and installs the
+    // matching QPalette + Segoe UI Variable font.
+    ThemeManager::instance().apply(&app);
 
     // -- Show main window -----------------------------------------------------
     MainWindow w;

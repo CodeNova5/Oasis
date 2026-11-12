@@ -13,8 +13,7 @@
 #include <QStyle>
 #include <windows.h>
 #include <shellapi.h>
-#include "stylemanager.h"
-#include "apptheme.h"
+#include "ui/theme/thememanager.h"
 
 FirewallModel::FirewallModel(FirewallManager *mgr, bool netGuardOnly, QObject *parent)
     : QAbstractTableModel(parent), m_mgr(mgr), m_ngOnly(netGuardOnly)
@@ -126,7 +125,7 @@ QVariant FirewallModel::data(const QModelIndex &idx, int role) const
 
     // Smart Colors depending on Dark/Light Theme
     if (role == Qt::ForegroundRole) {
-        bool isDark = (StyleManager::instance().currentMode() == AppTheme::Dark);
+        bool isDark = ThemeManager::instance().isDark();
 
         if (col == COL_ACTION) {
             if (r.action == NET_FW_ACTION_ALLOW)

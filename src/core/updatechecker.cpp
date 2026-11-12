@@ -5,7 +5,7 @@
 */
 #include "updatechecker.h"
 #include "version.h"
-#include "stylemanager.h"
+#include "ui/theme/thememanager.h"
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -278,7 +278,7 @@ void UpdateDialog::mouseReleaseEvent(QMouseEvent *)
 
 void UpdateDialog::applyCurrentTheme()
 {
-    bool dark = StyleManager::instance().isDark();
+    bool dark = ThemeManager::instance().isDark();
 
     QString bgCard        = dark ? "#1E1E2E" : "#FFFFFF";
     QString borderCard    = dark ? "#2D2D3F" : "#E0E0E0";

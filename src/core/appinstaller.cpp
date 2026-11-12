@@ -5,7 +5,7 @@
 */
 #include "appinstaller.h"
 #include "version.h"
-#include "stylemanager.h"
+#include "ui/theme/thememanager.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -531,7 +531,7 @@ void InstallProgressDialog::mouseReleaseEvent(QMouseEvent *)
 // ── Theme ──
 void InstallProgressDialog::applyTheme()
 {
-    bool dark = StyleManager::instance().isDark();
+    bool dark = ThemeManager::instance().isDark();
 
     QString bgCard       = dark ? "#1E1E2E" : "#FFFFFF";
     QString borderCard   = dark ? "#2D2D3F" : "#E0E0E0";

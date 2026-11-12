@@ -6,8 +6,7 @@
 #include "aiapprovaldialog.h"
 
 #include "policyeditordialog.h"
-#include "stylemanager.h"
-#include "apptheme.h"
+#include "ui/theme/thememanager.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -82,7 +81,7 @@ AiApprovalDialog::AiApprovalDialog(const RecommendationContext &context,
 
 void AiApprovalDialog::buildUi()
 {
-    const bool isDark = (StyleManager::instance().currentMode() == AppTheme::Dark);
+    const bool isDark = ThemeManager::instance().isDark();
     const QString bg        = isDark ? "#1F2328" : "#F6F8FA";
     const QString fg        = isDark ? "#E6EDF3" : "#24292E";
     const QString border    = isDark ? "#30363D" : "#D0D7DE";

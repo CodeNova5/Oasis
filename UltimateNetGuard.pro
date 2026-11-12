@@ -29,8 +29,7 @@ RC_FILE  = appicon.rc
 SOURCES += \
     src/main.cpp \
     src/core/mainwindow.cpp \
-    src/core/apptheme.cpp \
-    src/core/stylemanager.cpp \
+    src/ui/theme/thememanager.cpp \
     src/core/updatechecker.cpp \
     src/core/appinstaller.cpp \
     src/core/windowsicon.cpp \
@@ -99,8 +98,10 @@ SOURCES += \
 HEADERS += \
     src/core/version.h \
     src/core/mainwindow.h \
-    src/core/apptheme.h \
-    src/core/stylemanager.h \
+    src/ui/theme/colors.h \
+    src/ui/theme/typography.h \
+    src/ui/theme/dimensions.h \
+    src/ui/theme/thememanager.h \
     src/core/updatechecker.h \
     src/core/appinstaller.h \
     src/core/windowsicon.h \
@@ -180,6 +181,7 @@ RESOURCES += resources.qrc
 INCLUDEPATH += \
     src \
     src/core \
+    src/ui/theme \
     src/network \
     src/firewall \
     src/hardware \

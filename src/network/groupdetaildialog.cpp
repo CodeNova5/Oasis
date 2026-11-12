@@ -7,8 +7,7 @@
 #include "networkmonitor.h"
 #include "attribution/attributionconfidence.h"
 
-#include "stylemanager.h"
-#include "apptheme.h"
+#include "ui/theme/thememanager.h"
 
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
@@ -74,7 +73,7 @@ GroupDetailDialog::GroupDetailDialog(NetworkMonitor *monitor, const QString &gro
 
     // Same palette handling as the other dialogs so the window follows the
     // current theme instead of inventing its own colours.
-    const bool isDark = (StyleManager::instance().currentMode() == AppTheme::Dark);
+    const bool isDark = ThemeManager::instance().isDark();
     const QString bg        = isDark ? QStringLiteral("#1F2328") : QStringLiteral("#F6F8FA");
     const QString fg        = isDark ? QStringLiteral("#E6EDF3") : QStringLiteral("#24292E");
     const QString border    = isDark ? QStringLiteral("#30363D") : QStringLiteral("#D0D7DE");

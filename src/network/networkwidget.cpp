@@ -20,8 +20,7 @@
 #include "attribution/openaiadapter.h"
 
 // ── Theme Manager ──
-#include "stylemanager.h"
-#include "apptheme.h"
+#include "ui/theme/thememanager.h"
 
 #include <QHeaderView>
 #include <QMessageBox>
@@ -460,7 +459,7 @@ ProcessInfoDialog::ProcessInfoDialog(const QString &name, quint32 pid, const QSt
     setMinimumWidth(520);
 
     // ── Dynamic Theme Palette ──
-    bool isDark = (StyleManager::instance().currentMode() == AppTheme::Dark);
+    bool isDark = ThemeManager::instance().isDark();
 
     QString bg       = isDark ? "#1F2328" : "#F6F8FA";
     QString fg       = isDark ? "#E6EDF3" : "#24292E";
@@ -926,7 +925,7 @@ void NetworkWidget::onTreeViewContextMenu(const QPoint &pos)
     QMenu menu(this);
 
     // ── Context Menu Styling ──
-    bool isDark = (StyleManager::instance().currentMode() == AppTheme::Dark);
+    bool isDark = ThemeManager::instance().isDark();
     if (isDark) {
         menu.setStyleSheet(
             "QMenu { background-color: #1F2328; color: #E6EDF3; border: 1px solid #30363D; padding: 4px; border-radius: 6px; }"

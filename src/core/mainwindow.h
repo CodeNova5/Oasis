@@ -17,7 +17,7 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 
-#include "apptheme.h"
+#include "ui/theme/thememanager.h"
 #include "hardware/hardwaremonitor.h"
 #include "network/notificationcoordinator.h"
 
@@ -140,7 +140,7 @@ private:
     QString            m_notificationPath;
     QString            m_notificationName;
 
-    AppTheme::Mode     m_theme     = AppTheme::Dark;
+    ThemeManager::Mode m_theme     = ThemeManager::Dark;
 
     QTimer            *m_badgeTimer= nullptr;
     bool               m_badgeLit  = true;

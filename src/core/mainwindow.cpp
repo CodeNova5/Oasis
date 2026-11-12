@@ -7,8 +7,7 @@
 #include "version.h"
 #include "qdebug.h"
 #include "ui_mainwindow.h"
-#include "stylemanager.h"
-#include "apptheme.h"
+#include "ui/theme/thememanager.h"
 #include "updatechecker.h"
 #include "appinstaller.h"
 #include "windowsicon.h"
@@ -1024,7 +1023,7 @@ void MainWindow::loadSettings()
     ui->cmbDataSaverMode->setCurrentIndex(settings.value("DataSaver/Mode", 1).toInt());
 
     bool isDark = settings.value("General/DarkTheme", true).toBool();
-    if (!isDark && StyleManager::instance().isDark()) {
+    if (!isDark && ThemeManager::instance().isDark()) {
         onToggleTheme();
     }
 
@@ -1056,7 +1055,7 @@ void MainWindow::saveSettings()
     settings.setValue("General/RunAtStartup", ui->chkRunAtStartup->isChecked());
     settings.setValue("General/StartMinimized", ui->chkStartMinimized->isChecked());
     settings.setValue("DataSaver/Mode", ui->cmbDataSaverMode->currentIndex());
-    settings.setValue("General/DarkTheme", StyleManager::instance().isDark());
+    settings.setValue("General/DarkTheme", ThemeManager::instance().isDark());
 
     settings.setValue("Overlay/Enabled", ui->chkEnableOverlay->isChecked());
     settings.setValue("Overlay/FontSize", ui->spinOverlayFontSize->value());
@@ -1223,10 +1222,10 @@ void MainWindow::setupTray()
 
 void MainWindow::onToggleTheme()
 {
-    StyleManager::instance().toggleTheme();
-    m_theme = StyleManager::instance().currentMode();
-    ui->btnThemeToggle->setChecked(m_theme == AppTheme::Light);
-    ui->btnThemeToggle->setText(m_theme == AppTheme::Dark ? "☀" : "🌙");
+    ThemeManager::instance().toggleTheme();
+    m_theme = ThemeManager::instance().mode();
+    ui->btnThemeToggle->setChecked(m_theme == ThemeManager::Light);
+    ui->btnThemeToggle->setText(m_theme == ThemeManager::Dark ? "☀" : "🌙");
     saveSettings();
 }
 

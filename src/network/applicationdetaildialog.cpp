@@ -4,8 +4,7 @@
  */
 #include "applicationdetaildialog.h"
 
-#include "stylemanager.h"
-#include "apptheme.h"
+#include "ui/theme/thememanager.h"
 
 #include <QAbstractItemView>
 #include <QFileInfo>
@@ -90,7 +89,7 @@ ApplicationDetailDialog::ApplicationDetailDialog(const QString &executablePath,
 
     // The same palette handling as the group and recommendation dialogs, so the
     // window follows the theme instead of inventing its own colours.
-    const bool isDark = (StyleManager::instance().currentMode() == AppTheme::Dark);
+    const bool isDark = ThemeManager::instance().isDark();
     const QString bg        = isDark ? QStringLiteral("#1F2328") : QStringLiteral("#F6F8FA");
     const QString fg        = isDark ? QStringLiteral("#E6EDF3") : QStringLiteral("#24292E");
     const QString border    = isDark ? QStringLiteral("#30363D") : QStringLiteral("#D0D7DE");
