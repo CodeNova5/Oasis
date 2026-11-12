@@ -41,6 +41,7 @@
 #include "identity/processlineage.h"
 #include "firewall/rulenames.h"
 #include "network/auditeventstore.h"
+#include "network/auditlogmodel.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/policy.h"
@@ -4479,6 +4480,124 @@ void testAuditEventStore()
     QSettings().clear();
 }
 
+// ─── NG-050 view: filterable audit log model ───────────────────────────────
+// The model is the view's only data path: it must re-query on every store
+// change, apply type/text/time filters, and expose exactly the rows an export
+// would write.
+void testAuditLogModel()
+{
+    QSettings().clear();
+
+    AuditEventStore store;
+    AuditLogModel model;
+    checkEqual(model.rowCount(), 0, QStringLiteral("a model without a store is empty"));
+    model.setStore(&store);
+    checkEqual(model.rowCount(), 0, QStringLiteral("a model over an empty store is empty"));
+    checkEqual(model.columnCount(), 6, QStringLiteral("the audit view has six columns"));
+    checkEqual(model.headerData(AuditLogModel::TypeColumn, Qt::Horizontal).toString(),
+               QStringLiteral("Type"),
+               QStringLiteral("the audit view names its type column"));
+
+    int changes = 0;
+    QObject::connect(&store, &AuditEventStore::changed, &store, [&changes]() { ++changes; });
+
+    const QDateTime now = QDateTime::currentDateTime();
+
+    AuditEvent detection;
+    detection.type = AuditEvent::EventType::Detection;
+    detection.scope = QStringLiteral("C:/Apps/updater.exe");
+    detection.reason = QStringLiteral("sustained upload observed");
+    detection.result = QStringLiteral("observed");
+    store.append(detection);
+
+    AuditEvent policyChange;
+    policyChange.timestamp = now.addSecs(-10);
+    policyChange.type = AuditEvent::EventType::PolicyChange;
+    policyChange.scope = QStringLiteral("group:chrome");
+    policyChange.reason = QStringLiteral("user created a policy");
+    policyChange.result = QStringLiteral("saved");
+    policyChange.relatedPolicyId = QStringLiteral("policy-1");
+    store.append(policyChange);
+
+    AuditEvent enforcement;
+    enforcement.timestamp = now.addSecs(-5);
+    enforcement.type = AuditEvent::EventType::EnforcementResult;
+    enforcement.scope = QStringLiteral("C:/Apps/updater.exe");
+    enforcement.reason = QStringLiteral("throttle requested");
+    enforcement.result = QStringLiteral("applied");
+    enforcement.relatedPolicyId = QStringLiteral("policy-1");
+    enforcement.details = QStringLiteral("{\"direction\":\"download\"}");
+    store.append(enforcement);
+
+    AuditEvent oldDetection;
+    oldDetection.timestamp = now.addDays(-10);
+    oldDetection.type = AuditEvent::EventType::Detection;
+    oldDetection.scope = QStringLiteral("C:/Apps/old.exe");
+    oldDetection.reason = QStringLiteral("old detection");
+    store.append(oldDetection);
+
+    checkEqual(changes, 4, QStringLiteral("every append notifies the view"));
+    checkEqual(model.rowCount(), 4,
+               QStringLiteral("the model follows the store automatically"));
+
+    // Chronological rows, typed display strings, and a detailed tooltip.
+    checkEqual(model.data(model.index(1, AuditLogModel::ReasonColumn)).toString(),
+               QStringLiteral("user created a policy"),
+               QStringLiteral("the model shows the event reason"));
+    checkEqual(model.data(model.index(2, AuditLogModel::TypeColumn)).toString(),
+               QStringLiteral("EnforcementResult"),
+               QStringLiteral("the model shows the event type name"));
+    check(!model.data(model.index(2, AuditLogModel::TimeColumn)).toString().isEmpty(),
+          QStringLiteral("the model shows a formatted timestamp"));
+    check(model.data(model.index(2, AuditLogModel::TypeColumn),
+                     AuditLogModel::TypeRole).toInt() ==
+              static_cast<int>(AuditEvent::EventType::EnforcementResult),
+          QStringLiteral("the type role carries the enum value"));
+    check(model.data(model.index(2, AuditLogModel::TypeColumn), Qt::ToolTipRole)
+              .toString()
+              .contains(QStringLiteral("Policy: policy-1")),
+          QStringLiteral("the tooltip explains the related policy"));
+
+    // Type, text (including scope), and time-window filters.
+    model.setFilters(static_cast<int>(AuditEvent::EventType::EnforcementResult), QString(), 0);
+    checkEqual(model.rowCount(), 1, QStringLiteral("the model filters by event type"));
+    checkEqual(model.eventAt(0).relatedPolicyId, QStringLiteral("policy-1"),
+               QStringLiteral("a filtered row keeps its event"));
+
+    model.setFilters(-1, QStringLiteral("GROUP:CHROME"), 0);
+    checkEqual(model.rowCount(), 1,
+               QStringLiteral("text filtering includes the scope case-insensitively"));
+
+    model.setFilters(-1, QStringLiteral("direction"), 0);
+    checkEqual(model.rowCount(), 1,
+               QStringLiteral("text filtering searches the details"));
+
+    model.setFilters(-1, QString(), 24);
+    checkEqual(model.rowCount(), 3,
+               QStringLiteral("the time window hides an older event"));
+
+    model.setFilters(-1, QString(), 0);
+    checkEqual(model.rowCount(), 4, QStringLiteral("clearing the filters shows every event"));
+    check(model.eventAt(-1).scope.isEmpty(),
+          QStringLiteral("an out-of-range row returns an empty event"));
+
+    // The visible snapshot is what an export writes, with the same envelope.
+    model.setFilters(static_cast<int>(AuditEvent::EventType::EnforcementResult), QString(), 0);
+    const QJsonObject filtered = objectOf(store.exportJson(model.visibleEvents()));
+    checkEqual(filtered.value(QStringLiteral("count")).toInt(), 1,
+               QStringLiteral("exporting the visible rows counts one event"));
+    checkEqual(static_cast<int>(filtered.value(QStringLiteral("events")).toArray().size()), 1,
+               QStringLiteral("exporting the visible rows writes one object"));
+    checkEqual(objectOf(store.exportJson()).value(QStringLiteral("count")).toInt(), 4,
+               QStringLiteral("exporting the whole log still counts every event"));
+
+    store.clear();
+    checkEqual(changes, 5, QStringLiteral("clearing notifies the view"));
+    checkEqual(model.rowCount(), 0, QStringLiteral("clearing empties the view too"));
+
+    QSettings().clear();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -4525,6 +4644,7 @@ int main(int argc, char *argv[])
     testAiProvider();
     testAiApproval();
     testAuditEventStore();
+    testAuditLogModel();
 
     QSettings().clear();
 

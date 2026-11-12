@@ -45,6 +45,7 @@ void sortByTimestamp(QList<AuditEvent> &events)
 QString eventTextMatches(const AuditEvent &event, const QString &needle)
 {
     if (needle.isEmpty()) return QString();
+    if (event.scope.contains(needle, Qt::CaseInsensitive)) return event.scope;
     if (event.reason.contains(needle, Qt::CaseInsensitive)) return event.reason;
     if (event.result.contains(needle, Qt::CaseInsensitive)) return event.result;
     if (event.errorInfo.contains(needle, Qt::CaseInsensitive)) return event.errorInfo;
@@ -125,7 +126,8 @@ AuditRetentionSettings sanitizedAuditRetention(const AuditRetentionSettings &set
 
 // ─── Store ──────────────────────────────────────────────────────────────────
 
-AuditEventStore::AuditEventStore()
+AuditEventStore::AuditEventStore(QObject *parent)
+    : QObject(parent)
 {
     load();
 }
@@ -140,6 +142,7 @@ void AuditEventStore::setRetention(const AuditRetentionSettings &settings)
     m_retention = sanitizedAuditRetention(settings);
     prune();
     save();
+    emit changed();
 }
 
 void AuditEventStore::append(const AuditEvent &event)
@@ -152,6 +155,7 @@ void AuditEventStore::append(const AuditEvent &event)
     sortByTimestamp(m_events);
     prune();
     save();
+    emit changed();
 }
 
 void AuditEventStore::appendAll(const QList<AuditEvent> &events)
@@ -168,6 +172,7 @@ void AuditEventStore::appendAll(const QList<AuditEvent> &events)
     sortByTimestamp(m_events);
     prune();
     save();
+    emit changed();
 }
 
 int AuditEventStore::count() const
@@ -227,12 +232,18 @@ void AuditEventStore::clear()
 {
     m_events.clear();
     save();
+    emit changed();
 }
 
 QString AuditEventStore::exportJson() const
 {
+    return exportJson(m_events);
+}
+
+QString AuditEventStore::exportJson(const QList<AuditEvent> &eventsToExport) const
+{
     QJsonArray events;
-    for (const AuditEvent &event : m_events)
+    for (const AuditEvent &event : eventsToExport)
         events.append(auditEventToObject(event));
 
     QJsonObject retentionObject;
@@ -262,6 +273,7 @@ bool AuditEventStore::load()
         qWarning() << "AuditEventStore: ignoring unsupported store version" << version;
         settings.endGroup();
         prune();
+        emit changed();
         return false;
     }
 
@@ -277,6 +289,7 @@ bool AuditEventStore::load()
 
     if (json.isEmpty()) {
         prune();
+        emit changed();
         return true;
     }
 
@@ -285,6 +298,7 @@ bool AuditEventStore::load()
         qWarning() << "AuditEventStore: ignoring malformed event payload";
         m_events.clear();
         prune();
+        emit changed();
         return false;
     }
 
@@ -301,6 +315,7 @@ bool AuditEventStore::load()
 
     sortByTimestamp(m_events);
     prune();
+    emit changed();
     return true;
 }
 

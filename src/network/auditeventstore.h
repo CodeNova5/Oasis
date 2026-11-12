@@ -24,6 +24,7 @@
 #include <QDateTime>
 #include <QJsonObject>
 #include <QList>
+#include <QObject>
 #include <QString>
 #include <QStringList>
 
@@ -60,7 +61,7 @@ struct AuditQuery
     QString identityId;        // exact match
     QString policyId;          // exact match
     QString scope;             // exact match
-    QString text;              // case-insensitive substring of the free-text fields
+    QString text;              // case-insensitive substring of the scope and free-text fields
     int limit = 0;
 };
 
@@ -78,13 +79,14 @@ QJsonObject auditEventToObject(const AuditEvent &event);
 AuditRetentionSettings sanitizedAuditRetention(const AuditRetentionSettings &settings);
 
 // ─── Store ──────────────────────────────────────────────────────────────────
-class AuditEventStore
+class AuditEventStore : public QObject
 {
+    Q_OBJECT
 public:
     // Loads the persisted log and retention settings. A newer store version, a
     // malformed payload, or an unreadable event is ignored as a whole rather
     // than half-applied; the store then starts empty with default bounds.
-    AuditEventStore();
+    explicit AuditEventStore(QObject *parent = nullptr);
 
     AuditRetentionSettings retention() const;
     // Applies clamped settings, prunes immediately, and persists. Shortening
@@ -110,11 +112,19 @@ public:
 
     // Versioned JSON for support or personal analysis: format marker, schema
     // version, export time, current bounds, count, and the events. No packet
-    // payloads and no key outside the documented event fields.
+    // payloads and no key outside the documented event fields. The overload
+    // exports a caller-selected list (for example the currently filtered view)
+    // with the same envelope.
     QString exportJson() const;
+    QString exportJson(const QList<AuditEvent> &events) const;
 
     bool load();
     bool save() const;
+
+signals:
+    // Emitted after the retained set changes, so a view can re-query without
+    // polling. Not emitted by save(), which only mirrors the current set.
+    void changed();
 
 private:
     QList<AuditEvent> m_events;   // sorted oldest first

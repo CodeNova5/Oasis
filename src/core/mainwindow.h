@@ -27,6 +27,7 @@ class FirewallWidget;
 class HardwareWidget;
 class TaskbarOverlay;
 class DiagnosticsModel;
+class AuditLogModel;
 struct BandwidthEvent;
 
 // Data structure to hold daily traffic per application
@@ -70,6 +71,11 @@ private slots:
     void onExportDiagnostics();
     void onClearDiagnostics();
 
+    // NG-050: the audit view's summary, filtered JSON export, and clear action.
+    void refreshAuditSummary();
+    void onExportAuditLog();
+    void onClearAuditLog();
+
     // NG-036: attribution collection, retention, redaction, and history clearing.
     void applyAttributionPrivacy();
     void onClearAttributionHistory();
@@ -85,6 +91,7 @@ private slots:
 private:
     void setupWidgets();
     void setupDiagnosticsView();
+    void setupAuditLogView();
     void setupAttributionPrivacyView();
     void setupAiProviderView();
     void refreshAiProviderUi();
@@ -101,6 +108,7 @@ private:
     Ui::MainWindow    *ui          = nullptr;
 
     NetworkWidget     *m_netWidget = nullptr;
+    AuditLogModel     *m_auditModel = nullptr;
     FirewallWidget    *m_fwWidget  = nullptr;
     HardwareWidget    *m_hwWidget  = nullptr;
     TaskbarOverlay    *m_overlay   = nullptr;

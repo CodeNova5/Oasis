@@ -825,6 +825,109 @@
           </layout>
          </widget>
         </item>
+        <item>
+         <widget class="QGroupBox" name="groupBoxAuditLog">
+          <property name="title">
+           <string>Audit log (local metadata)</string>
+          </property>
+          <layout class="QVBoxLayout">
+           <property name="spacing">
+            <number>10</number>
+           </property>
+           <property name="margin" stdset="0">
+            <number>20</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="lblAuditSummary">
+             <property name="text">
+              <string>No audit events recorded.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout">
+             <item>
+              <widget class="QLabel" name="lblAuditType">
+               <property name="text">
+                <string>Type:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QComboBox" name="cmbAuditType"/>
+             </item>
+             <item>
+              <widget class="QLabel" name="lblAuditWindow">
+               <property name="text">
+                <string>Time:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QComboBox" name="cmbAuditWindow"/>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="edtAuditFilter">
+               <property name="placeholderText">
+                <string>Filter by scope, reason, result, or details…</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QTableView" name="tableAuditLog">
+             <property name="alternatingRowColors">
+              <bool>true</bool>
+             </property>
+             <property name="selectionBehavior">
+              <enum>QAbstractItemView::SelectRows</enum>
+             </property>
+             <property name="editTriggers">
+              <set>QAbstractItemView::NoEditTriggers</set>
+             </property>
+             <property name="minimumHeight">
+              <number>180</number>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout">
+             <item>
+              <widget class="QPushButton" name="btnExportAuditLog">
+               <property name="text">
+                <string>Export audit log (JSON)</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnClearAuditLog">
+               <property name="text">
+                <string>Clear audit log</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="auditLogSpacer">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>0</width>
+                 <height>0</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
           <item>
            <widget class="QGroupBox" name="groupBoxDataSaver">
             <property name="title">

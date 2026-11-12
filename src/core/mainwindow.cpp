@@ -18,6 +18,7 @@
 #include "attribution/attributionprivacy.h"
 #include "attribution/aiprovider.h"
 #include "network/diagnostics.h"
+#include "network/auditlogmodel.h"
 #include "network/networkmonitor.h"
 #include "firewall/firewallwidget.h"
 #include "hardware/hardwarewidget.h"
@@ -69,6 +70,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupWidgets();
     setupDiagnosticsView();
+    setupAuditLogView();
     setupAttributionPrivacyView();
     setupAiProviderView();
     setupTray();
@@ -502,6 +504,138 @@ void MainWindow::onExportDiagnostics()
     file.write(diag->toJson(ui->chkRedactDestinations->isChecked()).toUtf8());
     file.close();
     QMessageBox::information(this, "Export Successful", "Diagnostics exported successfully!");
+}
+
+void MainWindow::setupAuditLogView()
+{
+    AuditEventStore *audit = m_netWidget ? m_netWidget->auditStore() : nullptr;
+    if (!audit)
+        return;
+
+    m_auditModel = new AuditLogModel(this);
+    m_auditModel->setStore(audit);
+    ui->tableAuditLog->setModel(m_auditModel);
+
+    QHeaderView *header = ui->tableAuditLog->horizontalHeader();
+    header->setSectionResizeMode(AuditLogModel::TimeColumn, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(AuditLogModel::TypeColumn, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(AuditLogModel::ScopeColumn, QHeaderView::Stretch);
+    header->setSectionResizeMode(AuditLogModel::ReasonColumn, QHeaderView::Stretch);
+    header->setSectionResizeMode(AuditLogModel::ResultColumn, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(AuditLogModel::PolicyColumn, QHeaderView::ResizeToContents);
+    ui->tableAuditLog->verticalHeader()->setVisible(false);
+
+    ui->cmbAuditType->addItem(QStringLiteral("All types"), -1);
+    const QStringList types = auditEventTypeNames();
+    for (int i = 0; i < types.size(); ++i)
+        ui->cmbAuditType->addItem(types.at(i), i);
+
+    ui->cmbAuditWindow->addItem(QStringLiteral("Last hour"), 1);
+    ui->cmbAuditWindow->addItem(QStringLiteral("Last 24 hours"), 24);
+    ui->cmbAuditWindow->addItem(QStringLiteral("Last 7 days"), 24 * 7);
+    ui->cmbAuditWindow->addItem(QStringLiteral("Last 30 days"), 24 * 30);
+    ui->cmbAuditWindow->addItem(QStringLiteral("All retained"), 0);
+    ui->cmbAuditWindow->setCurrentIndex(ui->cmbAuditWindow->count() - 1);
+
+    // One place applies every control, so the model is re-queried once per
+    // change instead of three times while the filters are being set up.
+    const auto applyFilters = [this]() {
+        m_auditModel->setFilters(ui->cmbAuditType->currentData().toInt(),
+                                 ui->edtAuditFilter->text(),
+                                 ui->cmbAuditWindow->currentData().toInt());
+        refreshAuditSummary();
+    };
+
+    connect(ui->cmbAuditType, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, applyFilters);
+    connect(ui->cmbAuditWindow, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, applyFilters);
+    connect(ui->edtAuditFilter, &QLineEdit::textChanged, this, applyFilters);
+    connect(m_auditModel, &QAbstractItemModel::modelReset,
+            this, &MainWindow::refreshAuditSummary);
+    connect(ui->btnExportAuditLog, &QPushButton::clicked, this, &MainWindow::onExportAuditLog);
+    connect(ui->btnClearAuditLog, &QPushButton::clicked, this, &MainWindow::onClearAuditLog);
+
+    applyFilters();
+}
+
+void MainWindow::refreshAuditSummary()
+{
+    if (!m_auditModel)
+        return;
+
+    AuditEventStore *audit = m_auditModel->store();
+    const int shown = m_auditModel->rowCount();
+    const int retained = audit ? audit->count() : 0;
+
+    if (shown == 0) {
+        ui->lblAuditSummary->setText(
+            retained == 0
+                ? QStringLiteral("No audit events recorded.")
+                : QStringLiteral("No audit events match the current filter (%1 retained).")
+                      .arg(retained));
+        return;
+    }
+
+    const AuditRetentionSettings retention = audit->retention();
+    ui->lblAuditSummary->setText(
+        QStringLiteral("%1 of %2 retained events shown · keeping %3 day(s) / up to %4 events")
+            .arg(shown)
+            .arg(retained)
+            .arg(retention.retentionDays)
+            .arg(retention.maxEvents));
+}
+
+void MainWindow::onExportAuditLog()
+{
+    AuditEventStore *audit = m_netWidget ? m_netWidget->auditStore() : nullptr;
+    if (!audit || !m_auditModel)
+        return;
+
+    const QList<AuditEvent> events = m_auditModel->visibleEvents();
+    if (events.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Export audit log"),
+                                 QStringLiteral("No audit events match the current filter."));
+        return;
+    }
+
+    const QString fileName = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Export audit log"),
+        QDir::homePath() + "/NetGuard_AuditLog.json",
+        QStringLiteral("JSON Files (*.json)"));
+    if (fileName.isEmpty())
+        return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, QStringLiteral("Export error"),
+                              QStringLiteral("Could not create the file."));
+        return;
+    }
+
+    // The export mirrors the visible (filtered) rows with the same versioned
+    // envelope as the whole log, so support can receive exactly what is shown.
+    file.write(audit->exportJson(events).toUtf8());
+    file.close();
+    QMessageBox::information(this, QStringLiteral("Export successful"),
+                             QStringLiteral("Exported %1 audit events.").arg(events.size()));
+}
+
+void MainWindow::onClearAuditLog()
+{
+    AuditEventStore *audit = m_netWidget ? m_netWidget->auditStore() : nullptr;
+    if (!audit)
+        return;
+
+    if (QMessageBox::question(
+            this, QStringLiteral("Clear audit log"),
+            QStringLiteral("Permanently delete every stored audit event? "
+                           "The retention settings are kept."),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    audit->clear();
+    refreshAuditSummary();
 }
 
 void MainWindow::setupAttributionPrivacyView()

@@ -104,6 +104,8 @@ public:
     void selectAdapterByIPOrAuto(const QString &ipOrAuto);
     QList<AdapterInfo> getAdapterList() const { return m_adapters; }
     DiagnosticsModel *diagnosticsModel() const { return m_diagnostics; }
+    // NG-050: the persisted audit log behind the audit view and its export.
+    AuditEventStore *auditStore() { return &m_auditStore; }
     // NG-036: attribution privacy controls and the history they bound.
     NetworkMonitor *networkMonitor() const { return m_monitor; }
     // NG-041: the latest foreground sample. It is advisory, and its
