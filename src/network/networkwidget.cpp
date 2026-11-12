@@ -409,6 +409,15 @@ NetworkWidget::NetworkWidget(QWidget *parent)
                             .arg(result.downloadLimited ? QStringLiteral("yes")
                                                         : QStringLiteral("no"));
         m_auditStore.append(event);
+
+        // NG-051: a failed channel is the one outcome the user must not miss,
+        // so it is surfaced even while packet activity is flooding alerts.
+        if (result.status == EnforcementResult::Status::Failed) {
+            emit enforcementFailed(policyId, executablePath,
+                                   result.message.isEmpty()
+                                       ? QStringLiteral("The enforcement channel reported a failure.")
+                                       : result.message);
+        }
     });
 
     // NG-023: evaluate the stored policies at startup (which is how a boundary

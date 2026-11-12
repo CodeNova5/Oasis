@@ -19,6 +19,7 @@
 
 #include "apptheme.h"
 #include "hardware/hardwaremonitor.h"
+#include "network/notificationcoordinator.h"
 
 namespace Ui { class MainWindow; }
 
@@ -97,6 +98,9 @@ private:
     void refreshAiProviderUi();
     void refreshAttributionHistory();
     void setupTray();
+    // NG-051: one place decides whether a notification reaches the tray, the
+    // in-app status line, both, or neither.
+    void postNotification(const AppNotification &notification);
     void animateLiveBadge();
     void loadSettings();
     void initHistoryManager();
@@ -115,6 +119,7 @@ private:
 
     QSystemTrayIcon   *m_tray      = nullptr;
     QMenu             *m_trayMenu  = nullptr;
+    NotificationCoordinator m_notifications;
 
     AppTheme::Mode     m_theme     = AppTheme::Dark;
 

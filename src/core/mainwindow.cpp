@@ -19,6 +19,7 @@
 #include "attribution/aiprovider.h"
 #include "network/diagnostics.h"
 #include "network/auditlogmodel.h"
+#include "network/notificationcoordinator.h"
 #include "network/networkmonitor.h"
 #include "firewall/firewallwidget.h"
 #include "hardware/hardwarewidget.h"
@@ -1039,6 +1040,20 @@ void MainWindow::setupWidgets()
     connect(m_netWidget, &NetworkWidget::speedUpdated, this, &MainWindow::onNetworkSpeed, Qt::QueuedConnection);
     connect(m_netWidget, &NetworkWidget::speedUpdated, m_overlay, &TaskbarOverlay::updateSpeed, Qt::QueuedConnection);
     connect(m_netWidget, &NetworkWidget::bandwidthAlert, this, &MainWindow::onBandwidthAlert, Qt::QueuedConnection);
+    connect(m_netWidget, &NetworkWidget::enforcementFailed, this,
+            [this](const QString &policyId, const QString &executablePath, const QString &message) {
+        AppNotification notification;
+        notification.key = QStringLiteral("enforcement:%1:%2").arg(policyId, executablePath);
+        notification.title = QStringLiteral("Enforcement failed");
+        notification.message = QStringLiteral("Policy %1 could not be applied to %2.\n%3")
+                                   .arg(policyId.isEmpty() ? QStringLiteral("(unknown)") : policyId,
+                                        executablePath.isEmpty() ? QStringLiteral("(unknown executable)")
+                                                                 : executablePath,
+                                        message);
+        notification.priority = NotificationPriority::Critical;
+        notification.policyId = policyId;
+        postNotification(notification);
+    }, Qt::QueuedConnection);
 
     connect(m_hwWidget->monitor(), &HardwareMonitor::snapshotReady, this, [this](const HardwareSnapshot &snap){
         onHardwareSnapshot(snap);
@@ -1100,7 +1115,63 @@ void MainWindow::onToggleTheme()
 void MainWindow::onMinimizeToTray()
 {
     hide();
-    m_tray->showMessage("NetGuard AIO", "Running in the background. Click the tray icon to restore.", QSystemTrayIcon::Information, 2000);
+    AppNotification notification;
+    notification.key = QStringLiteral("tray-background");
+    notification.title = QStringLiteral("NetGuard AIO");
+    notification.message = QStringLiteral("Running in the background. Click the tray icon to restore.");
+    postNotification(notification);
+}
+
+void MainWindow::postNotification(const AppNotification &notification)
+{
+    const NotificationDecision decision = m_notifications.submit(
+        notification, QDateTime::currentMSecsSinceEpoch());
+    if (!decision.deliver) {
+        qDebug().noquote() << "Notification suppressed (" + decision.reason + "):"
+                           << notification.title;
+        return;
+    }
+
+    // Fold repeats into the delivered text. The count goes first because a
+    // tray balloon truncates from the end of a long message.
+    QString message = notification.message;
+    if (decision.suppressedCount > 0) {
+        message = QStringLiteral("%1 earlier similar notification%2 were suppressed.\n\n%3")
+                      .arg(decision.suppressedCount)
+                      .arg(decision.suppressedCount == 1 ? QString() : QStringLiteral("s"))
+                      .arg(notification.message);
+    }
+
+    const bool trayRoute = notification.route == NotificationRoute::TrayAndApp ||
+                           notification.route == NotificationRoute::TrayOnly;
+    const bool appRoute = notification.route == NotificationRoute::TrayAndApp ||
+                          notification.route == NotificationRoute::AppOnly;
+
+    if (trayRoute && m_tray) {
+        QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::Information;
+        int timeoutMs = 6000;
+        switch (notification.priority) {
+        case NotificationPriority::Warning:
+            icon = QSystemTrayIcon::Warning;
+            timeoutMs = 8000;
+            break;
+        case NotificationPriority::Critical:
+            icon = QSystemTrayIcon::Critical;
+            timeoutMs = 10000;
+            break;
+        case NotificationPriority::Info:
+            break;
+        }
+        m_tray->showMessage(notification.title, message, icon, timeoutMs);
+    }
+
+    if (appRoute && ui->statusMsg) {
+        QString status = notification.title;
+        if (decision.suppressedCount > 0)
+            status += QStringLiteral(" (+%1 earlier)").arg(decision.suppressedCount);
+        ui->statusMsg->setText(status);
+        ui->statusMsg->setToolTip(message);
+    }
 }
 
 void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
@@ -1200,14 +1271,23 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         ui->tableDataSaverDetections->resizeColumnsToContents();
     }
 
-    if (!m_tray) return;
-
-    const QSystemTrayIcon::MessageIcon icon = (event.throttleAttempted && !event.throttled) ||
-                                              (event.firewallAttempted && !event.firewallBlocked)
-        ? QSystemTrayIcon::Warning
-        : QSystemTrayIcon::Information;
+    // NG-051: one key per executable and outcome, so repeated packet activity
+    // for the same process folds into a count instead of a balloon flood.
+    const bool failed = (event.throttleAttempted && !event.throttled) ||
+                        (event.firewallAttempted && !event.firewallBlocked);
+    AppNotification notification;
+    notification.key = QStringLiteral("bandwidth:%1:%2")
+                           .arg(event.executablePath.isEmpty() ? event.processName
+                                                               : event.executablePath,
+                                title);
+    notification.title = title;
+    notification.message = message;
+    notification.priority = failed
+        ? NotificationPriority::Critical
+        : ((event.throttled || event.firewallBlocked) ? NotificationPriority::Warning
+                                                      : NotificationPriority::Info);
     qWarning().noquote() << title << "-" << message;
-    m_tray->showMessage(title, message, icon, 6000);
+    postNotification(notification);
 }
 
 void MainWindow::onDataSaverModeChanged(int mode)
@@ -1270,7 +1350,11 @@ void MainWindow::animateLiveBadge()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     hide();
-    m_tray->showMessage("NetGuard AIO", "Running in the background.\nDouble-click the tray icon to restore.", QSystemTrayIcon::Information, 2000);
+    AppNotification notification;
+    notification.key = QStringLiteral("tray-background");
+    notification.title = QStringLiteral("NetGuard AIO");
+    notification.message = QStringLiteral("Running in the background.\nDouble-click the tray icon to restore.");
+    postNotification(notification);
     event->ignore();
 }
 

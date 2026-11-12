@@ -42,6 +42,7 @@
 #include "firewall/rulenames.h"
 #include "network/auditeventstore.h"
 #include "network/auditlogmodel.h"
+#include "network/notificationcoordinator.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/policy.h"
@@ -4598,6 +4599,145 @@ void testAuditLogModel()
     QSettings().clear();
 }
 
+void testNotificationCoordinator()
+{
+    NotificationSettings settings;
+    settings.cooldownMs = 60 * 1000;
+    settings.windowMs = 60 * 1000;
+    settings.maxDeliveriesPerWindow = 3;
+    NotificationCoordinator coordinator(settings);
+
+    AppNotification alert;
+    alert.key = QStringLiteral("bandwidth:updater.exe:limited");
+    alert.title = QStringLiteral("Bandwidth limited");
+    alert.message = QStringLiteral("updater.exe was limited to 50 KiB/s.");
+    alert.priority = NotificationPriority::Info;
+
+    const qint64 start = 1000000;
+
+    const NotificationDecision first = coordinator.submit(alert, start);
+    check(first.deliver, QStringLiteral("the first notification is delivered"));
+    checkEqual(first.suppressedCount, 0,
+               QStringLiteral("a first delivery folds nothing"));
+    checkEqual(first.reason, QStringLiteral("delivered"),
+               QStringLiteral("a first delivery reports why it was shown"));
+
+    const NotificationDecision repeat = coordinator.submit(alert, start + 1000);
+    check(!repeat.deliver, QStringLiteral("a repeat inside the cooldown is suppressed"));
+    checkEqual(repeat.reason, QStringLiteral("duplicate"),
+               QStringLiteral("a repeat is attributed to the per-key cooldown"));
+    checkEqual(coordinator.suppressedCount(alert.key), 1,
+               QStringLiteral("the suppressed repeat is counted"));
+
+    coordinator.submit(alert, start + 2000);
+    checkEqual(coordinator.suppressedCount(alert.key), 2,
+               QStringLiteral("a second suppressed repeat is counted too"));
+
+    const NotificationDecision aggregated = coordinator.submit(alert, start + 60000);
+    check(aggregated.deliver,
+          QStringLiteral("the same key is delivered once its cooldown ends"));
+    checkEqual(aggregated.suppressedCount, 2,
+               QStringLiteral("the delivery folds in the suppressed repeats"));
+    checkEqual(coordinator.suppressedCount(alert.key), 0,
+               QStringLiteral("folding a delivery clears the pending count"));
+
+    // A critical failure is never hidden by the per-key cooldown.
+    AppNotification failure;
+    failure.key = QStringLiteral("enforcement:policy-1:updater.exe");
+    failure.title = QStringLiteral("Enforcement failed");
+    failure.message = QStringLiteral("The QoS channel failed.");
+    failure.priority = NotificationPriority::Critical;
+    check(coordinator.submit(failure, start + 60500).deliver,
+          QStringLiteral("a critical failure is delivered"));
+    check(coordinator.submit(failure, start + 60600).deliver,
+          QStringLiteral("a critical failure bypasses its own cooldown"));
+
+    // A burst of different info notifications is capped per window, and the
+    // folded count survives until the window clears.
+    NotificationCoordinator capped(settings);
+    AppNotification one = alert;
+    one.key = QStringLiteral("bandwidth:one.exe");
+    AppNotification two = alert;
+    two.key = QStringLiteral("bandwidth:two.exe");
+    AppNotification three = alert;
+    three.key = QStringLiteral("bandwidth:three.exe");
+
+    check(capped.submit(one, start).deliver,
+          QStringLiteral("the first distinct notification is delivered"));
+    check(capped.submit(two, start + 10).deliver,
+          QStringLiteral("the second distinct notification is delivered"));
+    check(capped.submit(three, start + 20).deliver,
+          QStringLiteral("the third distinct notification is delivered"));
+
+    AppNotification four = alert;
+    four.key = QStringLiteral("bandwidth:four.exe");
+    const NotificationDecision limited = capped.submit(four, start + 30);
+    check(!limited.deliver, QStringLiteral("a burst beyond the window cap is suppressed"));
+    check(limited.rateLimited,
+          QStringLiteral("the cap is reported separately from a duplicate"));
+    checkEqual(limited.reason, QStringLiteral("rate-limited"),
+               QStringLiteral("the rate-limit reason is explicit"));
+
+    check(capped.submit(failure, start + 40).deliver,
+          QStringLiteral("critical bypasses the cross-key window cap"));
+
+    const NotificationDecision afterWindow = capped.submit(four, start + 60000);
+    check(afterWindow.deliver, QStringLiteral("the cap clears once its window passes"));
+    checkEqual(afterWindow.suppressedCount, 1,
+               QStringLiteral("the rate-limited notification is folded into the next one"));
+
+    // An empty key falls back to the title and message.
+    NotificationCoordinator fallback;
+    AppNotification anonymous;
+    anonymous.title = QStringLiteral("Scan finished");
+    anonymous.message = QStringLiteral("No threats were found.");
+    check(fallback.submit(anonymous, start).deliver,
+          QStringLiteral("an empty key still delivers the first time"));
+    check(!fallback.submit(anonymous, start + 100).deliver,
+          QStringLiteral("an identical notification deduplicates without a key"));
+    anonymous.message = QStringLiteral("One item needs review.");
+    check(fallback.submit(anonymous, start + 200).deliver,
+          QStringLiteral("a different message is not folded without a key"));
+
+    // Warning follows the same dedupe as info; critical does not.
+    NotificationCoordinator priorities(settings);
+    AppNotification warning = alert;
+    warning.key = QStringLiteral("bandwidth:warning.exe");
+    warning.priority = NotificationPriority::Warning;
+    check(priorities.submit(warning, start).deliver,
+          QStringLiteral("a warning is delivered"));
+    check(!priorities.submit(warning, start + 500).deliver,
+          QStringLiteral("a repeated warning is deduplicated"));
+
+    // A zero cooldown allows immediate repeats; settings are clamped.
+    NotificationSettings noCooldown = settings;
+    noCooldown.cooldownMs = 0;
+    NotificationCoordinator immediate(noCooldown);
+    check(immediate.submit(alert, start).deliver,
+          QStringLiteral("the first notification with no cooldown is delivered"));
+    check(immediate.submit(alert, start).deliver,
+          QStringLiteral("a zero cooldown permits an immediate repeat"));
+
+    NotificationSettings bad;
+    bad.cooldownMs = -5;
+    bad.windowMs = 0;
+    bad.maxDeliveriesPerWindow = 0;
+    const NotificationSettings clean = NotificationCoordinator::sanitized(bad);
+    checkEqual(clean.cooldownMs, 0, QStringLiteral("a negative cooldown is clamped to zero"));
+    checkEqual(clean.windowMs, 60 * 1000,
+               QStringLiteral("a non-positive window falls back to one minute"));
+    checkEqual(clean.maxDeliveriesPerWindow, 1,
+               QStringLiteral("the delivery cap is at least one"));
+
+    checkEqual(coordinator.suppressedCount(QStringLiteral("never-seen")), 0,
+               QStringLiteral("an unknown key has no pending repeats"));
+    coordinator.reset();
+    checkEqual(coordinator.suppressedCount(alert.key), 0,
+               QStringLiteral("reset forgets pending repeats"));
+    check(coordinator.submit(alert, start).deliver,
+          QStringLiteral("reset forgets delivery times too"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -4645,6 +4785,7 @@ int main(int argc, char *argv[])
     testAiApproval();
     testAuditEventStore();
     testAuditLogModel();
+    testNotificationCoordinator();
 
     QSettings().clear();
 

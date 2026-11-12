@@ -66,6 +66,10 @@ protected:
 signals:
     void speedUpdated(quint64 rxBps, quint64 txBps);
     void bandwidthAlert(const BandwidthEvent &event);
+    // NG-051: a policy channel reported a failure. Critical, so the
+    // notification coordinator never rate-limits it away.
+    void enforcementFailed(const QString &policyId, const QString &executablePath,
+                           const QString &message);
 
 private slots:
     void onAdapterChanged(int idx);
