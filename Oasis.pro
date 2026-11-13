@@ -94,9 +94,7 @@ SOURCES += \
     src/firewall/firewallmanager.cpp \
     src/firewall/rulenames.cpp \
     src/firewall/firewallmodel.cpp \
-    src/firewall/firewallwidget.cpp \
     src/hardware/hardwaremonitor.cpp \
-    src/hardware/hardwarewidget.cpp \
     src/taskbar/taskbaroverlay.cpp \
     src/taskbar/systemtrayicon.cpp
 
@@ -175,18 +173,14 @@ HEADERS += \
     src/firewall/firewallmanager.h \
     src/firewall/rulenames.h \
     src/firewall/firewallmodel.h \
-    src/firewall/firewallwidget.h \
     src/hardware/hardwaremonitor.h \
-    src/hardware/hardwarewidget.h \
     src/taskbar/taskbaroverlay.h \
     src/taskbar/systemtrayicon.h
 
 # ─── Qt Designer UI forms ────────────────────────────────────────────────────
 FORMS += \
     src/ui/mainwindow.ui \
-    src/ui/networkwidget.ui \
-    src/ui/firewallwidget.ui \
-    src/ui/hardwarewidget.ui
+    src/ui/networkwidget.ui
 
 # ─── Resources ──────────────────────────────────────────────────────────────
 RESOURCES += resources.qrc

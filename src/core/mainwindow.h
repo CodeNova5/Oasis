@@ -25,8 +25,7 @@
 namespace Ui { class MainWindow; }
 
 class NetworkWidget;
-class FirewallWidget;
-class HardwareWidget;
+class HardwareMonitor;
 class TaskbarOverlay;
 class DiagnosticsModel;
 class AuditLogModel;
@@ -166,8 +165,10 @@ private:
 
     NetworkWidget     *m_netWidget = nullptr;
     AuditLogModel     *m_auditModel = nullptr;
-    FirewallWidget    *m_fwWidget  = nullptr;
-    HardwareWidget    *m_hwWidget  = nullptr;
+    // Hardware sampling lives here now: the legacy Hardware screen (its only
+    // consumer) was retired, but the status bar and the taskbar overlay still
+    // read CPU, memory and temperature from this backend.
+    HardwareMonitor   *m_hwMonitor = nullptr;
     TaskbarOverlay    *m_overlay   = nullptr;
 
     QSystemTrayIcon   *m_tray      = nullptr;

@@ -30,8 +30,7 @@
 #include "network/topconsumers.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
-#include "firewall/firewallwidget.h"
-#include "hardware/hardwarewidget.h"
+#include "hardware/hardwaremonitor.h"
 #include "taskbar/taskbaroverlay.h"
 
 #include <QCloseEvent>
@@ -191,7 +190,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     // ── Populate GPU combo with detected GPU names ──
     {
-        QStringList gpuNames = m_hwWidget->monitor()->enumerateGpuNames();
+        QStringList gpuNames = m_hwMonitor ? m_hwMonitor->enumerateGpuNames()
+                                          : QStringList();
         for (const QString &name : gpuNames) {
             ui->cmbOverlayGpuSelect->addItem(name);
         }
@@ -210,6 +210,12 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     saveHistoryToJson(); // Ensure data is saved before exiting
+    if (m_hwMonitor) {
+        // The sampling thread is owned by this window, so it is stopped here
+        // rather than left to outlive the widgets it reports to.
+        m_hwMonitor->stopMonitor();
+        m_hwMonitor->wait(3000);
+    }
     delete m_overlay;
     delete ui;
 }
@@ -1156,9 +1162,8 @@ void MainWindow::applySettingsToOverlay()
     int gpuSelIdx = ui->cmbOverlayGpuSelect->currentIndex();
     int gpuMonitorIdx = gpuSelIdx - 1;  // -1 means auto/all
     m_overlay->setGpuIndex(gpuMonitorIdx);
-    if (m_hwWidget && m_hwWidget->monitor()) {
-        m_hwWidget->monitor()->setGpuIndex(gpuMonitorIdx);
-    }
+    if (m_hwMonitor)
+        m_hwMonitor->setGpuIndex(gpuMonitorIdx);
 
     saveSettings();
 }
@@ -1191,9 +1196,10 @@ void MainWindow::buildShell()
     QWidget *oldRoot = takeCentralWidget();
     QTabWidget *tabs = ui->mainTabs;
 
+    // Policies and Hardware owned their screens in separate widget classes;
+    // those are retired to legacy/ and are no longer part of mainwindow.ui.
     const QList<QWidget *> existingPages = {
-        ui->tabNetwork, ui->tabDataSaver, ui->tabFirewall,
-        ui->tabHardware, ui->tabHistory, ui->tabSettings
+        ui->tabNetwork, ui->tabDataSaver, ui->tabHistory, ui->tabSettings
     };
     for (QWidget *page : existingPages) {
         if (!page)
@@ -1284,11 +1290,20 @@ void MainWindow::buildShell()
               QStringLiteral("Domains, IPs and evidence"));
 
     m_sidebar->addSection(QStringLiteral("Control"));
-    addScreen(QStringLiteral("Policies"), ui->tabFirewall,
+    // The legacy tabs behind these destinations (Policies, Data Saver, History,
+    // Hardware, Settings) are detached and excluded from the build. Their
+    // services keep running; only the screens are gone until each is rebuilt.
+    addScreen(QStringLiteral("Policies"),
+              makePlaceholderPage(QStringLiteral("Policies"),
+                  QStringLiteral("The rule editor is being rebuilt as a dedicated screen. "
+                                 "Policies already stored continue to be enforced.")),
               QStringLiteral("Policies"),
               QStringLiteral("Rules and enforcement status"));
     m_policiesIndex = m_screenTitles.size() - 1;
-    addScreen(QStringLiteral("Data Saver"), ui->tabDataSaver,
+    addScreen(QStringLiteral("Data Saver"),
+              makePlaceholderPage(QStringLiteral("Data Saver"),
+                  QStringLiteral("The detection list is being rebuilt as a dedicated screen. "
+                                 "Current process activity is available on Overview.")),
               QStringLiteral("Data Saver"),
               QStringLiteral("Detected high-bandwidth processes"));
     addScreen(QStringLiteral("Insights"),
@@ -1299,21 +1314,30 @@ void MainWindow::buildShell()
               QStringLiteral("Anomalies and recommendations"));
 
     m_sidebar->addSection(QStringLiteral("History"));
-    addScreen(QStringLiteral("History"), ui->tabHistory,
+    addScreen(QStringLiteral("History"),
+              makePlaceholderPage(QStringLiteral("History"),
+                  QStringLiteral("Stored traffic by day is being rebuilt as a dedicated "
+                                 "screen. Daily totals keep being recorded in the meantime.")),
               QStringLiteral("History"),
               QStringLiteral("Stored traffic by day and application"));
     addScreen(QStringLiteral("Audit & Reports"),
               makePlaceholderPage(QStringLiteral("Audit & Reports"),
-                  QStringLiteral("Report exports are being rebuilt as a dedicated screen. "
-                                 "The local audit log remains available under Settings.")),
+                  QStringLiteral("The audit log and its exports are being rebuilt as a "
+                                 "dedicated screen. Events are still recorded locally.")),
               QStringLiteral("Audit & Reports"),
               QStringLiteral("Event traceability and exports"));
 
     m_sidebar->addPinnedSection(QStringLiteral("System"));
-    addScreen(QStringLiteral("Hardware"), ui->tabHardware,
+    addScreen(QStringLiteral("Hardware"),
+              makePlaceholderPage(QStringLiteral("Hardware"),
+                  QStringLiteral("CPU, memory and temperature history is being rebuilt as a "
+                                 "dedicated screen. Live figures remain in the status bar.")),
               QStringLiteral("Hardware"),
               QStringLiteral("CPU, memory, GPU and temperatures"));
-    addScreen(QStringLiteral("Settings"), ui->tabSettings,
+    addScreen(QStringLiteral("Settings"),
+              makePlaceholderPage(QStringLiteral("Settings"),
+                  QStringLiteral("Privacy, diagnostics and preferences are being rebuilt as a "
+                                 "dedicated screen. Saved settings and monitoring keep working.")),
               QStringLiteral("Settings"),
               QStringLiteral("Privacy, diagnostics and preferences"));
     m_settingsIndex = m_screenTitles.size() - 1;
@@ -1419,12 +1443,11 @@ void MainWindow::navigateTo(int index)
 void MainWindow::setupWidgets()
 {
     m_netWidget = new NetworkWidget(this);
-    m_fwWidget  = new FirewallWidget(this);
-    m_hwWidget  = new HardwareWidget(this);
+    ui->tabNetwork->layout()->addWidget(m_netWidget);
 
-    ui->tabNetwork ->layout()->addWidget(m_netWidget);
-    ui->tabFirewall->layout()->addWidget(m_fwWidget);
-    ui->tabHardware->layout()->addWidget(m_hwWidget);
+    // Hardware sampling outlives its screen: the status bar and the taskbar
+    // overlay still show CPU, memory and temperatures.
+    m_hwMonitor = new HardwareMonitor(this);
 
     m_overlay = new TaskbarOverlay;
     m_overlay->setAdapterList(m_netWidget->getAdapterList());
@@ -1453,7 +1476,7 @@ void MainWindow::setupWidgets()
         postNotification(notification);
     }, Qt::QueuedConnection);
 
-    connect(m_hwWidget->monitor(), &HardwareMonitor::snapshotReady, this, [this](const HardwareSnapshot &snap){
+    connect(m_hwMonitor, &HardwareMonitor::snapshotReady, this, [this](const HardwareSnapshot &snap){
         onHardwareSnapshot(snap);
         if (m_overlay) {
             m_overlay->updateHardware(static_cast<int>(snap.cpuLoadPct), static_cast<int>(snap.ramLoadPct));
@@ -1461,6 +1484,7 @@ void MainWindow::setupWidgets()
                                           snap.gpuLoadPct, snap.cpuTempC, snap.gpuTempC, 0.0);
         }
     }, Qt::QueuedConnection);
+    m_hwMonitor->startMonitor();
 
     connect(m_overlay, &TaskbarOverlay::showMainWindowRequested, this, [this](){
         showNormal();

@@ -237,26 +237,6 @@
         </item>
        </layout>
       </widget>
-      <widget class="QWidget" name="tabFirewall">
-       <attribute name="title">
-        <string>  🛡  Firewall  </string>
-       </attribute>
-       <layout class="QVBoxLayout" name="fwRoot">
-        <property name="margin" stdset="0">
-         <number>0</number>
-        </property>
-       </layout>
-      </widget>
-      <widget class="QWidget" name="tabHardware">
-       <attribute name="title">
-        <string>  💻  Hardware  </string>
-       </attribute>
-       <layout class="QVBoxLayout" name="hwRoot">
-        <property name="margin" stdset="0">
-         <number>0</number>
-        </property>
-       </layout>
-      </widget>
       <widget class="QWidget" name="tabHistory">
        <attribute name="title">
         <string>  📊  History  </string>
