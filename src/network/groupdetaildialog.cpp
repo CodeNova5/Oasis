@@ -39,7 +39,7 @@ enum MemberColumn : int {
     ColCount
 };
 
-QString pidText(const NetGuard::GroupMember &member)
+QString pidText(const Oasis::GroupMember &member)
 {
     return member.observedPid != 0 ? QString::number(member.observedPid)
                                    : QStringLiteral("—");
@@ -48,9 +48,9 @@ QString pidText(const NetGuard::GroupMember &member)
 // The member is named after the application it belongs to, with the executable
 // file or service key next to it: "Google Chrome (chrome.exe)" is recognisable
 // while two binaries shipped by the same product stay distinguishable.
-QString memberLabel(const NetGuard::GroupMember &member)
+QString memberLabel(const Oasis::GroupMember &member)
 {
-    const QString fileName = member.type == NetGuard::GroupMemberType::ExecutablePath
+    const QString fileName = member.type == Oasis::GroupMemberType::ExecutablePath
                                  ? QFileInfo(member.value).fileName()
                                  : member.value;
     const QString appName = member.displayName.trimmed();
@@ -197,8 +197,8 @@ GroupDetailDialog::GroupDetailDialog(NetworkMonitor *monitor, const QString &gro
     // Start from the latest published snapshot; the group may already be gone
     // (traffic stopped) but the dialog still shows what is known.
     if (m_monitor) {
-        const QList<NetGuard::ProcessGroup> groups = m_monitor->processGroups();
-        for (const NetGuard::ProcessGroup &group : groups) {
+        const QList<Oasis::ProcessGroup> groups = m_monitor->processGroups();
+        for (const Oasis::ProcessGroup &group : groups) {
             if (group.id != m_groupId) continue;
             applyGroup(group);
             break;
@@ -216,9 +216,9 @@ GroupDetailDialog::GroupDetailDialog(NetworkMonitor *monitor, const QString &gro
     refreshTable();
 }
 
-void GroupDetailDialog::onSnapshot(const QList<NetGuard::ProcessGroup> &groups)
+void GroupDetailDialog::onSnapshot(const QList<Oasis::ProcessGroup> &groups)
 {
-    for (const NetGuard::ProcessGroup &group : groups) {
+    for (const Oasis::ProcessGroup &group : groups) {
         if (group.id != m_groupId) continue;
         applyGroup(group);
         refreshTable();
@@ -231,7 +231,7 @@ void GroupDetailDialog::onSnapshot(const QList<NetGuard::ProcessGroup> &groups)
     refreshSummary();
 }
 
-void GroupDetailDialog::applyGroup(const NetGuard::ProcessGroup &group)
+void GroupDetailDialog::applyGroup(const Oasis::ProcessGroup &group)
 {
     m_group = group;
     m_active = true;
@@ -253,18 +253,18 @@ void GroupDetailDialog::refreshTable()
     m_table->blockSignals(true);
     m_table->setRowCount(0);
 
-    for (const NetGuard::GroupMember &member : m_group.members) {
+    for (const Oasis::GroupMember &member : m_group.members) {
         const int row = m_table->rowCount();
         m_table->insertRow(row);
 
         auto *nameItem = new QTableWidgetItem(memberLabel(member));
-        nameItem->setData(Qt::UserRole, NetGuard::groupMemberKey(member.type, member.value));
+        nameItem->setData(Qt::UserRole, Oasis::groupMemberKey(member.type, member.value));
         nameItem->setToolTip(member.value);
 
-        auto *typeItem = new QTableWidgetItem(NetGuard::groupMemberTypeName(member.type));
-        auto *evidenceItem = new QTableWidgetItem(NetGuard::groupEvidenceName(member.evidence));
+        auto *typeItem = new QTableWidgetItem(Oasis::groupMemberTypeName(member.type));
+        auto *evidenceItem = new QTableWidgetItem(Oasis::groupEvidenceName(member.evidence));
         auto *confidenceItem = new QTableWidgetItem(
-            NetGuard::groupConfidenceName(member.confidence));
+            Oasis::groupConfidenceName(member.confidence));
         auto *pidItem = new QTableWidgetItem(pidText(member));
         pidItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
@@ -275,7 +275,7 @@ void GroupDetailDialog::refreshTable()
         m_table->setItem(row, ColPid, pidItem);
 
         if (!previousKey.isEmpty()
-            && NetGuard::groupMemberKey(member.type, member.value) == previousKey)
+            && Oasis::groupMemberKey(member.type, member.value) == previousKey)
             m_table->selectRow(row);
     }
 
@@ -329,7 +329,7 @@ void GroupDetailDialog::refreshSummary()
                            .arg(members == 1 ? QStringLiteral("member")
                                              : QStringLiteral("members"))
                            .arg(m_group.liveProcessCount())
-                           .arg(NetGuard::groupConfidenceName(m_group.confidence))
+                           .arg(Oasis::groupConfidenceName(m_group.confidence))
                            .arg(origin)
                            .arg(categoryText));
     if (!m_active)
@@ -346,18 +346,18 @@ void GroupDetailDialog::showMemberDetail()
         return;
     }
 
-    const NetGuard::GroupMember &member = m_group.members.at(row);
+    const Oasis::GroupMember &member = m_group.members.at(row);
     m_btnRemove->setEnabled(true);
 
     QStringList lines;
     if (!member.displayName.trimmed().isEmpty())
         lines << QStringLiteral("Application: ") + member.displayName.trimmed();
-    lines << (member.type == NetGuard::GroupMemberType::ExecutablePath
+    lines << (member.type == Oasis::GroupMemberType::ExecutablePath
                   ? QStringLiteral("Executable: ") + member.value
                   : QStringLiteral("Service key: ") + member.value);
     lines << QStringLiteral("Evidence: %1 (%2)")
-                 .arg(NetGuard::groupEvidenceName(member.evidence),
-                      NetGuard::groupConfidenceName(member.confidence));
+                 .arg(Oasis::groupEvidenceName(member.evidence),
+                      Oasis::groupConfidenceName(member.confidence));
     lines << QStringLiteral("Identity: %1")
                  .arg(member.identityId.isEmpty() ? QStringLiteral("not resolved")
                                                   : member.identityId);
@@ -376,10 +376,10 @@ void GroupDetailDialog::showMemberDetail()
 // NG-015: the category this member is acted on as — its own name and publisher
 // rules first, otherwise the one its group has learned from the members that
 // have already crossed the bandwidth threshold.
-QString GroupDetailDialog::memberCategoryText(const NetGuard::GroupMember &member) const
+QString GroupDetailDialog::memberCategoryText(const Oasis::GroupMember &member) const
 {
     ClassificationEvidence evidence;
-    evidence.processName = member.type == NetGuard::GroupMemberType::ExecutablePath
+    evidence.processName = member.type == Oasis::GroupMemberType::ExecutablePath
                                ? QFileInfo(member.value).fileName()
                                : member.value;
     evidence.executablePath = member.value;
@@ -389,7 +389,7 @@ QString GroupDetailDialog::memberCategoryText(const NetGuard::GroupMember &membe
                                 ? ApplicationIdentity::SignerStatus::Unknown
                                 : ApplicationIdentity::SignerStatus::Signed;
     evidence.groupId = m_groupId;
-    evidence.isService = member.type == NetGuard::GroupMemberType::Service;
+    evidence.isService = member.type == Oasis::GroupMemberType::Service;
 
     const ProcessCategory own = BandwidthGuard::classifyProcess(evidence);
     const ProcessClassification classification = m_bandwidthGuard
@@ -420,7 +420,7 @@ void GroupDetailDialog::onRemoveSelected()
     const int row = selectedRow();
     if (row < 0 || row >= m_group.members.size() || !m_monitor) return;
 
-    const NetGuard::GroupMember member = m_group.members.at(row);
+    const Oasis::GroupMember member = m_group.members.at(row);
     const QString label = member.displayName.isEmpty() ? member.value : member.displayName;
     const bool autoRemoved = !member.manual;
 
@@ -444,7 +444,7 @@ void GroupDetailDialog::onAddExecutable()
     if (path.isEmpty()) return;
 
     QString error;
-    if (!m_monitor->addProcessGroupMember(m_groupId, NetGuard::GroupMemberType::ExecutablePath,
+    if (!m_monitor->addProcessGroupMember(m_groupId, Oasis::GroupMemberType::ExecutablePath,
                                           path, &error)) {
         setStatus(error.isEmpty() ? QStringLiteral("The executable could not be added.") : error);
         return;

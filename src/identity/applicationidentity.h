@@ -20,7 +20,7 @@
 #include "network/policy.h"
 #include "identity/publisherresolver.h"
 
-namespace NetGuard {
+namespace Oasis {
 
 enum class IdentityResolutionStatus : int {
     Resolved = 0,
@@ -108,6 +108,6 @@ private:
     PublisherResolver m_publisherResolver;
 };
 
-} // namespace NetGuard
+} // namespace Oasis
 
-Q_DECLARE_METATYPE(NetGuard::IdentityResolution)
+Q_DECLARE_METATYPE(Oasis::IdentityResolution)

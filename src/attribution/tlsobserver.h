@@ -2,7 +2,7 @@
  * @file    tlsobserver.h
  * @brief   Passive TLS ClientHello metadata (NG-032): visible SNI only, never
  *          decrypted payloads.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

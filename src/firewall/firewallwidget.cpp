@@ -1,6 +1,6 @@
 /**
  * @file    firewallwidget.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   UI interactions for Firewall. Features Tab Direction toggles and Hotkeys.
  */
 #include "firewallwidget.h"
@@ -30,14 +30,14 @@ FirewallWidget::FirewallWidget(QWidget *parent)
 
     if (!IsUserAnAdmin()) {
         QMessageBox::critical(this, "Admin Required",
-                              "Ultimate NetGuard must be run as Administrator!\nRules will fail to apply.");
+                              "Oasis must be run as Administrator!\nRules will fail to apply.");
     }
 
     setAcceptDrops(true);
     m_mgr = new FirewallManager(this);
     m_mgr->initialize();
 
-    // ── Tab A: NetGuard Core ──────────────────────────────────────────────────
+    // ── Tab A: Oasis Core ──────────────────────────────────────────────────
     m_coreModel = new FirewallModel(m_mgr, true, this);
     m_coreProxy = new QSortFilterProxyModel(this);
     m_coreProxy->setSourceModel(m_coreModel);
@@ -73,8 +73,8 @@ FirewallWidget::FirewallWidget(QWidget *parent)
     connect(ui->btnImport, &QPushButton::clicked, this, &FirewallWidget::onImportRules);
     connect(ui->edtCoreFilter, &QLineEdit::textChanged, this, &FirewallWidget::onCoreFilter);
 
-    connect(ui->tableCoreFW, &QTableView::customContextMenuRequested, this, &FirewallWidget::onNetGuardContextMenu);
-    connect(ui->tableCoreFW, &QTableView::doubleClicked, this, &FirewallWidget::onNetGuardClicked);
+    connect(ui->tableCoreFW, &QTableView::customContextMenuRequested, this, &FirewallWidget::onOasisContextMenu);
+    connect(ui->tableCoreFW, &QTableView::doubleClicked, this, &FirewallWidget::onOasisClicked);
 
     // ── Tab B: System Rules ───────────────────────────────────────────────────
     m_sysModel = new FirewallModel(m_mgr, false, this);
@@ -276,7 +276,7 @@ void FirewallWidget::onWhitelistToggled(bool on)
     refreshBothTabs();
 }
 
-void FirewallWidget::onNetGuardContextMenu(const QPoint &pos)
+void FirewallWidget::onOasisContextMenu(const QPoint &pos)
 {
     QModelIndex proxyIdx = ui->tableCoreFW->indexAt(pos);
     if (!proxyIdx.isValid()) return;
@@ -300,7 +300,7 @@ void FirewallWidget::onNetGuardContextMenu(const QPoint &pos)
     m.exec(ui->tableCoreFW->viewport()->mapToGlobal(pos));
 }
 
-void FirewallWidget::onNetGuardClicked(const QModelIndex &proxyIdx)
+void FirewallWidget::onOasisClicked(const QModelIndex &proxyIdx)
 {
     QModelIndex idx = m_coreProxy->mapToSource(proxyIdx);
     if (!idx.isValid()) return;

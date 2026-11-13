@@ -1,8 +1,8 @@
 /**
  * @file    version.h
- * @brief   Centralized version and publisher metadata for Ultimate NetGuard AIO.
+ * @brief   Centralized version and publisher metadata for Oasis.
  *          All modules should #include this file to access version constants.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 
@@ -20,20 +20,19 @@
 #define APP_VERSION_RC_STR  "1.2.0.0"
 
 // ─── Application Identity ────────────────────────────────────────────────────
-#define APP_NAME            "Ultimate NetGuard AIO"
-#define APP_INTERNAL_NAME   "UltimateNetGuard"
-#define APP_DESCRIPTION     "Professional Network & System Monitor - All In One"
-#define APP_ORIGINAL_NAME   "UltimateNetGuard.exe"
+#define APP_NAME            "Oasis"
+#define APP_INTERNAL_NAME   "Oasis"
+#define APP_DESCRIPTION     "Professional Network & System Monitor"
+#define APP_ORIGINAL_NAME   "Oasis.exe"
 
 // ─── Publisher / Author ──────────────────────────────────────────────────────
-#define APP_AUTHOR          "Ali Sakkaf"
-#define APP_COMPANY         "Ali Sakkaf"
-#define APP_COPYRIGHT       "Copyright \\xA9 2026 Ali Sakkaf. All Rights Reserved."
+#define APP_AUTHOR          "Oasis"
+#define APP_COMPANY         "Oasis"
+#define APP_COPYRIGHT       "Copyright \\xA9 2026 Oasis. All Rights Reserved."
 
 // ─── Online Presence ─────────────────────────────────────────────────────────
-#define APP_WEBSITE         "https://alisakkaf.com"
-#define APP_GITHUB          "https://github.com/alisakkaf"
-#define APP_FACEBOOK        "https://www.facebook.com/AliSakkaf.Dev/"
+#define APP_WEBSITE         "https://github.com/CodeNova5/Oasis"
+#define APP_GITHUB          "https://github.com/CodeNova5/Oasis"
 
 // ─── Display String (used in UI header versionLabel) ─────────────────────────
-#define APP_VERSION_DISPLAY "V1.2.0 | By AliSakkaf"
+#define APP_VERSION_DISPLAY "V1.2.0"

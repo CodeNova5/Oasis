@@ -1,6 +1,6 @@
 /*
  =============================================================================
-    Copyright (c) 2026  AliSakkaf  |  All Rights Reserved
+    Copyright (c) 2026  Oasis  |  All Rights Reserved
  =============================================================================
 */
 #include "appinstaller.h"
@@ -37,12 +37,12 @@ QString AppInstaller::installDir()
 {
     // Use the official %ProgramFiles% which is typically "C:\Program Files"
     QString pf = qEnvironmentVariable("ProgramFiles", "C:\\Program Files");
-    return pf + "\\NetGuard";
+    return pf + "\\Oasis";
 }
 
 QString AppInstaller::installedExePath()
 {
-    return installDir() + "\\UltimateNetGuard.exe";
+    return installDir() + "\\Oasis.exe";
 }
 
 bool AppInstaller::isRunningFromInstallDir()
@@ -149,7 +149,7 @@ void AppInstaller::killOtherInstances()
             if (pe.th32ProcessID == myPid) continue;
 
             QString name = QString::fromWCharArray(pe.szExeFile);
-            if (name.compare("UltimateNetGuard.exe", Qt::CaseInsensitive) == 0) {
+            if (name.compare("Oasis.exe", Qt::CaseInsensitive) == 0) {
                 HANDLE hProc = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE,
                                            FALSE, pe.th32ProcessID);
                 if (hProc) {
@@ -222,7 +222,7 @@ bool AppInstaller::createDesktopShortcut()
 {
     QString targetPath   = installedExePath();
     QString desktopPath  = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
-    QString shortcutPath = desktopPath + "\\NetGuard AIO.lnk";
+    QString shortcutPath = desktopPath + "\\Oasis.lnk";
 
     CoInitialize(nullptr);
 
@@ -234,7 +234,7 @@ bool AppInstaller::createDesktopShortcut()
     if (SUCCEEDED(hr) && psl) {
         std::wstring wTarget  = targetPath.toStdWString();
         std::wstring wWorkDir = QFileInfo(targetPath).absolutePath().toStdWString();
-        std::wstring wDesc    = L"Ultimate NetGuard AIO - Network Monitor & Firewall Manager";
+        std::wstring wDesc    = L"Oasis - Network Monitor & Firewall Manager";
 
         psl->SetPath(wTarget.c_str());
         psl->SetWorkingDirectory(wWorkDir.c_str());
@@ -276,7 +276,7 @@ bool AppInstaller::syncStaleInstall()
     killOtherInstances();
 
     if (!copyExe()) {
-        qWarning() << "NetGuard: could not replace stale installed exe at"
+        qWarning() << "Oasis: could not replace stale installed exe at"
                    << installedExePath();
         return false;
     }
@@ -436,13 +436,13 @@ InstallProgressDialog::InstallProgressDialog(const QString &mode,
     // ── Icon + Title ──
     QHBoxLayout *titleRow = new QHBoxLayout;
     QLabel *icon = new QLabel;
-    icon->setPixmap(QPixmap(":/icons/Ultimate_NetGuard_AIO.png")
+    icon->setPixmap(QPixmap(":/icons/Oasis.png")
                         .scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     icon->setFixedSize(32, 32);
     titleRow->addWidget(icon);
     titleRow->addSpacing(8);
 
-    m_titleLabel = new QLabel(mode == "update" ? "Updating NetGuard AIO" : "Installing NetGuard AIO");
+    m_titleLabel = new QLabel(mode == "update" ? "Updating Oasis" : "Installing Oasis");
     m_titleLabel->setObjectName("instTitle");
     titleRow->addWidget(m_titleLabel, 1);
     lay->addLayout(titleRow);

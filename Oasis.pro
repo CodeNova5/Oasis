@@ -1,10 +1,8 @@
 ##############################################################################
-#   UltimateNetGuard
-#   Copyright © 2026  AliSakkaf  |  All Rights Reserved
+#   Oasis
+#   Copyright © 2026  Oasis  |  All Rights Reserved
 #-----------------------------------------------------------------------------
-#   Website  : https://mysterious-dev.com/
-#   GitHub   : https://github.com/alisakkaf
-#   Facebook : https://www.facebook.com/AliSakkaf.Dev/
+#   GitHub   : https://github.com/CodeNova5/Oasis
 ##############################################################################
 
 
@@ -19,7 +17,7 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 CONFIG   += c++14
 CONFIG   -= app_bundle
 
-TARGET   = UltimateNetGuard
+TARGET   = Oasis
 TEMPLATE = app
 
 VERSION  = 1.0.0

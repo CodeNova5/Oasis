@@ -32,7 +32,7 @@
 
 namespace AuditStore {
 constexpr int kSchemaVersion = 1;
-constexpr const char *kFormat = "netguard.audit-log";
+constexpr const char *kFormat = "oasis.audit-log";
 constexpr int kDefaultRetentionDays = 30;
 constexpr int kDefaultMaxEvents = 2000;
 constexpr int kMinRetentionDays = 1;

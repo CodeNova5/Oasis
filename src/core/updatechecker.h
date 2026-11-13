@@ -1,6 +1,6 @@
 /**
  * @file    updatechecker.h
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   Silent background update checker. Compares the local version (from version.h)
  *          against a remote pastebin endpoint, parses the changelog, and shows a
  *          beautiful frameless QDialog when a newer version is available.

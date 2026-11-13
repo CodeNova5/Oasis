@@ -1,6 +1,6 @@
 /**
  * @file    thememanager.h
- * @brief   Runtime theme owner for the NetGuard UI.
+ * @brief   Runtime theme owner for the Oasis UI.
  *
  * Resolves `@token` placeholders in styles.qss against the palette in colors.h
  * plus the spacing/typography tokens, applies the resulting stylesheet, a
@@ -8,7 +8,7 @@
  * font. All UI code asks this singleton for the current mode instead of
  * hard-coding colors.
  *
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 #include <QObject>

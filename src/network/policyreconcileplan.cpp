@@ -113,7 +113,7 @@ QStringList ReconciliationReport::lines() const
 
 QString reconciledPolicyId(const QString &ruleDescription)
 {
-    const QString prefix = QStringLiteral("NetGuard policy ");
+    const QString prefix = QStringLiteral("Oasis policy ");
     const QString description = ruleDescription.trimmed();
     if (!description.startsWith(prefix, Qt::CaseInsensitive)) return QString();
     return description.mid(prefix.size()).trimmed();

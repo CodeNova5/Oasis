@@ -3,7 +3,7 @@
  * @brief   Connects recently observed DNS answers and visible TLS SNI names to
  *          destination addresses (NG-031/NG-032), with bounded lifetime,
  *          multiple names per address, and explicit attribution sources.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

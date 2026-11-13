@@ -1,4 +1,4 @@
-# Ultimate NetGuard AIO: Data Control Plane
+# Oasis: Data Control Plane
 
 **Document type:** Product Requirements Document  
 **Status:** Proposed  
@@ -8,7 +8,7 @@
 
 ## 1. Product Summary
 
-Ultimate NetGuard AIO will help Windows users understand, control, and reduce laptop data consumption. It will identify which applications, services, and application groups are consuming bandwidth; explain the likely reason for that consumption; and apply durable controls that remain effective when a process is restarted, respawned, or replaced by an updater service.
+Oasis will help Windows users understand, control, and reduce laptop data consumption. It will identify which applications, services, and application groups are consuming bandwidth; explain the likely reason for that consumption; and apply durable controls that remain effective when a process is restarted, respawned, or replaced by an updater service.
 
 The product combines four capabilities:
 

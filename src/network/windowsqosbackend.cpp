@@ -80,7 +80,7 @@ QString WindowsQosThrottleBackend::makePolicyName(const ThrottleRequest &request
     const QByteArray digest = QCryptographicHash::hash(
         request.executablePath.toLower().toUtf8(), QCryptographicHash::Sha1);
     return request.policyId.isEmpty()
-        ? QString("UltimateNetGuard-BW-%1").arg(QString::fromLatin1(digest.toHex().left(12)))
+        ? QString("Oasis-BW-%1").arg(QString::fromLatin1(digest.toHex().left(12)))
         : request.policyId;
 }
 

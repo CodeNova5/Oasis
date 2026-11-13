@@ -1,7 +1,7 @@
 /**
  * @file    recommendationfeedback.cpp
  * @brief   Local recommendation feedback (NG-043).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "recommendationfeedback.h"
 
@@ -14,7 +14,7 @@
 
 namespace {
 
-const QString kSettingsGroup = QStringLiteral("NetGuard/RecommendationFeedback");
+const QString kSettingsGroup = QStringLiteral("Oasis/RecommendationFeedback");
 const QString kSettingsKey   = QStringLiteral("document");
 
 QString normalizedKey(const QString &key)

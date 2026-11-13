@@ -4,8 +4,8 @@
  *         NG-001 product-direction fixtures, and the NG-003 diagnostics export.
  *
  * Run it after a build:
- *   qmake tests/netguard_tests.pro && mingw32-make
- *   ./netguard_tests
+ *   qmake tests/oasis_tests.pro && mingw32-make
+ *   ./oasis_tests
  *
  * Exit code 0 means every check passed; failures are printed with the value
  * that was observed so a broken rule does not need a debugger to explain.
@@ -510,7 +510,7 @@ void testDiagnosticsExportSchema()
 
 // ─── NG-026 / NG-027 helpers ──────────────────────────────────────────────
 // The store tests below run under their own application name, so they never
-// touch a real NetGuard policy set.
+// touch a real Oasis policy set.
 NetworkPolicy makePolicy(const QString &id, const QString &source,
                          NetworkPolicy::Action action = NetworkPolicy::Action::Allow)
 {
@@ -802,15 +802,15 @@ const ReconciliationAction *firstAction(const ReconciliationReport &report,
 void testReconciledPolicyId()
 {
     const QString id = QStringLiteral("policy-42");
-    checkEqual(reconciledPolicyId(QStringLiteral("NetGuard policy %1").arg(id)), id,
+    checkEqual(reconciledPolicyId(QStringLiteral("Oasis policy %1").arg(id)), id,
                QStringLiteral("a rule description written by a policy yields its id"));
-    checkEqual(reconciledPolicyId(QStringLiteral("  netguard POLICY   policy-42  ")), id,
+    checkEqual(reconciledPolicyId(QStringLiteral("  oasis POLICY   policy-42  ")), id,
                QStringLiteral("attribution ignores case and padding"));
-    checkEqual(reconciledPolicyId(QStringLiteral("NetGuard policy")), QString(),
+    checkEqual(reconciledPolicyId(QStringLiteral("Oasis policy")), QString(),
                QStringLiteral("a description without an id yields nothing"));
     checkEqual(reconciledPolicyId(QString()), QString(),
                QStringLiteral("an empty description is not attributed"));
-    checkEqual(reconciledPolicyId(QStringLiteral("Ultimate NetGuard AIO")), QString(),
+    checkEqual(reconciledPolicyId(QStringLiteral("Oasis")), QString(),
                QStringLiteral("a rule from the Firewall tab is not attributed"));
 }
 
@@ -840,9 +840,9 @@ void testReconciliationFirewall()
 
     // Both directions, attributed to this policy: nothing to do.
     PolicyObservation covered;
-    covered.firewallRules << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_OUT"),
+    covered.firewallRules << observedRule(QStringLiteral("Oasis_Blocked_BLOCK_OUT"),
                                           blockedPath, true, false, QStringLiteral("p-block"))
-                          << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_IN"),
+                          << observedRule(QStringLiteral("Oasis_Blocked_BLOCK_IN"),
                                           blockedPath, true, true, QStringLiteral("p-block"));
     report = planPolicyReconciliation({block}, noGroups, covered, now);
     checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 0,
@@ -855,9 +855,9 @@ void testReconciliationFirewall()
 
     // A rule made from the Firewall tab is adopted rather than duplicated.
     PolicyObservation userRules;
-    userRules.firewallRules << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_OUT"),
+    userRules.firewallRules << observedRule(QStringLiteral("Oasis_Blocked_BLOCK_OUT"),
                                             blockedPath, true, false, QString())
-                            << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_IN"),
+                            << observedRule(QStringLiteral("Oasis_Blocked_BLOCK_IN"),
                                             blockedPath, true, true, QString());
     report = planPolicyReconciliation({block}, noGroups, userRules, now);
     checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
@@ -867,9 +867,9 @@ void testReconciliationFirewall()
 
     // One direction disabled is as good as missing.
     PolicyObservation half;
-    half.firewallRules << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_OUT"),
+    half.firewallRules << observedRule(QStringLiteral("Oasis_Blocked_BLOCK_OUT"),
                                        blockedPath, true, false, QStringLiteral("p-block"))
-                       << observedRule(QStringLiteral("NetGuard_Blocked_BLOCK_IN"),
+                       << observedRule(QStringLiteral("Oasis_Blocked_BLOCK_IN"),
                                        blockedPath, true, true, QStringLiteral("p-block"), false);
     report = planPolicyReconciliation({block}, noGroups, half, now);
     checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
@@ -886,13 +886,13 @@ void testReconciliationFirewall()
                                      NetworkPolicy::Action::Block);
     other.targetId = QStringLiteral("C:/Apps/Other.exe");
     PolicyObservation stale;
-    stale.firewallRules << observedRule(QStringLiteral("NetGuard_Gone_BLOCK_OUT"),
+    stale.firewallRules << observedRule(QStringLiteral("Oasis_Gone_BLOCK_OUT"),
                                         QStringLiteral("C:/Apps/Gone.exe"), true, false,
                                         QStringLiteral("p-gone"))
-                        << observedRule(QStringLiteral("NetGuard_Gone_BLOCK_IN"),
+                        << observedRule(QStringLiteral("Oasis_Gone_BLOCK_IN"),
                                         QStringLiteral("C:/Apps/Gone.exe"), true, true,
                                         QStringLiteral("p-gone"))
-                        << observedRule(QStringLiteral("NetGuard_Custom_BLOCK_OUT"),
+                        << observedRule(QStringLiteral("Oasis_Custom_BLOCK_OUT"),
                                         QStringLiteral("C:/Apps/Custom.exe"), true, false,
                                         QString());
     report = planPolicyReconciliation({other}, noGroups, stale, now);
@@ -912,9 +912,9 @@ void testReconciliationFirewall()
                                      NetworkPolicy::Action::Allow);
     allow.targetId = QStringLiteral("C:/Apps/Same.exe");
     PolicyObservation wasBlocked;
-    wasBlocked.firewallRules << observedRule(QStringLiteral("NetGuard_Same_BLOCK_OUT"),
+    wasBlocked.firewallRules << observedRule(QStringLiteral("Oasis_Same_BLOCK_OUT"),
                                              allow.targetId, true, false, QStringLiteral("p-same"))
-                             << observedRule(QStringLiteral("NetGuard_Same_BLOCK_IN"),
+                             << observedRule(QStringLiteral("Oasis_Same_BLOCK_IN"),
                                              allow.targetId, true, true, QStringLiteral("p-same"));
     report = planPolicyReconciliation({allow}, noGroups, wasBlocked, now);
     checkEqual(actionCount(report, ReconciliationAction::Kind::CreateFirewallRule), 1,
@@ -1172,14 +1172,14 @@ void testFirewallRuleNames()
                legacyFirewallRuleName(portable, QStringLiteral("BLOCK_OUT")),
                QStringLiteral("the legacy name only used the base name"));
     checkEqual(legacyFirewallRuleName(installed, QStringLiteral("BLOCK_OUT")),
-               QStringLiteral("NetGuard_app_BLOCK_OUT"),
+               QStringLiteral("Oasis_app_BLOCK_OUT"),
                QStringLiteral("the legacy format is still recognised"));
 
     const QString installedName = firewallRuleName(installed, QStringLiteral("BLOCK_OUT"));
     const QString portableName = firewallRuleName(portable, QStringLiteral("BLOCK_OUT"));
     check(installedName != portableName,
           QStringLiteral("same base name in different folders gets distinct rule names"));
-    check(installedName.startsWith(QStringLiteral("NetGuard_app_")),
+    check(installedName.startsWith(QStringLiteral("Oasis_app_")),
           QStringLiteral("the rule name keeps the executable base name readable"));
     check(installedName.endsWith(QStringLiteral("_BLOCK_OUT")),
           QStringLiteral("the rule name keeps its action/direction suffix"));
@@ -2297,7 +2297,7 @@ void testEndpointCatalog()
     // Import is versioned and atomic.
     auto makeDocument = [](const QJsonArray &rules, int schemaVersion = 1) {
         QJsonObject root;
-        root.insert(QStringLiteral("format"), QStringLiteral("netguard.endpoint-catalog"));
+        root.insert(QStringLiteral("format"), QStringLiteral("oasis.endpoint-catalog"));
         root.insert(QStringLiteral("schemaVersion"), schemaVersion);
         root.insert(QStringLiteral("catalogVersion"), QStringLiteral("2026.12.1"));
         root.insert(QStringLiteral("rules"), rules);
@@ -2355,7 +2355,7 @@ void testEndpointCatalog()
     // A full export can be imported back, and local rules survive the round trip.
     const QString fullJson = catalog.toJson();
     check(fullJson.contains(QStringLiteral("\"schemaVersion\":1")) &&
-              fullJson.contains(QStringLiteral("netguard.endpoint-catalog")),
+              fullJson.contains(QStringLiteral("oasis.endpoint-catalog")),
           QStringLiteral("the export carries its format and schema version"));
     EndpointCatalog roundTrip;
     check(roundTrip.importJson(fullJson, &error), error);
@@ -2390,7 +2390,7 @@ void testEndpointCatalog()
           QStringLiteral("a local rule persists and reloads as a user rule"));
 
     QSettings settings;
-    settings.beginGroup(QStringLiteral("NetGuard/EndpointCatalog"));
+    settings.beginGroup(QStringLiteral("Oasis/EndpointCatalog"));
     settings.setValue(QStringLiteral("document"), QStringLiteral("{broken"));
     settings.endGroup();
     check(!loaded.load(&error),
@@ -2598,7 +2598,7 @@ void testAttributionPrivacy()
     // Persistence: fields round-trip, a newer schema is rejected as a whole,
     // and malformed payloads fall back to the defaults instead of half-applying.
     QSettings store(QSettings::IniFormat, QSettings::UserScope,
-                    QStringLiteral("UltimateNetGuardTests"),
+                    QStringLiteral("OasisTests"),
                     QStringLiteral("attribution_privacy"));
     store.clear();
 
@@ -2945,10 +2945,10 @@ void testActivityClassifier()
 // qualify a classification but never overrides an explicit user policy.
 void testForegroundSignal()
 {
-    NetGuard::ProcessLineage lineage;
+    Oasis::ProcessLineage lineage;
     auto addProcess = [&lineage](quint32 pid, quint32 parentPid, qint64 startMs,
                                  const QString &name) {
-        NetGuard::LineageObservation observation;
+        Oasis::LineageObservation observation;
         observation.pid            = pid;
         observation.parentPid      = parentPid;
         observation.startTimeMs    = startMs;
@@ -2970,7 +2970,7 @@ void testForegroundSignal()
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    NetGuard::ForegroundObservation observation;
+    Oasis::ForegroundObservation observation;
     observation.hasWindow              = true;
     observation.pid                    = 100;
     observation.sessionId              = 1;
@@ -2979,8 +2979,8 @@ void testForegroundSignal()
     observation.startTimeMs            = 1000;
     observation.sampledAtMs            = now;
 
-    const NetGuard::ForegroundSnapshot snapshot =
-        NetGuard::ForegroundSampler::buildSnapshot(observation, lineage, now);
+    const Oasis::ForegroundSnapshot snapshot =
+        Oasis::ForegroundSampler::buildSnapshot(observation, lineage, now);
 
     check(snapshot.isValid(), QStringLiteral("a live foreground window is valid"));
     checkEqual(snapshot.foregroundPid, 100u,
@@ -2992,23 +2992,23 @@ void testForegroundSignal()
 
     // A sample whose session could not be read must not claim a session match,
     // even when the numeric IDs happen to line up.
-    NetGuard::ForegroundObservation unknownSession = observation;
+    Oasis::ForegroundObservation unknownSession = observation;
     unknownSession.sessionKnown = false;
-    const NetGuard::ForegroundSnapshot unknownSessionSnapshot =
-        NetGuard::ForegroundSampler::buildSnapshot(unknownSession, lineage, now);
+    const Oasis::ForegroundSnapshot unknownSessionSnapshot =
+        Oasis::ForegroundSampler::buildSnapshot(unknownSession, lineage, now);
     check(!unknownSessionSnapshot.activeSessionMatches(),
           QStringLiteral("an unread session id never matches the active session"));
     check(unknownSessionSnapshot.isValid(),
           QStringLiteral("an unread session id does not invalidate the window"));
 
     checkEqual(static_cast<int>(snapshot.associationFor(100, now)),
-               static_cast<int>(NetGuard::ForegroundAssociation::ForegroundApp),
+               static_cast<int>(Oasis::ForegroundAssociation::ForegroundApp),
                QStringLiteral("the window owner is the foreground application"));
     checkEqual(static_cast<int>(snapshot.associationFor(101, now)),
-               static_cast<int>(NetGuard::ForegroundAssociation::ForegroundChild),
+               static_cast<int>(Oasis::ForegroundAssociation::ForegroundChild),
                QStringLiteral("a live child is a foreground helper"));
     checkEqual(static_cast<int>(snapshot.associationFor(200, now)),
-               static_cast<int>(NetGuard::ForegroundAssociation::None),
+               static_cast<int>(Oasis::ForegroundAssociation::None),
                QStringLiteral("an unrelated process is not foreground"));
 
     check(snapshot.associatedPids.contains(103)
@@ -3022,44 +3022,44 @@ void testForegroundSignal()
 
     // Freshness is part of the signal: an old sample reports no association.
     check(snapshot.isFresh(now + 1000), QStringLiteral("a recent sample is fresh"));
-    check(!snapshot.isFresh(now + NetGuard::ForegroundSnapshot::kFreshnessMs + 1),
+    check(!snapshot.isFresh(now + Oasis::ForegroundSnapshot::kFreshnessMs + 1),
           QStringLiteral("a sample older than the freshness window is stale"));
     checkEqual(static_cast<int>(
                    snapshot.associationFor(100, now
-                       + NetGuard::ForegroundSnapshot::kFreshnessMs + 1)),
-               static_cast<int>(NetGuard::ForegroundAssociation::None),
+                       + Oasis::ForegroundSnapshot::kFreshnessMs + 1)),
+               static_cast<int>(Oasis::ForegroundAssociation::None),
                QStringLiteral("a stale sample never reports an association"));
 
     // A recycled PID must not inherit the foreground state.
-    NetGuard::ForegroundObservation recycled = observation;
+    Oasis::ForegroundObservation recycled = observation;
     recycled.startTimeMs = 9999;
-    const NetGuard::ForegroundSnapshot recycledSnapshot =
-        NetGuard::ForegroundSampler::buildSnapshot(recycled, lineage, now);
+    const Oasis::ForegroundSnapshot recycledSnapshot =
+        Oasis::ForegroundSampler::buildSnapshot(recycled, lineage, now);
     check(recycledSnapshot.staleObservation,
           QStringLiteral("a changed creation time marks the sample stale"));
     check(!recycledSnapshot.isValid(),
           QStringLiteral("a recycled foreground PID is not presented as valid"));
     checkEqual(static_cast<int>(recycledSnapshot.associationFor(100, now)),
-               static_cast<int>(NetGuard::ForegroundAssociation::None),
+               static_cast<int>(Oasis::ForegroundAssociation::None),
                QStringLiteral("a recycled PID gets no foreground association"));
     check(recycledSnapshot.evidenceText().contains(QStringLiteral("replaced")),
           QStringLiteral("the stale sample explains that the process was replaced"));
 
     // No foreground window is an explicit empty answer, not a guess.
-    NetGuard::ForegroundObservation noWindow;
-    const NetGuard::ForegroundSnapshot empty =
-        NetGuard::ForegroundSampler::buildSnapshot(noWindow, lineage, now);
+    Oasis::ForegroundObservation noWindow;
+    const Oasis::ForegroundSnapshot empty =
+        Oasis::ForegroundSampler::buildSnapshot(noWindow, lineage, now);
     check(!empty.isValid(), QStringLiteral("no foreground window yields no signal"));
     checkEqual(static_cast<int>(empty.associationFor(100, now)),
-               static_cast<int>(NetGuard::ForegroundAssociation::None),
+               static_cast<int>(Oasis::ForegroundAssociation::None),
                QStringLiteral("no window means no association"));
 
     // The lineage fills in what the raw sample could not read.
-    NetGuard::ForegroundObservation pathless = observation;
+    Oasis::ForegroundObservation pathless = observation;
     pathless.processName.clear();
     pathless.executablePath.clear();
-    const NetGuard::ForegroundSnapshot filled =
-        NetGuard::ForegroundSampler::buildSnapshot(pathless, lineage, now);
+    const Oasis::ForegroundSnapshot filled =
+        Oasis::ForegroundSampler::buildSnapshot(pathless, lineage, now);
     checkEqual(filled.processName, QStringLiteral("browser.exe"),
                QStringLiteral("the lineage supplies a missing process name"));
     checkEqual(filled.executablePath, QStringLiteral("C:/Apps/browser.exe"),
@@ -3067,23 +3067,23 @@ void testForegroundSignal()
 
     // A foreground PID the lineage has not seen yet is still reported, but it
     // has no helpers to associate.
-    NetGuard::ForegroundObservation unknownPid = observation;
+    Oasis::ForegroundObservation unknownPid = observation;
     unknownPid.pid = 999;
     unknownPid.startTimeMs = 0;
-    const NetGuard::ForegroundSnapshot unknownSnapshot =
-        NetGuard::ForegroundSampler::buildSnapshot(unknownPid, lineage, now);
+    const Oasis::ForegroundSnapshot unknownSnapshot =
+        Oasis::ForegroundSampler::buildSnapshot(unknownPid, lineage, now);
     check(unknownSnapshot.isValid(),
           QStringLiteral("an untracked foreground PID is still valid"));
     checkEqual(static_cast<int>(unknownSnapshot.associatedPids.size()), 1,
                QStringLiteral("an untracked foreground PID has no helpers"));
 
     // The signal is advisory and cannot change enforcement by construction.
-    check(NetGuard::ForegroundSnapshot::isAdvisory(),
+    check(Oasis::ForegroundSnapshot::isAdvisory(),
           QStringLiteral("the foreground signal is advisory"));
-    check(!NetGuard::ForegroundSnapshot::canChangePolicy(),
+    check(!Oasis::ForegroundSnapshot::canChangePolicy(),
           QStringLiteral("the foreground signal cannot change a policy"));
-    checkEqual(NetGuard::foregroundAssociationName(
-                   NetGuard::ForegroundAssociation::ForegroundApp),
+    checkEqual(Oasis::foregroundAssociationName(
+                   Oasis::ForegroundAssociation::ForegroundApp),
                QStringLiteral("foreground application"),
                QStringLiteral("the association has a plain name"));
     check(snapshot.evidenceText().contains(QStringLiteral("Foreground application")),
@@ -3096,14 +3096,14 @@ void testForegroundSignal()
     query.executablePath = QStringLiteral("C:/Apps/notes.exe");
     query.bytesPerSecond = 2ULL * 1024ULL * 1024ULL;
     query.foreground = snapshot.associationFor(101, now)
-        != NetGuard::ForegroundAssociation::None;
+        != Oasis::ForegroundAssociation::None;
     check(classifier.classify(query).category == CatalogCategory::ForegroundDownload,
           QStringLiteral("a fresh foreground helper above the rate threshold is a "
                          "foreground download"));
 
     query.foreground = snapshot.associationFor(
-                          101, now + NetGuard::ForegroundSnapshot::kFreshnessMs + 1)
-        != NetGuard::ForegroundAssociation::None;
+                          101, now + Oasis::ForegroundSnapshot::kFreshnessMs + 1)
+        != Oasis::ForegroundAssociation::None;
     check(classifier.classify(query).category == CatalogCategory::Unknown,
           QStringLiteral("a stale foreground sample does not qualify a classification"));
 
@@ -3735,7 +3735,7 @@ void testAiContext()
     check(!ok, QStringLiteral("a newer AI context schema is rejected"));
 
     QJsonObject foreign = root;
-    foreign[QStringLiteral("format")] = QStringLiteral("netguard.something-else");
+    foreign[QStringLiteral("format")] = QStringLiteral("oasis.something-else");
     ok = true;
     AiContext::fromJson(
         QString::fromUtf8(QJsonDocument(foreign).toJson(QJsonDocument::Compact)), &ok);
@@ -4012,7 +4012,7 @@ void testAiProvider()
     // touching the network.
     OpenAiCompatibleProvider adapter;
     checkEqual(OpenAiCompatibleProvider::apiKeyEnvironmentVariable(),
-               QStringLiteral("NETGUARD_AI_API_KEY"),
+               QStringLiteral("OASIS_AI_API_KEY"),
                QStringLiteral("the adapter reads its key from a fixed environment variable"));
     check(OpenAiCompatibleProvider::systemPrompt().contains(QStringLiteral("Do not propose"))
               && OpenAiCompatibleProvider::systemPrompt().contains(QStringLiteral("policy")),
@@ -4027,7 +4027,7 @@ void testAiProvider()
     check(!refused.ok && refused.failure == AiFailure::UnsupportedEndpoint,
           QStringLiteral("the shipped adapter refuses a remote plain-HTTP endpoint"));
 
-    qunsetenv("NETGUARD_AI_API_KEY");
+    qunsetenv("OASIS_AI_API_KEY");
     const AiProviderResponse keyless =
         adapter.explain(context.boundedJson(), settings);
     check(!keyless.ok && keyless.failure == AiFailure::NotConfigured,
@@ -4396,7 +4396,7 @@ void testAuditEventStore()
     const QString exportJson = reloaded.exportJson();
     const QJsonObject root = objectOf(exportJson);
     checkEqual(root.value(QStringLiteral("format")).toString(),
-               QStringLiteral("netguard.audit-log"),
+               QStringLiteral("oasis.audit-log"),
                QStringLiteral("the audit export carries its format marker"));
     checkEqual(root.value(QStringLiteral("schemaVersion")).toInt(), 1,
                QStringLiteral("the audit export carries the schema version"));
@@ -4441,7 +4441,7 @@ void testAuditEventStore()
     QSettings().clear();
     {
         QSettings settings;
-        settings.beginGroup(QStringLiteral("NetGuard/Audit"));
+        settings.beginGroup(QStringLiteral("Oasis/Audit"));
         settings.setValue(QStringLiteral("storeVersion"), 99);
         settings.setValue(QStringLiteral("events"),
                           QStringLiteral("[{\"timestamp\":\"2026-01-01T00:00:00\",\"type\":7}]"));
@@ -4456,7 +4456,7 @@ void testAuditEventStore()
     QSettings().clear();
     {
         QSettings settings;
-        settings.beginGroup(QStringLiteral("NetGuard/Audit"));
+        settings.beginGroup(QStringLiteral("Oasis/Audit"));
         settings.setValue(QStringLiteral("storeVersion"), 1);
         settings.setValue(QStringLiteral("events"), QStringLiteral("not json"));
         settings.endGroup();
@@ -4468,7 +4468,7 @@ void testAuditEventStore()
     QSettings().clear();
     {
         QSettings settings;
-        settings.beginGroup(QStringLiteral("NetGuard/Audit"));
+        settings.beginGroup(QStringLiteral("Oasis/Audit"));
         settings.setValue(QStringLiteral("storeVersion"), 1);
         settings.setValue(QStringLiteral("events"),
                           QStringLiteral("[{\"timestamp\":\"%1\",\"type\":0,"
@@ -5121,7 +5121,7 @@ void testEvidenceExport()
     const QJsonObject auditVerbatim =
         objectOf(EvidenceExport::auditJson({event}, retention, false, stamp));
     checkEqual(auditVerbatim.value(QStringLiteral("format")).toString(),
-               QStringLiteral("netguard.audit-log"),
+               QStringLiteral("oasis.audit-log"),
                QStringLiteral("the audit export keeps its format marker"));
     checkEqual(auditVerbatim.value(QStringLiteral("schemaVersion")).toInt(), 1,
                QStringLiteral("the audit export carries the schema version"));
@@ -5169,7 +5169,7 @@ void testEvidenceExport()
 
     const QString auditCsv = EvidenceExport::auditCsv({event}, true, stamp);
     const QStringList auditLines = auditCsv.split(QLatin1Char('\n'));
-    checkEqual(auditLines.value(0), QStringLiteral("# format netguard.audit-log"),
+    checkEqual(auditLines.value(0), QStringLiteral("# format oasis.audit-log"),
                QStringLiteral("the CSV names its format"));
     checkEqual(auditLines.value(1), QStringLiteral("# schemaVersion 1"),
                QStringLiteral("the CSV carries the schema version"));
@@ -5205,7 +5205,7 @@ void testEvidenceExport()
     const QJsonObject attributionVerbatim =
         objectOf(EvidenceExport::attributionJson({summary}, false, stamp));
     checkEqual(attributionVerbatim.value(QStringLiteral("format")).toString(),
-               QStringLiteral("netguard.attribution"),
+               QStringLiteral("oasis.attribution"),
                QStringLiteral("the attribution export has its own format marker"));
     checkEqual(attributionVerbatim.value(QStringLiteral("schemaVersion")).toInt(), 1,
                QStringLiteral("the attribution export carries the schema version"));
@@ -5251,7 +5251,7 @@ void testEvidenceExport()
 
     const QString attributionCsv = EvidenceExport::attributionCsv({summary}, true, stamp);
     const QStringList attributionLines = attributionCsv.split(QLatin1Char('\n'));
-    checkEqual(attributionLines.value(0), QStringLiteral("# format netguard.attribution"),
+    checkEqual(attributionLines.value(0), QStringLiteral("# format oasis.attribution"),
                QStringLiteral("the attribution CSV names its format"));
     checkEqual(attributionLines.value(4),
                QStringLiteral("address,name,names,source,confidence,expiresAt,evidence"),
@@ -5583,8 +5583,8 @@ int main(int argc, char *argv[])
 
     // Policy-store tests write real settings, so keep them in a scope of their
     // own and start from a clean slate.
-    QCoreApplication::setOrganizationName(QStringLiteral("UltimateNetGuardTests"));
-    QCoreApplication::setApplicationName(QStringLiteral("netguard_tests"));
+    QCoreApplication::setOrganizationName(QStringLiteral("OasisTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("oasis_tests"));
     QSettings().clear();
 
     testApplicationIdentityRoundTrip();

@@ -1,6 +1,6 @@
 /**
  * @file    tlsobserver.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "tlsobserver.h"
 

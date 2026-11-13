@@ -1,8 +1,8 @@
 /**
  * @file    appinstaller.h
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   Self-installer and auto-updater.
- *          - Copies the running exe to Program Files\NetGuard on first launch.
+ *          - Copies the running exe to Program Files\Oasis on first launch.
  *          - Creates a professional desktop shortcut.
  *          - On subsequent launches from outside the install dir, detects and
  *            replaces the old version with a visual progress dialog.
@@ -21,7 +21,7 @@
 class AppInstaller
 {
 public:
-    /// Canonical install directory  (e.g. C:\Program Files\NetGuard)
+    /// Canonical install directory  (e.g. C:\Program Files\Oasis)
     static QString installDir();
 
     /// Full path to the installed exe

@@ -1,7 +1,7 @@
 /**
  * @file    foregroundsignal.cpp
  * @brief   Foreground application and active-session signal (NG-041).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "foregroundsignal.h"
 
@@ -36,7 +36,7 @@ QString processNameFromPath(const QString &path)
 
 } // namespace
 
-namespace NetGuard {
+namespace Oasis {
 
 QString foregroundAssociationName(ForegroundAssociation association)
 {
@@ -225,4 +225,4 @@ ForegroundSnapshot ForegroundSampler::sample(const ProcessLineage &lineage, qint
     return buildSnapshot(observeNow(), lineage, nowMs);
 }
 
-} // namespace NetGuard
+} // namespace Oasis

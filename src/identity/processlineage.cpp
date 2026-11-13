@@ -8,7 +8,7 @@
 #include <QSet>
 #include <QTimeZone>
 
-namespace NetGuard {
+namespace Oasis {
 
 QString lineageChangeName(LineageChange change)
 {
@@ -213,4 +213,4 @@ QString ProcessLineage::formatStartTime(qint64 startTimeMs)
     return QDateTime::fromMSecsSinceEpoch(startTimeMs, QTimeZone::UTC).toString(Qt::ISODate);
 }
 
-} // namespace NetGuard
+} // namespace Oasis

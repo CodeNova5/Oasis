@@ -1,4 +1,4 @@
-# Ultimate NetGuard AIO — Implementation Roadmap & QA Checklist
+# Oasis — Implementation Roadmap & QA Checklist
 
 **Target Platform:** Windows 10 / 11  
 **UI Framework:** Qt 6 Widgets / C++  

@@ -1,7 +1,7 @@
 /**
  * @file    aiapprovaldialog.cpp
  * @brief   AI approval flow (NG-046).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "aiapprovaldialog.h"
 
@@ -204,7 +204,7 @@ void AiApprovalDialog::buildUi()
     m_providerStatus->setWordWrap(true);
     m_providerStatus->setStyleSheet(QStringLiteral("color: %1;").arg(textMuted));
     m_providerStatus->setText(QStringLiteral(
-        "The API key is read from NETGUARD_AI_API_KEY when you send; it is never stored."));
+        "The API key is read from OASIS_AI_API_KEY when you send; it is never stored."));
     providerLayout->addRow(m_providerStatus);
 
     aiLayout->addWidget(providerBox);
@@ -365,7 +365,7 @@ void AiApprovalDialog::saveProviderSettings()
     }
     m_providerStatus->setText(
         QStringLiteral("Settings saved. The API key still comes from "
-                       "NETGUARD_AI_API_KEY."));
+                       "OASIS_AI_API_KEY."));
 }
 
 void AiApprovalDialog::requestExplanation()

@@ -3,7 +3,7 @@
  * @brief   Rule-based activity classification (NG-040): turns process, identity,
  *          group, and destination evidence into a catalog category with the
  *          matched rules and confidence behind it.
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * The classifier is a decision aid. It has no policy action and no enforcement
  * channel, so a classification can never block, shape, or terminate traffic.

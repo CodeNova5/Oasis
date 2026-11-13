@@ -1,7 +1,7 @@
 /**
  * @file    networkmodel.cpp
  * @brief   Network tree model implementation with silent batch additions and UserRoles.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "networkmodel.h"
 #include "attribution/attributionconfidence.h"
@@ -39,15 +39,15 @@ QString signerRowText(const ProcessNode &p)
 // manual policy scope the user can still choose. NG-041 adds the advisory
 // foreground signal that fed the classification.
 QStringList activityTooltip(const ActivityClassification &activity,
-                            NetGuard::ForegroundAssociation foreground =
-                                NetGuard::ForegroundAssociation::None)
+                            Oasis::ForegroundAssociation foreground =
+                                Oasis::ForegroundAssociation::None)
 {
     QStringList lines;
     lines << QStringLiteral("Activity: %1").arg(activity.summary());
-    if (foreground == NetGuard::ForegroundAssociation::ForegroundApp) {
+    if (foreground == Oasis::ForegroundAssociation::ForegroundApp) {
         lines << QStringLiteral("Foreground: the active application "
                                 "(advisory signal, never a policy override).");
-    } else if (foreground == NetGuard::ForegroundAssociation::ForegroundChild) {
+    } else if (foreground == Oasis::ForegroundAssociation::ForegroundChild) {
         lines << QStringLiteral("Foreground: a live helper of the active "
                                 "application (advisory signal, never a policy "
                                 "override).");
@@ -215,7 +215,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             if (p.services.size() > 1)
                 lines << QStringLiteral("%1 services (expand to list)").arg(p.services.size());
             // NG-013: which instance of this PID is talking, and who started it.
-            const QString started = NetGuard::ProcessLineage::formatStartTime(p.processStartMs);
+            const QString started = Oasis::ProcessLineage::formatStartTime(p.processStartMs);
             if (!started.isEmpty())
                 lines << "Started: " + started;
             if (p.parentPid != 0) {
@@ -227,14 +227,14 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             if (!p.groupName.isEmpty()) {
                 lines << QStringLiteral("Group: %1 (%2)")
                              .arg(p.groupName,
-                                  NetGuard::groupConfidenceName(p.groupConfidence));
+                                  Oasis::groupConfidenceName(p.groupConfidence));
             }
             // NG-041: the advisory foreground association behind the Activity
             // column. It never changes or overrides a policy.
-            if (p.foreground == NetGuard::ForegroundAssociation::ForegroundApp) {
+            if (p.foreground == Oasis::ForegroundAssociation::ForegroundApp) {
                 lines << QStringLiteral("Foreground: active application "
                                         "(advisory, does not override policy)");
-            } else if (p.foreground == NetGuard::ForegroundAssociation::ForegroundChild) {
+            } else if (p.foreground == Oasis::ForegroundAssociation::ForegroundChild) {
                 lines << QStringLiteral("Foreground: helper of the active "
                                         "application (advisory, does not override "
                                         "policy)");
@@ -264,7 +264,7 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
     // key, its state, and the SCM image path. No traffic is duplicated here:
     // the packets stay on the hosting process row.
     if ((tag & 1) != 0) {
-        const NetGuard::ServiceEntry &s = p.services[idx.row()];
+        const Oasis::ServiceEntry &s = p.services[idx.row()];
         if (role == Qt::UserRole + 1) return s.displayName;
         if (role == Qt::UserRole + 2) return false; // not a process node
         if (role == Qt::UserRole + 5) {
@@ -278,14 +278,14 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
         if (role == Qt::ToolTipRole) {
             QStringList lines;
             lines << s.displayName + " (" + s.serviceName + ")";
-            lines << "State: " + NetGuard::serviceStateName(s.state);
+            lines << "State: " + Oasis::serviceStateName(s.state);
             if (!s.executablePath.isEmpty())
                 lines << "Image: " + s.executablePath;
             if (p.pid) lines << QStringLiteral("Hosted by PID %1").arg(p.pid);
             if (!p.groupName.isEmpty())
                 lines << QStringLiteral("Group: %1 (%2)")
                              .arg(p.groupName,
-                                  NetGuard::groupConfidenceName(p.groupConfidence));
+                                  Oasis::groupConfidenceName(p.groupConfidence));
             lines << (s.acceptsStop ? "Can be stopped from Services"
                                     : "Protected service (not user-stoppable)");
             lines << activityTooltip(p.activity, p.foreground);
@@ -295,12 +295,12 @@ QVariant NetworkTreeModel::data(const QModelIndex &idx, int role) const
             switch (col) {
             case COL_NAME:    return s.displayName;
             case COL_ACTIVITY:return p.activity.summary();
-            case COL_SERVICE: return s.serviceName + "  —  " + NetGuard::serviceStateName(s.state);
+            case COL_SERVICE: return s.serviceName + "  —  " + Oasis::serviceStateName(s.state);
             default:          return {};
             }
         }
         if (role == Qt::ForegroundRole && col == COL_NAME
-            && s.state != NetGuard::ServiceState::Running)
+            && s.state != Oasis::ServiceState::Running)
             return QColor("#8B949E"); // stopped / pending services are dimmed
         return {};
     }
@@ -542,7 +542,7 @@ void NetworkTreeModel::onTick()
         // NG-041: a foreground transfer can cross the classifier's sustained-rate
         // threshold between packets. Re-evaluate only foreground rows; the
         // signature check makes this a no-op when nothing changed.
-        if (p.foreground != NetGuard::ForegroundAssociation::None)
+        if (p.foreground != Oasis::ForegroundAssociation::None)
             refreshActivity(pRow);
 
         // ── FIX: Emit dataChanged starting from COL_NAME to update parent UI correctly ──
@@ -577,7 +577,7 @@ ActivityQuery NetworkTreeModel::activityQueryForRow(int pRow) const
     query.identityId = p.identityId;
     query.groupId = p.groupId;
     query.groupName = p.groupName;
-    query.foreground = p.foreground != NetGuard::ForegroundAssociation::None;
+    query.foreground = p.foreground != Oasis::ForegroundAssociation::None;
     query.bytesPerSecond = p.totalRxSpeed;
     if (!p.services.isEmpty()) {
         query.serviceName = p.services.first().serviceName;
@@ -611,7 +611,7 @@ ProcessRowSnapshot NetworkTreeModel::snapshotForRow(int pRow) const
     snapshot.groupId = p.groupId;
     snapshot.groupName = p.groupName;
     snapshot.groupConfidence = p.groupConfidence;
-    for (const NetGuard::ServiceEntry &service : p.services)
+    for (const Oasis::ServiceEntry &service : p.services)
         snapshot.services << service.serviceName;
     snapshot.foreground = p.foreground;
     snapshot.query = activityQueryForRow(pRow);
@@ -650,7 +650,7 @@ void NetworkTreeModel::refreshActivity(int pRow)
     const quint64 foregroundThreshold =
         m_activityClassifier.foregroundDownloadThreshold();
     const bool foregroundDownloadEligible =
-        p.foreground != NetGuard::ForegroundAssociation::None
+        p.foreground != Oasis::ForegroundAssociation::None
         && foregroundThreshold > 0
         && p.totalRxSpeed >= foregroundThreshold;
     signature << QString::number(static_cast<int>(p.foreground))
@@ -743,7 +743,7 @@ void NetworkTreeModel::clear()
     endResetModel();
 }
 
-void NetworkTreeModel::applyServiceSnapshot(const NetGuard::ServicePidMap &services)
+void NetworkTreeModel::applyServiceSnapshot(const Oasis::ServicePidMap &services)
 {
     m_servicesByPid = services;
 
@@ -751,8 +751,8 @@ void NetworkTreeModel::applyServiceSnapshot(const NetGuard::ServicePidMap &servi
         ProcessNode &p = m_procs[pRow];
         if (!p.pid) continue;
         const auto hosted = m_servicesByPid.constFind(p.pid);
-        const QVector<NetGuard::ServiceEntry> entries =
-            (hosted == m_servicesByPid.constEnd()) ? QVector<NetGuard::ServiceEntry>()
+        const QVector<Oasis::ServiceEntry> entries =
+            (hosted == m_servicesByPid.constEnd()) ? QVector<Oasis::ServiceEntry>()
                                                    : hosted.value();
         if (p.services == entries) continue;
 

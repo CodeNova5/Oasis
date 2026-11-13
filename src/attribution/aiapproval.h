@@ -2,7 +2,7 @@
  * @file    aiapproval.h
  * @brief   AI approval flow (NG-046): the explicit scope and duration behind an
  *          approved policy, and the policy that approval creates.
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * AI explains; it never proposes the policy. The action, rate, and schedule of
  * an approved policy come from the NG-042 recommendation, which is

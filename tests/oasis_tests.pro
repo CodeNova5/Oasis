@@ -1,5 +1,5 @@
 ##############################################################################
-#   UltimateNetGuard — Phase 0 test harness
+#   Oasis — Phase 0 test harness
 #
 #   Focused harness for NG-001 (product-direction fixtures), NG-002
 #   (observation and policy telemetry contracts), NG-003 (diagnostics export
@@ -9,8 +9,8 @@
 #   a GUI, without administrator rights, and without WinDivert.
 #
 #   Build and run from the repository root:
-#       qmake tests/netguard_tests.pro && mingw32-make -j4
-#       ./netguard_tests
+#       qmake tests/oasis_tests.pro && mingw32-make -j4
+#       ./oasis_tests
 ##############################################################################
 
 QT += core network
@@ -18,7 +18,7 @@ CONFIG += console c++14
 CONFIG -= app_bundle
 
 TEMPLATE = app
-TARGET   = netguard_tests
+TARGET   = oasis_tests
 
 DESTDIR     = $$OUT_PWD
 OBJECTS_DIR = $$OUT_PWD/.obj

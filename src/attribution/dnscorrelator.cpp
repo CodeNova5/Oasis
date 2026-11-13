@@ -1,6 +1,6 @@
 /**
  * @file    dnscorrelator.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "dnscorrelator.h"
 #include "attributionconfidence.h"

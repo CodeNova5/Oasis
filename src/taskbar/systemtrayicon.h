@@ -1,6 +1,6 @@
 /**
  * @file    systemtrayicon.h
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 #include <QObject>

@@ -2,7 +2,7 @@
  * @file    quicobserver.h
  * @brief   Safe QUIC metadata (NG-033): clear long-header facts only. The
  *          Initial payload is encrypted, so no hostname is ever claimed.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

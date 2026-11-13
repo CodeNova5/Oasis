@@ -1,5 +1,5 @@
 # ============================================================================
-# Ultimate NetGuard AIO — .gitignore
+# Oasis — .gitignore
 # Qt 5 / C++ / MinGW / Windows
 # ============================================================================
 
@@ -80,7 +80,7 @@ $RECYCLE.BIN/
 
 # ─── Project Specific ─────────────────────────────────────────────────────
 # History data (auto-generated at runtime)
-NetGuard_History.json
+Oasis_History.json
 
 # Backup copies
 *- Copy*

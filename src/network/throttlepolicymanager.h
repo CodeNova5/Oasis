@@ -79,7 +79,7 @@ public:
     QStringList autoAppliedPaths() const {
         return QStringList(m_autoApplied.cbegin(), m_autoApplied.cend());
     }
-    // Normalized path -> NetGuard policy id, for limits applied by a policy.
+    // Normalized path -> Oasis policy id, for limits applied by a policy.
     QHash<QString, QString> policyAttribution() const { return m_policyAttribution; }
     QHash<QString, quint64> downloadLimits() const { return m_downloadLimits; }
 
@@ -121,7 +121,7 @@ private:
     QHash<QString, QString> m_activePolicies;
     // Paths whose limit was applied by Data Saver enforcement, not by the user.
     QSet<QString> m_autoApplied;
-    // Path -> NetGuard policy id for limits a stored policy asked for.
+    // Path -> Oasis policy id for limits a stored policy asked for.
     QHash<QString, QString> m_policyAttribution;
     QHash<QString, bool> m_pendingAutomatic;
     QHash<QString, QString> m_pendingPolicyId;

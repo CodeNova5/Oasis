@@ -5,7 +5,7 @@
  * Sizes are CSS pixels, matching the QSS values, so C++-painted text and
  * stylesheet text scale together.
  *
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 #include <QFont>

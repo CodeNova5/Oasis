@@ -1,7 +1,7 @@
 /**
  * @file    networkmonitor.h
  * @brief   Raw-socket packet capture thread with background caching and true hardware speed.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 
@@ -55,7 +55,7 @@ struct CapturedPacketInfo {
     // NG-041: whether the owning PID is the foreground application or one of its
     // live children. Advisory only: classification and recommendations may read
     // it, but it never applies, withdraws, or overrides a policy.
-    NetGuard::ForegroundAssociation foreground = NetGuard::ForegroundAssociation::None;
+    Oasis::ForegroundAssociation foreground = Oasis::ForegroundAssociation::None;
 };
 Q_DECLARE_METATYPE(QList<CapturedPacketInfo>)
 
@@ -77,12 +77,12 @@ public:
     // Edits are serialized with the cache thread through m_groupMutex and are
     // persisted by ProcessGroupManager, so a rename or a removal survives a
     // restart without the user touching configuration files.
-    QList<NetGuard::ProcessGroup> processGroups() const;
+    QList<Oasis::ProcessGroup> processGroups() const;
     QString createProcessGroup(const QString &name);
     bool renameProcessGroup(const QString &groupId, const QString &name);
-    bool addProcessGroupMember(const QString &groupId, NetGuard::GroupMemberType type,
+    bool addProcessGroupMember(const QString &groupId, Oasis::GroupMemberType type,
                                const QString &value, QString *error = nullptr);
-    bool removeProcessGroupMember(const QString &groupId, NetGuard::GroupMemberType type,
+    bool removeProcessGroupMember(const QString &groupId, Oasis::GroupMemberType type,
                                   const QString &value);
 
     // NG-031/NG-032: names recently resolved by DNS or seen in a visible TLS
@@ -110,7 +110,7 @@ public:
     // NG-041: the last foreground application sample. The snapshot carries the
     // sample time; `associationFor()` returns None once it is stale, so a caller
     // cannot act on an old answer. The signal is advisory only.
-    NetGuard::ForegroundSnapshot foregroundSnapshot() const;
+    Oasis::ForegroundSnapshot foregroundSnapshot() const;
 
     bool    isCapturing()  const { return m_captureRunning.load(); }
 
@@ -134,7 +134,7 @@ signals:
     void identityResolutionFailed(quint32 pid, const QString &status, const QString &message);
     // NG-012: services hosted by the PIDs that currently own connections, sent
     // only when the mapping or a service state changes.
-    void serviceSnapshotReady(const NetGuard::ServicePidMap &services);
+    void serviceSnapshotReady(const Oasis::ServicePidMap &services);
     // NG-012: the service manager could not be queried; traffic keeps flowing
     // and is attributed to the process instead of a service.
     void serviceLookupFailed(const QString &reason);
@@ -146,7 +146,7 @@ signals:
                           qint64 previousStartMs, qint64 currentStartMs);
     // NG-016: the activity group set changed (membership, name, confidence, or
     // a live PID). Sent only when something visible actually changed.
-    void groupSnapshotReady(const QList<NetGuard::ProcessGroup> &groups);
+    void groupSnapshotReady(const QList<Oasis::ProcessGroup> &groups);
     // NG-030: metadata from a visible DNS message. The payload is parsed and
     // discarded; the event carries the question, answers, confidence, and the
     // owning process when the socket could be resolved.
@@ -163,7 +163,7 @@ signals:
     // group). Sent only when the visible state moves, so a static window does
     // not repaint the tree every refresh. The snapshot is advisory and stamped
     // with the time it was sampled.
-    void foregroundSnapshotReady(const NetGuard::ForegroundSnapshot &snapshot);
+    void foregroundSnapshotReady(const Oasis::ForegroundSnapshot &snapshot);
 
 protected:
     void run() override;
@@ -211,35 +211,35 @@ private:
     // NG-010: identity resolution for PIDs that own live connections. Kept on
     // the cache thread; failures are remembered so protected processes are not
     // re-opened on every refresh.
-    NetGuard::ApplicationIdentityResolver m_identityResolver;
+    Oasis::ApplicationIdentityResolver m_identityResolver;
     QHash<quint32, ApplicationIdentity> m_identityCache;
     QHash<quint32, quint32> m_identityFailurePids; // pid -> IdentityResolutionStatus
 
     // NG-012: one cached SCM snapshot backs every service lookup, so a machine
     // with dozens of svchost processes costs one enumeration per refresh window.
-    NetGuard::ServiceResolver m_serviceResolver;
-    NetGuard::ServicePidMap m_serviceCache; // last snapshot sent to the UI
+    Oasis::ServiceResolver m_serviceResolver;
+    Oasis::ServicePidMap m_serviceCache; // last snapshot sent to the UI
     QString m_lastServiceError;
 
     // NG-013: parent/child graph with creation times. Owned by the cache thread;
     // the records for PIDs that own traffic are published for the packet loop.
-    NetGuard::ProcessLineage m_lineage;
-    QHash<quint32, NetGuard::ProcessLineageRecord> m_lineageCache;
+    Oasis::ProcessLineage m_lineage;
+    QHash<quint32, Oasis::ProcessLineageRecord> m_lineageCache;
 
     // NG-014: activity groups rebuilt from the identity, publisher, service, and
     // lineage evidence of the PIDs that own traffic. Manual edits persist
     // through QSettings; derived groups are rebuilt on every refresh.
-    NetGuard::ProcessGroupManager m_groupManager;
-    QHash<quint32, NetGuard::GroupBinding> m_groupCache;
+    Oasis::ProcessGroupManager m_groupManager;
+    QHash<quint32, Oasis::GroupBinding> m_groupCache;
     // Guards m_groupManager for GUI edits and holds the last published set.
     mutable QMutex m_groupMutex;
-    QList<NetGuard::ProcessGroup> m_publishedGroups;
+    QList<Oasis::ProcessGroup> m_publishedGroups;
 
     // NG-041: the last validated foreground sample, read by the packet loop
     // under m_cacheMutex. m_lastForeground is cache-thread-only and is used to
     // emit foregroundSnapshotReady only when the visible state changes.
-    NetGuard::ForegroundSnapshot m_foregroundCache;
-    NetGuard::ForegroundSnapshot m_lastForeground;
+    Oasis::ForegroundSnapshot m_foregroundCache;
+    Oasis::ForegroundSnapshot m_lastForeground;
 
     // Throttles stale-mapping diagnostics emitted from the cache thread.
     qint64 m_lastStaleReportMs = 0;

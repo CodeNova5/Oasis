@@ -1,6 +1,6 @@
 /**
  * @file    firewallmodel.h
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   Flat Table Model for Firewall Rules with external direction filtering.
  */
 #pragma once
@@ -13,9 +13,9 @@ class FirewallModel : public QAbstractTableModel
     Q_OBJECT
 public:
     // COL_APP is now first (index 0) so the Icon appears on the far left.
-    enum Col { COL_APP=0, COL_NAME, COL_ACTION, COL_PROTO, COL_ENABLED, COL_NETGUARD, COL_COUNT };
+    enum Col { COL_APP=0, COL_NAME, COL_ACTION, COL_PROTO, COL_ENABLED, COL_OASIS, COL_COUNT };
 
-    explicit FirewallModel(FirewallManager *mgr, bool netGuardOnly, QObject *parent=nullptr);
+    explicit FirewallModel(FirewallManager *mgr, bool oasisOnly, QObject *parent=nullptr);
 
     int      rowCount   (const QModelIndex &p={}) const override;
     int      columnCount(const QModelIndex &p={}) const override;

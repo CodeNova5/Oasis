@@ -1,6 +1,6 @@
 /**
  * @file    dnsobserver.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "dnsobserver.h"
 

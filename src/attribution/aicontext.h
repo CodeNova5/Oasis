@@ -2,7 +2,7 @@
  * @file    aicontext.h
  * @brief   Structured AI context (NG-044): a versioned, redacted, size-limited
  *          snapshot that a future optional AI provider would receive.
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * The payload is metadata only. It carries an application's identity
  * attributes, its activity classification with the matched local rules, an

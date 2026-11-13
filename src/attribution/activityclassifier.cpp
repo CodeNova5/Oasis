@@ -1,6 +1,6 @@
 /**
  * @file    activityclassifier.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "activityclassifier.h"
 

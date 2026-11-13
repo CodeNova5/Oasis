@@ -1,7 +1,7 @@
 /**
  * @file    openaiadapter.h
  * @brief   Opt-in OpenAI-compatible provider adapter (NG-045).
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * The adapter is vendor-neutral: the user supplies the full chat-completions
  * URL and model, and the key comes from an environment variable so it is never

@@ -356,9 +356,9 @@ Snapshot build(const Input &input)
                                     startedText(input.processStartMs)));
     snapshot.facts.append(qMakePair(QStringLiteral("Internet access"),
                                     input.internetBlocked
-                                        ? QStringLiteral("blocked by a NetGuard firewall rule")
-                                        : QStringLiteral("not blocked by NetGuard")));
-    QString limitText = QStringLiteral("no NetGuard limit");
+                                        ? QStringLiteral("blocked by a Oasis firewall rule")
+                                        : QStringLiteral("not blocked by Oasis")));
+    QString limitText = QStringLiteral("no Oasis limit");
     if (input.throttleApplied) {
         limitText = input.throttleOwner.trimmed().isEmpty()
                         ? QStringLiteral("limited (applied outside a policy)")

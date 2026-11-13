@@ -1,6 +1,6 @@
 /**
  * @file    mainwindow.h
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   Main Window definition with intelligent History Management and JSON persistence.
  */
 #pragma once

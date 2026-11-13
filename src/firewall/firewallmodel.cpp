@@ -1,6 +1,6 @@
 /**
  * @file    firewallmodel.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   Implementation of the Flat Table Firewall Model.
  */
 #include "firewallmodel.h"
@@ -15,8 +15,8 @@
 #include <shellapi.h>
 #include "ui/theme/thememanager.h"
 
-FirewallModel::FirewallModel(FirewallManager *mgr, bool netGuardOnly, QObject *parent)
-    : QAbstractTableModel(parent), m_mgr(mgr), m_ngOnly(netGuardOnly)
+FirewallModel::FirewallModel(FirewallManager *mgr, bool oasisOnly, QObject *parent)
+    : QAbstractTableModel(parent), m_mgr(mgr), m_ngOnly(oasisOnly)
 {
     m_currentDir = NET_FW_RULE_DIR_IN; // Default to Inbound
     refresh();
@@ -76,7 +76,7 @@ QVariant FirewallModel::data(const QModelIndex &idx, int role) const
             return QString::number(r.protocol);
         }
         case COL_ENABLED: return r.enabled ? QString::fromUtf8("✔ ON") : QString::fromUtf8("❌ OFF");
-        case COL_NETGUARD:return r.isNetGuard ? QString::fromUtf8("★ NG") : "OS";
+        case COL_OASIS:return r.isOasis ? QString::fromUtf8("★ NG") : "OS";
         }
     }
 
@@ -136,8 +136,8 @@ QVariant FirewallModel::data(const QModelIndex &idx, int role) const
         if (col == COL_ENABLED && !r.enabled) {
             return isDark ? QColor("#8B949E") : QColor("#6E7781");
         }
-        if (col == COL_NETGUARD && r.isNetGuard) {
-            return QColor("#F59E0B"); // Gold for NetGuard rules
+        if (col == COL_OASIS && r.isOasis) {
+            return QColor("#F59E0B"); // Gold for Oasis rules
         }
     }
 

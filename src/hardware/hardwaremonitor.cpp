@@ -1,6 +1,6 @@
 /**
  * @file    hardwaremonitor.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   Hardware monitoring backend with fixed Variant string parsing and robust WMI fallbacks.
  */
 #include "hardwaremonitor.h"

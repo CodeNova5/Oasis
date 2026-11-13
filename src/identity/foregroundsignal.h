@@ -1,7 +1,7 @@
 /**
  * @file    foregroundsignal.h
  * @brief   Foreground application and active-session signal (NG-041).
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * The signal answers one question: is this PID part of the application the user
  * is currently looking at? It is sampled from the foreground window and the
@@ -21,7 +21,7 @@
 
 #include "processlineage.h"
 
-namespace NetGuard {
+namespace Oasis {
 
 /// How a PID relates to the application the user is looking at.
 enum class ForegroundAssociation : int {
@@ -126,6 +126,6 @@ public:
     static ForegroundSnapshot sample(const ProcessLineage &lineage, qint64 nowMs);
 };
 
-} // namespace NetGuard
+} // namespace Oasis
 
-Q_DECLARE_METATYPE(NetGuard::ForegroundSnapshot)
+Q_DECLARE_METATYPE(Oasis::ForegroundSnapshot)

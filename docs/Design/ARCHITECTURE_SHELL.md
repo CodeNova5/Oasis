@@ -1,4 +1,4 @@
-# Ultimate NetGuard AIO — Architecture & Shell Specification
+# Oasis — Architecture & Shell Specification
 
 **Target Platform:** Windows 10 / 11  
 **UI Framework:** Qt 6 Widgets / C++  
@@ -14,7 +14,7 @@ The application uses a persistent desktop shell composed of four regions:
 +-------------------------------------------------------------------+
 | AppSidebar (232px) | AppHeader (60px)                             |
 |                    +----------------------------------------------+
-|  NETGUARD          |                                              |
+|  OASIS          |                                              |
 |  MONITOR           |                                              |
 |   - Overview       |               PageStack                      |
 |   - Activity       |          (QStackedWidget)                    |
@@ -35,7 +35,7 @@ The application uses a persistent desktop shell composed of four regions:
 
 ### 1.1 Expanded Sidebar (`AppSidebar`)
 * **Dimensions:** `232 px` fixed width (default). Designed to support a `64 px` collapsed mode in a future iteration.
-* **Header Brand:** Displays **NETGUARD** (`14 px` Semibold) with subtitle *Network intelligence* (`11 px` Muted).
+* **Header Brand:** Displays **OASIS** (`14 px` Semibold) with subtitle *Network intelligence* (`11 px` Muted).
 * **Navigation Structure:**
   * **MONITOR** (`11 px` uppercase section header, `#6C7586`)
     * `Overview` (`layout-dashboard`) — *Default landing screen*
@@ -80,7 +80,7 @@ The application uses a persistent desktop shell composed of four regions:
 
 ### 2.1 First-Time User Onboarding Flow
 Designed to be transparent, local-first, and **skippable at any step** so users are never blocked from viewing their traffic.
-1. **Welcome:** Explains NetGuard's purpose and local-first architecture (no cloud account required).
+1. **Welcome:** Explains Oasis's purpose and local-first architecture (no cloud account required).
 2. **System Readiness Check:** Runs automated checks on Administrator/elevation privileges, active network adapters, and enforcement drivers (Windows Firewall, QoS, WinDivert). Reports exact capability status honestly.
 3. **Privacy Disclosure:** Explains what metadata is collected locally, retention limits, and confirms that packet payloads are never stored and remote AI is disabled by default.
 4. **Preferences:** Quick toggles for launch-at-startup and notification alerts.
@@ -100,9 +100,9 @@ Designed to be transparent, local-first, and **skippable at any step** so users 
 7. User confirms → UI invokes backend policy service → UI displays **actual enforcement outcome** (`Active` if enforced, `Stored only` if enforcement channel is unavailable, or `Failed` with error details).
 
 ### 2.3 Unexpected Traffic Investigation Flow
-1. NetGuard detects anomalous bandwidth consumption or unassociated traffic and surfaces an alert in **Insights** and the **Notification Center**.
+1. Oasis detects anomalous bandwidth consumption or unassociated traffic and surfaces an alert in **Insights** and the **Notification Center**.
 2. User clicks the notification or **Review →** on the Insight card.
-3. NetGuard opens the contextual evidence view showing:
+3. Oasis opens the contextual evidence view showing:
    * Observed behavior and timeframe.
    * Associated application identity and attribution confidence (`Confirmed`, `Likely`, `Possible`, `Unknown`).
    * Observed destinations (Domain/IP, port, protocol).
@@ -112,7 +112,7 @@ Designed to be transparent, local-first, and **skippable at any step** so users 
    * **Dismiss:** Mark insight as reviewed (logged in `Audit & Reports`).
 
 ### 2.4 Policy Enforcement Failure & Recovery Flow
-When a restriction fails to apply at the OS/driver layer, NetGuard must never show a generic "Policy Saved" toast.
+When a restriction fails to apply at the OS/driver layer, Oasis must never show a generic "Policy Saved" toast.
 1. Backend enforcement service returns an error state for one or more channels (Firewall / QoS / WinDivert).
 2. UI presents an explicit **Policy Enforcement Failed** banner/dialog detailing:
    * **Policy Name & Target**

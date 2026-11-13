@@ -3,7 +3,7 @@
  * @brief   Frameless overlay widget that attaches precisely to the Taskbar.
  * Includes a professional Hover Stats Popup, Smart Resizing, & Right-Click Menu.
  * Supports dynamic CPU/RAM/GPU/Temperature display alongside network speed.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

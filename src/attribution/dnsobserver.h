@@ -2,7 +2,7 @@
  * @file    dnsobserver.h
  * @brief   Passive DNS metadata parsing (NG-030): names, types, and answers
  *          from visible UDP DNS messages, without retaining payloads.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

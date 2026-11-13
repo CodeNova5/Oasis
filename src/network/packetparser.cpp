@@ -1,6 +1,6 @@
 /**
  * @file    packetparser.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "packetparser.h"
 #include <winsock2.h>   // for ntohs/ntohl

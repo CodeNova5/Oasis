@@ -1,6 +1,6 @@
 /**
  * @file    attributionprivacy.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "attributionprivacy.h"
 
@@ -111,7 +111,7 @@ namespace AttributionPrivacy {
 
 QString settingsGroup()
 {
-    return QStringLiteral("NetGuard/AttributionPrivacy");
+    return QStringLiteral("Oasis/AttributionPrivacy");
 }
 
 int clampedRetentionSeconds(int seconds)

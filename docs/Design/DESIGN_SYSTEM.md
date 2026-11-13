@@ -1,4 +1,4 @@
-# Ultimate NetGuard AIO — Design System Specification
+# Oasis — Design System Specification
 
 **Target Platform:** Windows 10 / 11  
 **UI Framework:** Qt 6 Widgets / C++  
@@ -8,7 +8,7 @@
 
 ## 1. Visual Principles
 
-Every interface decision in NetGuard must uphold five core principles:
+Every interface decision in Oasis must uphold five core principles:
 1. **Clarity:** Users should understand their network usage without needing deep networking knowledge.
 2. **Control:** Important actions and restriction tools must be easy to find and predictable.
 3. **Trust:** The application must never exaggerate what it knows or what it has actually enforced.
@@ -124,7 +124,7 @@ All layout spacing adheres to a strict **4-point grid system**.
 
 ## 6. Standardized Status & Attribution System
 
-NetGuard strictly separates **Operational/Enforcement Status** from **Attribution Confidence** so users always know what is verified versus inferred.
+Oasis strictly separates **Operational/Enforcement Status** from **Attribution Confidence** so users always know what is verified versus inferred.
 
 ### 6.1 Operational & Policy Status Labels
 | Status Label | Badge Color | Border / Fill Treatment | Meaning |

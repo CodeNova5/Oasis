@@ -1,7 +1,7 @@
 /**
  * @file    networkmodel.h
  * @brief   QAbstractItemModel with batch-processing support for UI stability.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 
@@ -51,7 +51,7 @@ struct ProcessNode
     ApplicationIdentity::SignerStatus signerStatus = ApplicationIdentity::SignerStatus::Unknown;
     // NG-012: services this process hosts. Drawn as their own child rows so
     // several services sharing one svchost.exe stay individually visible.
-    QVector<NetGuard::ServiceEntry> services;
+    QVector<Oasis::ServiceEntry> services;
     // NG-013: lineage of this process instance. Start time pins the instance so
     // a recycled PID is visible instead of silently merging two processes.
     qint64   processStartMs = 0;
@@ -68,7 +68,7 @@ struct ProcessNode
     QString  activitySignature;
     // NG-041: the owning PID is the foreground application or one of its live
     // helpers. Advisory; it feeds classification and never changes a policy.
-    NetGuard::ForegroundAssociation foreground = NetGuard::ForegroundAssociation::None;
+    Oasis::ForegroundAssociation foreground = Oasis::ForegroundAssociation::None;
     quint64  totalRxSpeed = 0;
     quint64  totalTxSpeed = 0;
     quint64  totalRxBytes = 0;
@@ -97,7 +97,7 @@ struct ProcessRowSnapshot
     QString groupName;
     ApplicationIdentity::Confidence groupConfidence = ApplicationIdentity::Confidence::Unknown;
     QStringList services;
-    NetGuard::ForegroundAssociation foreground = NetGuard::ForegroundAssociation::None;
+    Oasis::ForegroundAssociation foreground = Oasis::ForegroundAssociation::None;
     ActivityQuery query;
     ActivityClassification activity;
     quint64 rxBytes = 0;
@@ -157,7 +157,7 @@ public:
     // Source-model row of a live PID, or -1 when the process is not shown.
     int rowForPid(quint32 pid) const;
     // NG-012: replace the PID -> services map and refresh the affected rows.
-    void applyServiceSnapshot(const NetGuard::ServicePidMap &services);
+    void applyServiceSnapshot(const Oasis::ServicePidMap &services);
     void clear();
 
     static QString formatSpeed(quint64 bps);
@@ -172,7 +172,7 @@ private:
 
     QVector<ProcessNode> m_procs;
     QHash<QString, int>  m_procIdx;
-    NetGuard::ServicePidMap m_servicesByPid; // NG-012 services per live PID
+    Oasis::ServicePidMap m_servicesByPid; // NG-012 services per live PID
     std::function<QList<DomainAttribution>(const QString &)> m_domainResolver;
     ActivityClassifier m_activityClassifier;
     QTimer              *m_ticker = nullptr;

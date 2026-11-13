@@ -1,6 +1,6 @@
 /**
  * @file    colors.h
- * @brief   Color design tokens for the NetGuard Fluent UI.
+ * @brief   Color design tokens for the Oasis Fluent UI.
  *
  * Single source of truth for the palette in docs/Design/DESIGN_SYSTEM.md §2.
  * The X-macro keeps the C++ palette, the QSS token names (styles.qss) and the
@@ -10,17 +10,17 @@
  * QSS is authored against the token name, e.g. `background: @surface-primary;`.
  * ThemeManager substitutes the active mode's value at runtime.
  *
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 #include <QColor>
 #include <QString>
 
 /**
- * NETGUARD_PALETTE(X)
+ * OASIS_PALETTE(X)
  *   X(cppId, qss-token, dark value, light value)
  */
-#define NETGUARD_PALETTE(X)                                                     \
+#define OASIS_PALETTE(X)                                                     \
     /* ── Surfaces ──────────────────────────────────────────────────────── */ \
     X(surfaceWindow,   "surface-window",   "#111318", "#F3F5F8")                \
     X(surfaceSidebar,  "surface-sidebar",  "#171A21", "#FBFCFD")                \
@@ -68,19 +68,19 @@ namespace Theme {
 /// Active-mode-ready palette. Access members by their camelCase id.
 struct Palette
 {
-#define NETGUARD_PALETTE_MEMBER(id, token, darkValue, lightValue) QString id;
-    NETGUARD_PALETTE(NETGUARD_PALETTE_MEMBER)
-#undef NETGUARD_PALETTE_MEMBER
+#define OASIS_PALETTE_MEMBER(id, token, darkValue, lightValue) QString id;
+    OASIS_PALETTE(OASIS_PALETTE_MEMBER)
+#undef OASIS_PALETTE_MEMBER
 };
 
 /// Build the palette for a mode. Values are raw QSS fragments (hex or rgba).
 inline Palette palette(bool dark)
 {
     Palette p;
-#define NETGUARD_PALETTE_ASSIGN(id, token, darkValue, lightValue)               \
+#define OASIS_PALETTE_ASSIGN(id, token, darkValue, lightValue)               \
     p.id = QString::fromLatin1(dark ? darkValue : lightValue);
-    NETGUARD_PALETTE(NETGUARD_PALETTE_ASSIGN)
-#undef NETGUARD_PALETTE_ASSIGN
+    OASIS_PALETTE(OASIS_PALETTE_ASSIGN)
+#undef OASIS_PALETTE_ASSIGN
     return p;
 }
 
@@ -113,11 +113,11 @@ inline QColor qcolor(const QString &value)
 inline QColor colorForToken(const QString &tokenName, bool dark)
 {
     const Palette p = palette(dark);
-#define NETGUARD_PALETTE_LOOKUP(id, token, darkValue, lightValue)               \
+#define OASIS_PALETTE_LOOKUP(id, token, darkValue, lightValue)               \
     if (tokenName == QLatin1String(token))                                      \
         return qcolor(p.id);
-    NETGUARD_PALETTE(NETGUARD_PALETTE_LOOKUP)
-#undef NETGUARD_PALETTE_LOOKUP
+    OASIS_PALETTE(OASIS_PALETTE_LOOKUP)
+#undef OASIS_PALETTE_LOOKUP
     return QColor();
 }
 

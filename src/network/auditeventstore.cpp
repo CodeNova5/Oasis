@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr const char *kSettingsGroup = "NetGuard/Audit";
+constexpr const char *kSettingsGroup = "Oasis/Audit";
 constexpr const char *kStoreVersionKey = "storeVersion";
 constexpr const char *kRetentionDaysKey = "retentionDays";
 constexpr const char *kMaxEventsKey = "maxEvents";

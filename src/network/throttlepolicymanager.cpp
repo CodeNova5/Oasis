@@ -278,7 +278,7 @@ QString ThrottlePolicyManager::normalizePath(const QString &path)
 QString ThrottlePolicyManager::policyIdForPath(const QString &path)
 {
     const QByteArray digest = QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1);
-    return QString("UltimateNetGuard-BW-%1").arg(QString::fromLatin1(digest.toHex().left(12)));
+    return QString("Oasis-BW-%1").arg(QString::fromLatin1(digest.toHex().left(12)));
 }
 
 QVariantMap ThrottlePolicyManager::policySnapshot() const

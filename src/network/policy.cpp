@@ -242,8 +242,8 @@ std::pair<QList<NetworkPolicy>, QList<QString>> reconcilePolicies()
     QList<QString> invalid;
     QSettings settings;
     // Read format version first (outside any group to avoid QSettings::value() no-arg issues)
-    int version = settings.value("NetGuard/Policies/formatVersion", 1).toInt();
-    settings.beginGroup("NetGuard/Policies");
+    int version = settings.value("Oasis/Policies/formatVersion", 1).toInt();
+    settings.beginGroup("Oasis/Policies");
     // Read policies sub-group
     if (version == PolicyStore::kLegacyStoreVersion)
     {
@@ -395,7 +395,7 @@ AuditEvent fromJsonAuditEvent(const QString &json)
 
 // ─── Policy store ──────────────────────────────────────────────────────────────
 // Persistent policy store with versioned persistence, migration, and JSON import/export.
-// Policies are stored under QSettings group "NetGuard/Policies".
+// Policies are stored under QSettings group "Oasis/Policies".
 // Version 1 format: QSettings map with key "policies" containing a QVariantMap per policy.
 // Version 2 format: JSON array under "policies" key (introduced for NG-020).
 // Malformed entries are rejected with a warning and omitted; the store never throws.
@@ -419,8 +419,8 @@ QList<NetworkPolicy> PolicyStore::loadPolicies()
     QList<NetworkPolicy> result;
     QSettings settings;
     // Read format version first (outside any group to avoid QSettings::value() no-arg issues)
-    int version = settings.value("NetGuard/Policies/formatVersion", 1).toInt();
-    settings.beginGroup("NetGuard/Policies");
+    int version = settings.value("Oasis/Policies/formatVersion", 1).toInt();
+    settings.beginGroup("Oasis/Policies");
 
     if (version == PolicyStore::kLegacyStoreVersion)
     {
@@ -498,7 +498,7 @@ bool PolicyStore::savePolicies(const QList<NetworkPolicy> &policies)
         array.append(QJsonDocument::fromJson(toJson(p).toUtf8()).object());
 
     QSettings settings;
-    settings.beginGroup("NetGuard/Policies");
+    settings.beginGroup("Oasis/Policies");
     settings.setValue("formatVersion", PolicyStore::kCurrentStoreVersion);
     settings.setValue("policies",
                       QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
@@ -510,7 +510,7 @@ bool PolicyStore::savePolicies(const QList<NetworkPolicy> &policies)
 QString PolicyStore::exportPoliciesJson()
 {
     QSettings settings;
-    settings.beginGroup("NetGuard/Policies");
+    settings.beginGroup("Oasis/Policies");
     const QString json = settings.value("policies").toString();
     settings.endGroup();
     return json; // return empty string if none stored
@@ -520,7 +520,7 @@ bool PolicyStore::importPoliciesJson(const QString &json)
 {
     bool changed = false;
     QSettings settings;
-    settings.beginGroup("NetGuard/Policies");
+    settings.beginGroup("Oasis/Policies");
 
     // Read existing policies to merge into
     QList<NetworkPolicy> existing = loadPolicies();
@@ -565,8 +565,8 @@ bool PolicyStore::importPoliciesJson(const QString &json)
 bool PolicyStore::migrateOldFormat(QSettings &settings)
 {
     // Check if we already migrated
-    if (settings.value("NetGuard/Policies/migrated").toBool()) return false;
-    settings.beginGroup("NetGuard/Policies");
+    if (settings.value("Oasis/Policies/migrated").toBool()) return false;
+    settings.beginGroup("Oasis/Policies");
     int version = settings.value("formatVersion", 1).toInt();
     if (version >= PolicyStore::kCurrentStoreVersion)
     {
@@ -610,6 +610,6 @@ bool PolicyStore::migrateOldFormat(QSettings &settings)
     settings.endGroup();
     // Now save in new format
     savePolicies(result);
-    settings.setValue("NetGuard/Policies/migrated", true);
+    settings.setValue("Oasis/Policies/migrated", true);
     return true;
 }

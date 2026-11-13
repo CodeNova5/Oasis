@@ -1,7 +1,7 @@
 /**
  * @file    aiprovider.cpp
  * @brief   Optional AI provider interface (NG-045).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "aiprovider.h"
 
@@ -11,7 +11,7 @@
 
 namespace {
 
-const QString kSettingsGroup = QStringLiteral("NetGuard/AiProvider");
+const QString kSettingsGroup = QStringLiteral("Oasis/AiProvider");
 const QString kSettingsKey = QStringLiteral("settings");
 
 int clampedTimeout(int seconds)

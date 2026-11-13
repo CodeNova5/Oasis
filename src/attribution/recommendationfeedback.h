@@ -2,7 +2,7 @@
  * @file    recommendationfeedback.h
  * @brief   Local recommendation feedback (NG-043): remembers whether the user
  *          found a suggestion useful, incorrect, or unwanted.
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * Feedback is stored on this device only. It is keyed by the activity category
  * and the application's durable identity, never by a destination, a rate, or

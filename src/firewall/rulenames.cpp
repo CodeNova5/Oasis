@@ -27,12 +27,12 @@ QString firewallRuleName(const QString &appPath, const QString &suffix)
     QString base = QFileInfo(identity).completeBaseName();
     if (base.size() > 40) base = base.left(40);
 
-    return QStringLiteral("NetGuard_") + base + QLatin1Char('_') + hash +
+    return QStringLiteral("Oasis_") + base + QLatin1Char('_') + hash +
            QLatin1Char('_') + suffix;
 }
 
 QString legacyFirewallRuleName(const QString &appPath, const QString &suffix)
 {
-    return QStringLiteral("NetGuard_") + QFileInfo(appPath).completeBaseName() +
+    return QStringLiteral("Oasis_") + QFileInfo(appPath).completeBaseName() +
            QLatin1Char('_') + suffix;
 }

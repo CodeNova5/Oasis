@@ -2,7 +2,7 @@
  * @file    networkmonitor.cpp
  * @brief   Thread-safe capture with dedicated caching thread and exact process/service mapping.
  * Includes Smart Auto-Detect & Dual-Socket IPv4/IPv6 Capture Engine!
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #ifndef _WIN32_WINNT
 #  define _WIN32_WINNT 0x0601
@@ -159,7 +159,7 @@ NetworkMonitor::NetworkMonitor(QObject *parent) : QThread(parent)
     qRegisterMetaType<DnsEvent>("DnsEvent");
     qRegisterMetaType<TlsObservation>("TlsObservation");
     qRegisterMetaType<QuicObservation>("QuicObservation");
-    qRegisterMetaType<NetGuard::ForegroundSnapshot>("NetGuard::ForegroundSnapshot");
+    qRegisterMetaType<Oasis::ForegroundSnapshot>("Oasis::ForegroundSnapshot");
 
     // NG-036: honour the persisted attribution privacy choices before the first
     // packet is parsed, so a user who turned collection off never gets a brief
@@ -245,7 +245,7 @@ int NetworkMonitor::attributionRecordCount() const
     return m_dnsCorrelator.recordCount();
 }
 
-NetGuard::ForegroundSnapshot NetworkMonitor::foregroundSnapshot() const
+Oasis::ForegroundSnapshot NetworkMonitor::foregroundSnapshot() const
 {
     QMutexLocker lk(&m_cacheMutex);
     return m_foregroundCache;
@@ -268,7 +268,7 @@ void NetworkMonitor::setAdapterIP(const QString &ip)
 }
 
 // ─── NG-016 group inspection and editing ───────────────────────────────────
-QList<NetGuard::ProcessGroup> NetworkMonitor::processGroups() const
+QList<Oasis::ProcessGroup> NetworkMonitor::processGroups() const
 {
     QMutexLocker lk(&m_groupMutex);
     return m_publishedGroups;
@@ -276,7 +276,7 @@ QList<NetGuard::ProcessGroup> NetworkMonitor::processGroups() const
 
 void NetworkMonitor::syncGroupSnapshot()
 {
-    QList<NetGuard::ProcessGroup> groups;
+    QList<Oasis::ProcessGroup> groups;
     bool changed = false;
     {
         QMutexLocker lk(&m_groupMutex);
@@ -311,7 +311,7 @@ bool NetworkMonitor::renameProcessGroup(const QString &groupId, const QString &n
 }
 
 bool NetworkMonitor::addProcessGroupMember(const QString &groupId,
-                                           NetGuard::GroupMemberType type,
+                                           Oasis::GroupMemberType type,
                                            const QString &value, QString *error)
 {
     bool added = false;
@@ -324,7 +324,7 @@ bool NetworkMonitor::addProcessGroupMember(const QString &groupId,
 }
 
 bool NetworkMonitor::removeProcessGroupMember(const QString &groupId,
-                                              NetGuard::GroupMemberType type,
+                                              Oasis::GroupMemberType type,
                                               const QString &value)
 {
     bool removed = false;
@@ -508,8 +508,8 @@ void NetworkMonitor::run()
             QString groupId, groupName;
             ApplicationIdentity::Confidence groupConfidence =
                 ApplicationIdentity::Confidence::Unknown;
-            NetGuard::ForegroundAssociation foregroundAssociation =
-                NetGuard::ForegroundAssociation::None;
+            Oasis::ForegroundAssociation foregroundAssociation =
+                Oasis::ForegroundAssociation::None;
 
             if (pkt.protocol.startsWith("TCP") || pkt.protocol.startsWith("UDP")) {
                 QString sPortStr = QString::number(pkt.srcPort);
@@ -771,7 +771,7 @@ void NetworkMonitor::updateCaches()
     // One SCM snapshot per refresh window, shared by every PID below. The old
     // path enumerated all services once per svchost PID per loop.
     m_serviceResolver.refresh(2000);
-    const NetGuard::ServicePidMap servicesByPid = m_serviceResolver.servicesByPid();
+    const Oasis::ServicePidMap servicesByPid = m_serviceResolver.servicesByPid();
     const QString serviceError = m_serviceResolver.lastError();
     if (serviceError != m_lastServiceError) {
         m_lastServiceError = serviceError;
@@ -810,7 +810,7 @@ void NetworkMonitor::updateCaches()
     // its record is kept for 5 minutes so helpers can still be related by PID.
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     m_lineage.expire(nowMs);
-    QVector<NetGuard::LineageTransition> reusedPids;
+    QVector<Oasis::LineageTransition> reusedPids;
 
     DWORD aProcs[1024], cbNeeded, cProcs;
     if (EnumProcesses(aProcs, sizeof(aProcs), &cbNeeded)) {
@@ -833,7 +833,7 @@ void NetworkMonitor::updateCaches()
                         if (hosted != servicesByPid.constEnd() && !hosted->isEmpty()) {
                             QString primary = hosted->first().displayName;
                             for (const auto &svc : hosted.value()) {
-                                if (svc.state == NetGuard::ServiceState::Running) {
+                                if (svc.state == Oasis::ServiceState::Running) {
                                     primary = svc.displayName;
                                     break;
                                 }
@@ -842,7 +842,7 @@ void NetworkMonitor::updateCaches()
                         }
                         pCache.insert(aProcs[i], procName);
 
-                        NetGuard::LineageObservation observation;
+                        Oasis::LineageObservation observation;
                         observation.pid            = aProcs[i];
                         observation.parentPid      = parentByPid.value(aProcs[i], 0);
                         observation.processName    = procName;
@@ -853,7 +853,7 @@ void NetworkMonitor::updateCaches()
                             observation.startTimeMs = fileTimeToMs(created);
 
                         for (const auto &transition : m_lineage.observe(observation))
-                            if (transition.change == NetGuard::LineageChange::Reused)
+                            if (transition.change == Oasis::LineageChange::Reused)
                                 reusedPids.append(transition);
                     }
                     CloseHandle(hProc);
@@ -905,7 +905,7 @@ void NetworkMonitor::updateCaches()
         if (resolvedThisRefresh >= 64) break;
         ++resolvedThisRefresh;
 
-        const NetGuard::IdentityResolution resolution = m_identityResolver.resolvePid(pid);
+        const Oasis::IdentityResolution resolution = m_identityResolver.resolvePid(pid);
         if (resolution.ok()) {
             idCache.insert(pid, resolution.identity);
             continue;
@@ -914,16 +914,16 @@ void NetworkMonitor::updateCaches()
         failureCache.insert(pid, static_cast<quint32>(resolution.status));
         // Exiting processes are expected; only report failures that hide an
         // executable we can still attribute.
-        if (resolution.status != NetGuard::IdentityResolutionStatus::ProcessNotFound)
+        if (resolution.status != Oasis::IdentityResolutionStatus::ProcessNotFound)
             emit identityResolutionFailed(pid,
-                NetGuard::identityResolutionStatusName(resolution.status),
+                Oasis::identityResolutionStatusName(resolution.status),
                 resolution.message);
     }
 
     // ── 3c. Publish the service mapping for PIDs that own traffic ──
     // Only changed snapshots are sent, so a state poll does not repaint the
     // tree; the GUI keeps per-service rows for shared hosts.
-    NetGuard::ServicePidMap servicesForActive;
+    Oasis::ServicePidMap servicesForActive;
     for (quint32 pid : activePids) {
         const auto hosted = servicesByPid.constFind(pid);
         if (hosted != servicesByPid.constEnd() && !hosted->isEmpty())
@@ -940,9 +940,9 @@ void NetworkMonitor::updateCaches()
     // ── 3d. Publish lineage for PIDs that own traffic ──
     // Records are copied under the cache lock in step 4 below; the packet loop
     // only reads this snapshot.
-    QHash<quint32, NetGuard::ProcessLineageRecord> lineageForActive;
+    QHash<quint32, Oasis::ProcessLineageRecord> lineageForActive;
     for (quint32 pid : activePids) {
-        const NetGuard::ProcessLineageRecord record = m_lineage.record(pid);
+        const Oasis::ProcessLineageRecord record = m_lineage.record(pid);
         if (record.isValid()) lineageForActive.insert(pid, record);
     }
 
@@ -951,13 +951,13 @@ void NetworkMonitor::updateCaches()
     // evidence gathered above, so one pass decides the membership of every
     // active process and records why. Groups are rebuilt each refresh; only
     // user edits are persisted.
-    QList<NetGuard::GroupEvidence> groupEvidence;
+    QList<Oasis::GroupEvidence> groupEvidence;
     groupEvidence.reserve(activePids.size());
     for (quint32 pid : activePids) {
-        const NetGuard::ProcessLineageRecord record = m_lineage.record(pid);
+        const Oasis::ProcessLineageRecord record = m_lineage.record(pid);
         if (!record.isValid() || record.executablePath.isEmpty()) continue;
 
-        NetGuard::GroupEvidence evidence;
+        Oasis::GroupEvidence evidence;
         evidence.pid            = pid;
         evidence.parentPid      = record.parentPid;
         evidence.generation     = record.generation;
@@ -978,7 +978,7 @@ void NetworkMonitor::updateCaches()
 
         const auto hosted = servicesByPid.constFind(pid);
         if (hosted != servicesByPid.constEnd()) {
-            for (const NetGuard::ServiceEntry &service : hosted.value()) {
+            for (const Oasis::ServiceEntry &service : hosted.value()) {
                 evidence.serviceNames.append(service.serviceName);
                 evidence.serviceDisplayNames.append(service.displayName);
             }
@@ -986,7 +986,7 @@ void NetworkMonitor::updateCaches()
 
         groupEvidence.append(evidence);
     }
-    QHash<quint32, NetGuard::GroupBinding> groupBindings;
+    QHash<quint32, Oasis::GroupBinding> groupBindings;
     {
         // Serialized with GUI edits (rename, add/remove member).
         QMutexLocker lk(&m_groupMutex);
@@ -999,8 +999,8 @@ void NetworkMonitor::updateCaches()
     // recycled PID is discarded and the live helper processes that carry a
     // browser's traffic are included. The result is advisory and stamped with
     // the sample time; nothing here changes a policy.
-    NetGuard::ForegroundSnapshot foreground =
-        NetGuard::ForegroundSampler::sample(m_lineage, nowMs);
+    Oasis::ForegroundSnapshot foreground =
+        Oasis::ForegroundSampler::sample(m_lineage, nowMs);
     if (foreground.isValid()) {
         const auto group = groupBindings.constFind(foreground.foregroundPid);
         if (group != groupBindings.constEnd() && group->isValid()) {

@@ -1,6 +1,6 @@
 /*
  =============================================================================
-    Copyright (c) 2026  AliSakkaf  |  All Rights Reserved
+    Copyright (c) 2026  Oasis  |  All Rights Reserved
  =============================================================================
 */
 #include "mainwindow.h"
@@ -173,7 +173,7 @@ void MainWindow::initHistoryManager()
     if (!dir.exists()) {
         dir.mkpath(".");
     }
-    m_historyFilePath = dir.absoluteFilePath("NetGuard_History.json");
+    m_historyFilePath = dir.absoluteFilePath("Oasis_History.json");
 
     loadHistoryFromJson();
 
@@ -500,7 +500,7 @@ void MainWindow::onExportDiagnostics()
         return;
 
     const QString fileName = QFileDialog::getSaveFileName(this, "Export Diagnostics",
-        QDir::homePath() + "/NetGuard_Diagnostics.json", "JSON Files (*.json)");
+        QDir::homePath() + "/Oasis_Diagnostics.json", "JSON Files (*.json)");
     if (fileName.isEmpty()) return;
 
     QFile file(fileName);
@@ -612,7 +612,7 @@ void MainWindow::onExportAuditLog()
 
     const QString fileName = QFileDialog::getSaveFileName(
         this, QStringLiteral("Export audit log"),
-        QDir::homePath() + "/NetGuard_AuditLog.json",
+        QDir::homePath() + "/Oasis_AuditLog.json",
         QStringLiteral("JSON Files (*.json)"));
     if (fileName.isEmpty())
         return;
@@ -646,7 +646,7 @@ void MainWindow::onExportAuditLogCsv()
 
     const QString fileName = QFileDialog::getSaveFileName(
         this, QStringLiteral("Export audit log"),
-        QDir::homePath() + "/NetGuard_AuditLog.csv",
+        QDir::homePath() + "/Oasis_AuditLog.csv",
         QStringLiteral("CSV Files (*.csv)"));
     if (fileName.isEmpty())
         return;
@@ -678,7 +678,7 @@ void MainWindow::onExportAttribution()
     }
 
     QFileDialog dialog(this, QStringLiteral("Export attribution data"),
-                       QDir::homePath() + "/NetGuard_Attribution.json");
+                       QDir::homePath() + "/Oasis_Attribution.json");
     dialog.setAcceptMode(QFileDialog::AcceptSave);
     dialog.setNameFilters({QStringLiteral("JSON Files (*.json)"),
                            QStringLiteral("CSV Files (*.csv)")});
@@ -854,7 +854,7 @@ void MainWindow::saveAiProviderSettings()
     } else {
         ui->lblAiProviderStatus->setText(
             QStringLiteral("Settings saved. The API key still comes from "
-                           "NETGUARD_AI_API_KEY."));
+                           "OASIS_AI_API_KEY."));
     }
 }
 
@@ -921,7 +921,7 @@ void MainWindow::onClearDiagnostics()
 
 void MainWindow::onExportHistory()
 {
-    QString fileName = QFileDialog::getSaveFileName(this, "Export History", QDir::homePath() + "/NetGuard_History.csv", "CSV Files (*.csv)");
+    QString fileName = QFileDialog::getSaveFileName(this, "Export History", QDir::homePath() + "/Oasis_History.csv", "CSV Files (*.csv)");
     if (fileName.isEmpty()) return;
 
     QFile file(fileName);
@@ -1007,7 +1007,7 @@ void MainWindow::saveHistoryToJson()
 
 void MainWindow::loadSettings()
 {
-    QSettings settings("AliSakkaf", "NetGuardAIO");
+    QSettings settings("Oasis", "Oasis");
 
     ui->chkRunAtStartup->setChecked(settings.value("General/RunAtStartup", true).toBool());
     ui->chkStartMinimized->setChecked(settings.value("General/StartMinimized", false).toBool());
@@ -1041,7 +1041,7 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
-    QSettings settings("AliSakkaf", "NetGuardAIO");
+    QSettings settings("Oasis", "Oasis");
 
     settings.setValue("General/RunAtStartup", ui->chkRunAtStartup->isChecked());
     settings.setValue("General/StartMinimized", ui->chkStartMinimized->isChecked());
@@ -1111,11 +1111,11 @@ void MainWindow::applyRunAtStartup(bool enable)
 {
     QSettings boot("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", QSettings::NativeFormat);
     if (enable) {
-        // Always use the canonical installed path (Program Files\NetGuard)
+        // Always use the canonical installed path (Program Files\Oasis)
         QString appPath = QDir::toNativeSeparators(AppInstaller::installedExePath());
-        boot.setValue("NetGuardAIO", "\"" + appPath + "\"");
+        boot.setValue("Oasis", "\"" + appPath + "\"");
     } else {
-        boot.remove("NetGuardAIO");
+        boot.remove("Oasis");
     }
 }
 
@@ -1425,12 +1425,12 @@ void MainWindow::setupTray()
     connect(actTheme, &QAction::triggered, this, &MainWindow::onToggleTheme);
     connect(actQuit,  &QAction::triggered, qApp, &QApplication::quit);
 
-    QIcon trayIcon(":/icons/Ultimate_NetGuard_AIO.png");
+    QIcon trayIcon(":/icons/Oasis.png");
     if (trayIcon.isNull()) trayIcon = QIcon(":/icons/app.ico");
 
     m_tray = new QSystemTrayIcon(trayIcon, this);
     m_tray->setContextMenu(m_trayMenu);
-    m_tray->setToolTip("Ultimate NetGuard AIO");
+    m_tray->setToolTip("Oasis");
     m_tray->show();
 
     connect(m_tray, &QSystemTrayIcon::activated, this, &MainWindow::onTrayActivated);
@@ -1455,7 +1455,7 @@ void MainWindow::onMinimizeToTray()
     rememberNotificationSubject(0, QString(), QString());
     AppNotification notification;
     notification.key = QStringLiteral("tray-background");
-    notification.title = QStringLiteral("NetGuard AIO");
+    notification.title = QStringLiteral("Oasis");
     notification.message = QStringLiteral("Running in the background. Click the tray icon to restore.");
     postNotification(notification);
 }
@@ -1548,7 +1548,7 @@ void MainWindow::onNetworkSpeed(quint64 rxBps, quint64 txBps)
         m_statusBar->setSpeedText(fmtSpeed(rxBps), fmtSpeed(txBps));
         m_statusBar->setLastUpdated(QDateTime::currentDateTime());
     }
-    m_tray->setToolTip(QString("NetGuard AIO\n↓ %1  ↑ %2").arg(fmtSpeed(rxBps), fmtSpeed(txBps)));
+    m_tray->setToolTip(QString("Oasis\n↓ %1  ↑ %2").arg(fmtSpeed(rxBps), fmtSpeed(txBps)));
 }
 
 void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
@@ -1594,7 +1594,7 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         if (event.firewallBlocked) {
             title = "Internet access blocked";
             action = QStringLiteral("Internet access was blocked for every instance of this executable.\n"
-                                    "Right-click the process in NetGuard to restore access.");
+                                    "Right-click the process in Oasis to restore access.");
         } else {
             title = "Internet block failed";
             action = event.firewallMessage.isEmpty()
@@ -1603,7 +1603,7 @@ void MainWindow::onBandwidthAlert(const BandwidthEvent &event)
         }
     } else if (event.firewallBlocked) {
         title = "Internet access already blocked";
-        action = QStringLiteral("This executable is already blocked by a NetGuard firewall rule.");
+        action = QStringLiteral("This executable is already blocked by a Oasis firewall rule.");
     } else if (!event.firewallMessage.isEmpty()) {
         action = event.firewallMessage;
     } else {
@@ -1714,7 +1714,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
     rememberNotificationSubject(0, QString(), QString());
     AppNotification notification;
     notification.key = QStringLiteral("tray-background");
-    notification.title = QStringLiteral("NetGuard AIO");
+    notification.title = QStringLiteral("Oasis");
     notification.message = QStringLiteral("Running in the background.\nDouble-click the tray icon to restore.");
     postNotification(notification);
     event->ignore();

@@ -1,6 +1,6 @@
 /**
  * @file    thememanager.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "thememanager.h"
 
@@ -31,10 +31,10 @@ QHash<QString, QString> buildTokenMap(ThemeManager::Mode mode)
     t.reserve(64);
 
     // Colors (token name -> mode value), generated from the X-macro list.
-#define NETGUARD_PALETTE_TOKEN(id, token, darkValue, lightValue)                \
+#define OASIS_PALETTE_TOKEN(id, token, darkValue, lightValue)                \
     t.insert(QStringLiteral(token), c.id);
-    NETGUARD_PALETTE(NETGUARD_PALETTE_TOKEN)
-#undef NETGUARD_PALETTE_TOKEN
+    OASIS_PALETTE(OASIS_PALETTE_TOKEN)
+#undef OASIS_PALETTE_TOKEN
 
     // Spacing.
     t.insert(QStringLiteral("space-xs"), px(Theme::Dim::SpaceXs));

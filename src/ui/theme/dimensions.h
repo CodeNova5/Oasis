@@ -6,7 +6,7 @@
  * These are logical pixels. The stylesheet consumes the matching tokens
  * (`@space-lg`, `@radius-card`, ...); C++ layout code uses the constants.
  *
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

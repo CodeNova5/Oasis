@@ -1,7 +1,7 @@
 /**
  * @file    serviceresolver.h
  * @brief   Windows service identity resolution for service-hosted traffic (NG-012).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 
@@ -10,7 +10,7 @@
 #include <QString>
 #include <QVector>
 
-namespace NetGuard {
+namespace Oasis {
 
 // ─── Service runtime state ──────────────────────────────────────────────────
 // Mirrors SERVICE_STATUS_PROCESS::dwCurrentState with a neutral Unknown value
@@ -91,7 +91,7 @@ private:
 // QHash<quint32, QVector<...>> would otherwise split the macro arguments.
 using ServicePidMap = QHash<quint32, QVector<ServiceEntry>>;
 
-} // namespace NetGuard
+} // namespace Oasis
 
-Q_DECLARE_METATYPE(NetGuard::ServiceEntry)
-Q_DECLARE_METATYPE(NetGuard::ServicePidMap)
+Q_DECLARE_METATYPE(Oasis::ServiceEntry)
+Q_DECLARE_METATYPE(Oasis::ServicePidMap)

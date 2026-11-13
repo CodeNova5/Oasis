@@ -1,6 +1,6 @@
 /**
  * @file    appsidebar.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "appsidebar.h"
 
@@ -42,7 +42,7 @@ AppSidebar::AppSidebar(QWidget *parent)
                                     Theme::Dim::SpaceLg, Theme::Dim::SpaceLg);
     brandLayout->setSpacing(2);
 
-    auto *title = new QLabel(QStringLiteral("NETGUARD"), brand);
+    auto *title = new QLabel(QStringLiteral("OASIS"), brand);
     title->setObjectName(QStringLiteral("appTitle"));
     auto *subtitle = new QLabel(QStringLiteral("Network intelligence"), brand);
     subtitle->setObjectName(QStringLiteral("appSubtitle"));

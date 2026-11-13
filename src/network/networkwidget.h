@@ -1,6 +1,6 @@
 /**
  * @file    networkwidget.h
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 
@@ -120,7 +120,7 @@ public:
     NetworkMonitor *networkMonitor() const { return m_monitor; }
     // NG-041: the latest foreground sample. It is advisory, and its
     // associationFor() refuses a sample older than its freshness window.
-    NetGuard::ForegroundSnapshot foregroundSnapshot() const { return m_foregroundSnapshot; }
+    Oasis::ForegroundSnapshot foregroundSnapshot() const { return m_foregroundSnapshot; }
     // NG-045/NG-046: re-read the provider settings saved from the Settings tab
     // so the approval dialog uses them without a restart.
     void reloadAiProviderSettings();
@@ -203,7 +203,7 @@ private:
     QHash<QString, QStringList> m_runningGroupPaths;
     // NG-041: latest advisory foreground sample, kept for the classifier and
     // future recommendation/detail views. Never an enforcement input.
-    NetGuard::ForegroundSnapshot m_foregroundSnapshot;
+    Oasis::ForegroundSnapshot m_foregroundSnapshot;
     // NG-042/NG-043: the deterministic engine and the local-only feedback it
     // consults. Feedback changes future suggestions, never a policy.
     RecommendationEngine        m_recommendationEngine;

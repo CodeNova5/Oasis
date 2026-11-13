@@ -10,13 +10,13 @@ This document records the model as it exists in the code, not the model the prod
 
 | Asset | Why it matters |
 | --- | --- |
-| Firewall rules (`NetGuard_*` in `INetFwRules`) | Blocking or allowing outbound traffic is the product's whole effect. Unauthorized writes are a firewall bypass or a denial of service. |
+| Firewall rules (`Oasis_*` in `INetFwRules`) | Blocking or allowing outbound traffic is the product's whole effect. Unauthorized writes are a firewall bypass or a denial of service. |
 | Throttle limits (QoS policies) | Same authority, lower blast radius. |
-| Policy store (`HKCU\Software\…\NetGuard/Policies`) | The authority the elevated app acts on. |
+| Policy store (`HKCU\Software\…\Oasis/Policies`) | The authority the elevated app acts on. |
 | Audit trail (`AuditEventStore`, same QSettings) | The record of what was enforced. Forgeable evidence undermines every other control. |
-| Installed executable (`C:\Program Files\NetGuard\UltimateNetGuard.exe`) | Runs elevated; whoever can replace it owns the machine. |
+| Installed executable (`C:\Program Files\Oasis\Oasis.exe`) | Runs elevated; whoever can replace it owns the machine. |
 | Destination/attribution metadata (DNS, TLS SNI, QUIC, endpoint catalog) | User browsing interests. Must never leave the machine except through the opt-in AI path. |
-| AI provider credential | Read from `NETGUARD_AI_API_KEY`; never persisted by this product. |
+| AI provider credential | Read from `OASIS_AI_API_KEY`; never persisted by this product. |
 
 ## 2. Adversary model
 
@@ -60,7 +60,7 @@ This document records the model as it exists in the code, not the model the prod
 | Decision | Where | Assessment |
 | --- | --- | --- |
 | Policy import merges by `id`, replaces an existing policy with the same id, keeps any `scope`/`action`/`source`/`targetId` the file supplies, and saves immediately | `PolicyStore::importPoliciesJson` | **Open finding F-03 (latent).** No schema validation, no "this will replace your existing policy" confirmation, no preview of what will be enforced, and no restriction on claiming `source: system`. No UI calls the function today, so the reachable injection route is F-02; the import must be hardened before any import/restore feature ships. |
-| Firewall rule import reads `appPath`/`action` and calls `blockApp`/`allowApp` with no validation and no confirmation | `FirewallWidget::onImportRules` → `FirewallManager::addRuleInternal` | **Open finding F-04.** An empty `appPath` produces a rule with **no application name**, which applies to every program on the profile: two "NetGuard" block rules become a machine-wide outbound block. The UI reports "Rules imported successfully." |
+| Firewall rule import reads `appPath`/`action` and calls `blockApp`/`allowApp` with no validation and no confirmation | `FirewallWidget::onImportRules` → `FirewallManager::addRuleInternal` | **Open finding F-04.** An empty `appPath` produces a rule with **no application name**, which applies to every program on the profile: two "Oasis" block rules become a machine-wide outbound block. The UI reports "Rules imported successfully." |
 | Exported evidence files are the only other files this product writes; none are importable | `evidenceexport`, `MainWindow` export actions | Sound: no import path exists for evidence, so export content can never re-enter enforcement. |
 
 ### TB5 — Privilege boundaries
@@ -69,7 +69,7 @@ This document records the model as it exists in the code, not the model the prod
 | --- | --- | --- |
 | The app requires administrator (`requireAdministrator`), and self-elevates with `runas` when launched unelevated | `app.manifest`, `main.cpp::elevate` | Expected for a firewall manager. The consequence is that every trust decision above is made *inside* an elevated process, so the inputs to those decisions must be treated as attacker-controlled. |
 | The installed executable is granted `WriteOther` ("Everyone: write") after install and after update | `AppInstaller::setFullPermissions`, applied to `installedExePath()` | **Open finding F-01, highest severity.** Any local user can overwrite the binary that the product then launches elevated. This is a direct local privilege escalation and it defeats every other control in this document. |
-| Install/update runs kill every process named `UltimateNetGuard.exe` | `AppInstaller::killOtherInstances` | **Accepted (low):** name-based termination lets a user kill another user's instance or a lookalike process. Annoyance, not escalation; the product is single-instance per machine by design. |
+| Install/update runs kill every process named `Oasis.exe` | `AppInstaller::killOtherInstances` | **Accepted (low):** name-based termination lets a user kill another user's instance or a lookalike process. Annoyance, not escalation; the product is single-instance per machine by design. |
 | Update check fetches a version document from a third-party pastebin and only shows a dialog with a link; it downloads and executes nothing | `updatechecker.cpp::UPDATE_URL` | **Accepted, with a recommendation:** no code execution risk beyond a misleading dialog, but the channel should be hosted on the project's own domain so a pastebin compromise cannot announce a fake release. |
 
 ### TB6 — AI assistance egress (opt-in)
@@ -78,7 +78,7 @@ This document records the model as it exists in the code, not the model the prod
 | --- | --- | --- |
 | Disabled until the user configures an endpoint and model | `AiProviderSettings::isConfigured` | Sound. |
 | HTTPS required; plain HTTP only for loopback | `AiProviderSettings::endpointProblem` | Sound; prevents accidental cleartext of local metadata. |
-| Credential comes from `NETGUARD_AI_API_KEY`, never from settings | `OpenAiCompatibleProvider::explain` | Sound. |
+| Credential comes from `OASIS_AI_API_KEY`, never from settings | `OpenAiCompatibleProvider::explain` | Sound. |
 | The request body is the redacted AI context document only; no payloads, no full paths | `aicontext`, `openaiadapter` | Sound by construction; destination names are already masked by NG-036 before the payload is built. |
 | The response is never parsed into a policy; it is shown as explanation text and approval still goes through the local dialog | `AiAssistant`, `AiApprovalDialog` | Sound: the model has no path to enforcement. |
 

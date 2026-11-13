@@ -1,7 +1,7 @@
 /**
  * @file    appheader.h
  * @brief   Persistent 60 px page header (title, monitoring pill, utilities).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 #include <QFrame>

@@ -1,4 +1,4 @@
-# Ultimate NetGuard AIO — Screens & Dialogs Specification
+# Oasis — Screens & Dialogs Specification
 
 **Target Platform:** Windows 10 / 11  
 **UI Framework:** Qt 6 Widgets / C++  
@@ -143,7 +143,7 @@ Every screen must explicitly implement these states rather than only designing f
      * Port, transport protocol, first/last observed timestamps.
      * **Attribution Source & Evidence:** Explicitly states *how* the domain was linked (e.g., `DNS query observed 4s ago` vs. `TLS SNI` vs. `No domain evidence`).
 
-> **Strict Honesty Rule:** Never perform reverse-DNS guessing to present an unverified hostname as confirmed. If NetGuard cannot establish domain association, display the raw IP address and set Confidence to `Unknown`.
+> **Strict Honesty Rule:** Never perform reverse-DNS guessing to present an unverified hostname as confirmed. If Oasis cannot establish domain association, display the raw IP address and set Confidence to `Unknown`.
 
 ---
 

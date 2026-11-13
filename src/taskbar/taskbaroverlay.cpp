@@ -1,7 +1,7 @@
 /**
  * @file    taskbaroverlay.cpp
  * @brief   Transparent taskbar overlay with dynamic auto-resizing, tight spacing, and Drag & Drop.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "taskbaroverlay.h"
 
@@ -415,7 +415,7 @@ void TaskbarOverlay::mousePressEvent(QMouseEvent *e)
         QAction *actMinimize = menu.addAction("🔽 Minimize App");
         menu.addSeparator();
 
-        QAction *actExit = menu.addAction("❌ Exit NetGuard");
+        QAction *actExit = menu.addAction("❌ Exit Oasis");
 
         connect(actZoomIn, &QAction::triggered, this, [this]() {
             if (m_fontSize < 24) {

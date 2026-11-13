@@ -1,7 +1,7 @@
 /**
  * @file    serviceresolver.cpp
  * @brief   SCM enumeration and PID -> service mapping (NG-012).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #ifndef _WIN32_WINNT
 #  define _WIN32_WINNT 0x0601
@@ -16,7 +16,7 @@
 #include <windows.h>
 #include <winsvc.h>
 
-namespace NetGuard {
+namespace Oasis {
 
 namespace {
 
@@ -200,4 +200,4 @@ void ServiceResolver::clear()
     m_lastError.clear();
 }
 
-} // namespace NetGuard
+} // namespace Oasis

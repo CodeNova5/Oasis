@@ -1,9 +1,9 @@
 WinDivert runtime for download shaping
 =====================================
 
-Ultimate NetGuard shapes inbound (download) traffic with WinDivert. The library
+Oasis shapes inbound (download) traffic with WinDivert. The library
 is resolved at runtime, so the project builds and runs without it, but download
-limits only take effect once these files are next to UltimateNetGuard.exe.
+limits only take effect once these files are next to Oasis.exe.
 
 Place the files in THIS folder; every build copies them into bin/
 automatically.
@@ -22,7 +22,7 @@ so dropping the two files into any of those works too.
 
 Requirements and notes
 ----------------------
-- NetGuard must run elevated. WinDivert installs/opens a kernel driver and
+- Oasis must run elevated. WinDivert installs/opens a kernel driver and
   fails without administrator rights.
 - Without these files the app still builds and runs: uploads are throttled by
   Windows QoS and the UI reports that download shaping is unavailable.

@@ -2,7 +2,7 @@
  * @file    attributionconfidence.h
  * @brief   Attribution confidence model (NG-035): turns evidence into
  *          Confirmed / Likely / Possible / Unknown and keeps the evidence text.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

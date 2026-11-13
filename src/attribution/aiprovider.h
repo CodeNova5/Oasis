@@ -3,7 +3,7 @@
  * @brief   Optional AI provider interface (NG-045): an opt-in adapter that may
  *          explain an NG-044 context, with the local recommendation as the
  *          always-available fallback.
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * AI is off unless the user turns it on and configures an endpoint and model.
  * The provider only ever receives the bounded, redacted `AiContext` document;

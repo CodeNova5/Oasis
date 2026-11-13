@@ -1,7 +1,7 @@
 /**
  * @file    aiapproval.cpp
  * @brief   AI approval flow (NG-046).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "aiapproval.h"
 

@@ -1,6 +1,6 @@
 /**
  * @file    windivertapi.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "windivertapi.h"
 

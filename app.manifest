@@ -4,10 +4,10 @@
   <assemblyIdentity
       version="1.0.0.0"
       processorArchitecture="*"
-      name="AliSakkaf.UltimateNetGuard.AIO"
+      name="Oasis"
       type="win32"/>
 
-  <description>Ultimate NetGuard AIO - Professional Network &amp; System Monitor</description>
+  <description>Oasis - Professional Network &amp; System Monitor</description>
 
   <!-- UAC: require administrator privileges -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">

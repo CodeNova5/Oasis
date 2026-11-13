@@ -19,7 +19,7 @@
 
 #include <string>
 
-namespace NetGuard {
+namespace Oasis {
 namespace {
 
 QString stripLongPathPrefix(QString path)
@@ -428,4 +428,4 @@ IdentityResolution ApplicationIdentityResolver::resolvePid(quint32 pid)
     return resolveExecutablePath(executablePath);
 }
 
-} // namespace NetGuard
+} // namespace Oasis

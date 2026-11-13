@@ -184,7 +184,7 @@ PolicyOrigin policyOrigin(const NetworkPolicy &policy);
 
 // ─── Policy store ──────────────────────────────────────────────────────────────
 // Persistent policy store with versioned persistence, migration, and JSON import/export.
-// Policies are stored under QSettings group "NetGuard/Policies".
+// Policies are stored under QSettings group "Oasis/Policies".
 // Version 1 format: QSettings map with key "policies" containing a QVariantMap per policy.
 // Version 2 format: JSON array under "policies" key (introduced for NG-020).
 // Malformed entries are rejected with a warning and omitted; the store never throws.

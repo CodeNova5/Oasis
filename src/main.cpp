@@ -1,11 +1,9 @@
 /**
  =============================================================================
-    UltimateNetGuard
-    Copyright © 2026  AliSakkaf  |  All Rights Reserved
+    Oasis
+    Copyright © 2026  Oasis  |  All Rights Reserved
  -----------------------------------------------------------------------------
-    Website  : https://mysterious-dev.com/
-    GitHub   : https://github.com/alisakkaf
-    Facebook : https://www.facebook.com/AliSakkaf.Dev/
+    GitHub   : https://github.com/CodeNova5/Oasis
  =============================================================================
 */
 
@@ -109,14 +107,14 @@ int main(int argc, char *argv[])
     // -- Self-install / auto-update check -------------------------------------
     // Must run BEFORE the single-instance guard: the installed copy holds the
     // shared memory lock, and this instance may need to replace it.
-    // Copies exe to Program Files\NetGuard on first run, or replaces an older
+    // Copies exe to Program Files\Oasis on first run, or replaces an older
     // build on update. Returns false when it relaunched the installed copy
     // (this instance must exit).
     if (!AppInstaller::run())
         return 0;
 
     // -- Single-instance lock (QSharedMemory) ---------------------------------
-    QSharedMemory sharedMemory("UltimateNetGuardAIO_SharedMemory");
+    QSharedMemory sharedMemory("Oasis_SharedMemory");
     if (!sharedMemory.create(1))
     {
         // Another instance is already running
@@ -133,7 +131,7 @@ int main(int argc, char *argv[])
 
     // -- Runtime icon ---------------------------------------------------------
     // Load PNG from Qt Resources (.qrc)
-    QIcon appIcon(":/icons/Ultimate_NetGuard_AIO.png");
+    QIcon appIcon(":/icons/Oasis.png");
 
     // Fallback if PNG is missing from resources
     if (appIcon.isNull()) {

@@ -1,6 +1,6 @@
 /**
  * @file    appheader.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "appheader.h"
 

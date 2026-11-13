@@ -1,7 +1,7 @@
 /**
  * @file    systemstatusbar.h
  * @brief   Persistent 28 px diagnostic strip (engine state, warnings, telemetry).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 #include <QFrame>

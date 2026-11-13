@@ -1,7 +1,7 @@
 /**
  * @file    downloadthrottle.h
  * @brief   WinDivert based inbound (download) bandwidth shaper.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

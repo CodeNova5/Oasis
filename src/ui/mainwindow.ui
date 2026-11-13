@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-    <string>Ultimate NetGuard AIO - UI TEST</string>
+    <string>Oasis - UI TEST</string>
   </property>
   <widget class="QWidget" name="centralWidget">
    <layout class="QVBoxLayout" name="rootLayout">
@@ -54,7 +54,7 @@
           </size>
          </property>
          <property name="pixmap">
-          <pixmap resource="../../resources.qrc">:/icons/Ultimate_NetGuard_AIO.png</pixmap>
+          <pixmap resource="../../resources.qrc">:/icons/Oasis.png</pixmap>
          </property>
          <property name="scaledContents">
           <bool>true</bool>
@@ -75,14 +75,14 @@
          <item>
           <widget class="QLabel" name="appTitle">
            <property name="text">
-            <string>Ultimate NetGuard AIO</string>
+            <string>Oasis</string>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QLabel" name="versionLabel">
            <property name="text">
-            <string>V1.0.0 | Ali Sakkaf</string>
+            <string>V1.0.0 | Oasis</string>
            </property>
           </widget>
          </item>
@@ -531,7 +531,7 @@
            <item>
             <widget class="QCheckBox" name="chkRunAtStartup">
              <property name="text">
-              <string>Start Ultimate NetGuard automatically when Windows starts (Registry)</string>
+              <string>Start Oasis automatically when Windows starts (Registry)</string>
              </property>
             </widget>
            </item>
@@ -701,7 +701,7 @@
            <item>
             <widget class="QLabel" name="lblAiProviderNote">
              <property name="text">
-              <string>AI is off by default. When enabled, it may explain an activity from the redacted summary shown in the approval dialog, but it can never choose or apply a policy. The API key is read from NETGUARD_AI_API_KEY when a request is sent and is never stored here.</string>
+              <string>AI is off by default. When enabled, it may explain an activity from the redacted summary shown in the approval dialog, but it can never choose or apply a policy. The API key is read from OASIS_AI_API_KEY when a request is sent and is never stored here.</string>
              </property>
              <property name="wordWrap">
               <bool>true</bool>

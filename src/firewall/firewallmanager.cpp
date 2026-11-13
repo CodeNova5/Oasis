@@ -1,6 +1,6 @@
 /**
  * @file    firewallmanager.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   Firewall Manager interacting with Windows COM API.
  * Includes Ultimate Lockdown Engine and strict Path Sanitization.
  */
@@ -170,7 +170,7 @@ bool FirewallManager::setWhitelistMode(bool enabled)
                                 QString rName = QString::fromWCharArray(bName);
                                 SysFreeString(bName);
 
-                                if (!rName.startsWith("NetGuard_")) {
+                                if (!rName.startsWith("Oasis_")) {
                                     rule->put_Enabled(VARIANT_FALSE);
                                 }
                             }
@@ -278,7 +278,7 @@ QString FirewallManager::expandAndCleanPath(const QString &path) const
     return QDir::toNativeSeparators(clean);
 }
 
-QList<FirewallRule> FirewallManager::listRules(bool netGuardOnly) const
+QList<FirewallRule> FirewallManager::listRules(bool oasisOnly) const
 {
     QList<FirewallRule> list;
     if (!m_fwRules) return list;
@@ -309,13 +309,13 @@ QList<FirewallRule> FirewallManager::listRules(bool netGuardOnly) const
             if (bName) SysFreeString(bName);
             if (bApp) SysFreeString(bApp);
 
-            bool isNG = name.startsWith("NetGuard_");
-            if (!netGuardOnly || isNG) {
+            bool isNG = name.startsWith("Oasis_");
+            if (!oasisOnly || isNG) {
                 FirewallRule r;
                 r.name = name;
                 r.appPath = app;
                 r.realAppPath = expandAndCleanPath(app);
-                r.isNetGuard = isNG;
+                r.isOasis = isNG;
 
                 VARIANT_BOOL bEn;
                 rule->get_Enabled(&bEn);
@@ -378,9 +378,9 @@ bool FirewallManager::addRuleInternal(const QString &appPath, const QString &nam
     // The description carries the policy id so reconciliation can attribute the
     // rule; a rule created from the Firewall tab keeps the generic text.
     BSTR bD = Q2B(policyId.isEmpty()
-                      ? QStringLiteral("Managed by Ultimate NetGuard AIO")
-                      : QStringLiteral("NetGuard policy %1").arg(policyId));
-    BSTR bG = Q2B("Ultimate NetGuard AIO");
+                      ? QStringLiteral("Managed by Oasis")
+                      : QStringLiteral("Oasis policy %1").arg(policyId));
+    BSTR bG = Q2B("Oasis");
     BSTR bA = nativePath.isEmpty() ? nullptr : Q2B(nativePath);
 
     rule->put_Name(bN);

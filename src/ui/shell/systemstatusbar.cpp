@@ -1,6 +1,6 @@
 /**
  * @file    systemstatusbar.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "systemstatusbar.h"
 

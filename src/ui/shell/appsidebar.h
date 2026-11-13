@@ -1,7 +1,7 @@
 /**
  * @file    appsidebar.h
  * @brief   Expanded 232 px navigation sidebar for the application shell.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 #include <QFrame>

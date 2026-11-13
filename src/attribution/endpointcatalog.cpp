@@ -1,6 +1,6 @@
 /**
  * @file    endpointcatalog.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "endpointcatalog.h"
 
@@ -18,7 +18,7 @@
 
 namespace {
 
-const char *const kSettingsGroup = "NetGuard/EndpointCatalog";
+const char *const kSettingsGroup = "Oasis/EndpointCatalog";
 const char *const kSettingsDocumentKey = "document";
 
 QString lowerTrimmed(const QString &value)

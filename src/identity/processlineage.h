@@ -17,7 +17,7 @@
 #include <QString>
 #include <QVector>
 
-namespace NetGuard {
+namespace Oasis {
 
 // ─── One tracked process instance ───────────────────────────────────────────
 struct ProcessLineageRecord
@@ -102,4 +102,4 @@ private:
     quint64 m_reuseCount = 0;
 };
 
-} // namespace NetGuard
+} // namespace Oasis

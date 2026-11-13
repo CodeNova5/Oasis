@@ -1,7 +1,7 @@
 /**
  * @file    aicontext.cpp
  * @brief   Structured AI context (NG-044).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "aicontext.h"
 
@@ -374,7 +374,7 @@ bool AiContextPayload::fits() const
 
 QString AiContext::formatToken()
 {
-    return QStringLiteral("netguard.ai-context");
+    return QStringLiteral("oasis.ai-context");
 }
 
 bool AiContext::isEmpty() const

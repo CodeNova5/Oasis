@@ -15,7 +15,7 @@
 
 #include <algorithm>
 
-namespace NetGuard {
+namespace Oasis {
 namespace {
 
 const int    kSchemaVersion   = 1;
@@ -1045,4 +1045,4 @@ void ProcessGroupManager::save() const
     settings.endGroup();
 }
 
-} // namespace NetGuard
+} // namespace Oasis

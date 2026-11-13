@@ -20,7 +20,7 @@
 
 #include <string>
 
-namespace NetGuard {
+namespace Oasis {
 namespace {
 
 // pvTypePara for CERT_NAME_ATTR_TYPE is an ANSI OID string, not a wide one.
@@ -338,4 +338,4 @@ PublisherEvidence PublisherResolver::verify(const QString &canonicalPath)
     return trust.evidence;
 }
 
-} // namespace NetGuard
+} // namespace Oasis

@@ -1,6 +1,6 @@
 /**
  * @file    downloadthrottle.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "downloadthrottle.h"
 
@@ -289,7 +289,7 @@ void DownloadShaper::run()
             emit availabilityChecked(false,
                 QStringLiteral("WinDivert could not start (error %1). WinDivert.dll and "
                                "WinDivert64.sys must sit next to the application, and "
-                               "NetGuard must run as administrator.").arg(GetLastError()));
+                               "Oasis must run as administrator.").arg(GetLastError()));
         } else {
             api.close(probe);
             emit availabilityChecked(true, QString());
@@ -453,7 +453,7 @@ void DownloadShaper::run()
                 const DWORD error = GetLastError();
                 reportError(QStringLiteral("WinDivert could not start the download shaper "
                                            "(error %1). WinDivert.dll and WinDivert64.sys must "
-                                           "sit next to the application, and NetGuard must run "
+                                           "sit next to the application, and Oasis must run "
                                            "as administrator.").arg(error));
                 retryAt = elapsed() + RetryAfterErrorMs;
                 WaitForSingleObject(static_cast<HANDLE>(m_wakeEvent), 200);

@@ -1,7 +1,7 @@
 /**
  * @file    recommendationdialog.cpp
  * @brief   Recommendation and local feedback view (NG-042/NG-043).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "recommendationdialog.h"
 

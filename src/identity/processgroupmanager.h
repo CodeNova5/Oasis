@@ -26,7 +26,7 @@
 
 #include "network/policy.h"
 
-namespace NetGuard {
+namespace Oasis {
 
 // ─── Membership types ───────────────────────────────────────────────────────
 enum class GroupMemberType : int {
@@ -205,7 +205,7 @@ private:
     QHash<quint32, GroupBinding> m_bindings;
 };
 
-} // namespace NetGuard
+} // namespace Oasis
 
-Q_DECLARE_METATYPE(NetGuard::ProcessGroup)
-Q_DECLARE_METATYPE(QList<NetGuard::ProcessGroup>)
+Q_DECLARE_METATYPE(Oasis::ProcessGroup)
+Q_DECLARE_METATYPE(QList<Oasis::ProcessGroup>)

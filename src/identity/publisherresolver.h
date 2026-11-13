@@ -20,7 +20,7 @@
 
 #include "network/policy.h"
 
-namespace NetGuard {
+namespace Oasis {
 
 // Evidence gathered from the embedded Authenticode signature.
 struct PublisherEvidence
@@ -60,6 +60,6 @@ private:
     QHash<QString, PublisherEvidence> m_cache;
 };
 
-} // namespace NetGuard
+} // namespace Oasis
 
-Q_DECLARE_METATYPE(NetGuard::PublisherEvidence)
+Q_DECLARE_METATYPE(Oasis::PublisherEvidence)

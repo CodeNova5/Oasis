@@ -1,6 +1,6 @@
 /**
  * @file    firewallmanager.h
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   Firewall Manager interacting with Windows COM API.
  */
 #pragma once
@@ -29,14 +29,14 @@ struct FirewallRule {
     QString                appPath;
     QString                realAppPath; // Clean native path used for icon extraction
     // Rule description. A policy-applied rule stores its policy id here as
-    // "NetGuard policy <id>", which is how reconciliation tells it apart from
+    // "Oasis policy <id>", which is how reconciliation tells it apart from
     // a rule the user created from the Firewall tab.
     QString                description;
     bool                   enabled   = false;
     NET_FW_RULE_DIRECTION_ direction = NET_FW_RULE_DIR_OUT;
     NET_FW_ACTION_         action    = NET_FW_ACTION_ALLOW;
     NET_FW_IP_PROTOCOL_    protocol  = static_cast<NET_FW_IP_PROTOCOL_>(NET_FW_IP_PROTOCOL_ANY);
-    bool                   isNetGuard= false;
+    bool                   isOasis= false;
 };
 
 class FirewallManager : public QObject
@@ -69,7 +69,7 @@ public:
     bool isBlocked          (const QString &appPath) const;
 
     // Rule retrieval and parsing
-    QList<FirewallRule> listRules(bool netGuardOnly) const;
+    QList<FirewallRule> listRules(bool oasisOnly) const;
     QString resolveShortcut(const QString &path) const;
 
     QString lastError() const { return m_lastError; }

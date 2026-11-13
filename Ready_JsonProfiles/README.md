@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Curated JSON Firewall Rule Profiles for Ultimate NetGuard AIO**  
+**Curated JSON Firewall Rule Profiles for Oasis**  
 *ملفات قواعد جدار حماية احترافية جاهزة للاستيراد بنقرة واحدة*
 
 </div>
@@ -11,10 +11,10 @@
 
 ## 📖 English Guide: How to Import Profiles
 
-Ultimate NetGuard AIO allows you to import complete, pre-configured firewall security profiles with a single click.
+Oasis allows you to import complete, pre-configured firewall security profiles with a single click.
 
 ### 📥 Import Instructions:
-1. Open **Ultimate NetGuard AIO**.
+1. Open **Oasis**.
 2. Navigate to the **Firewall** tab (🛡️).
 3. Click the **📥 Import** button located at the top action bar.
 4. Browse to this folder (`Ready_JsonProfiles/`) and select any `.json` profile that fits your use case.
@@ -37,10 +37,10 @@ Ultimate NetGuard AIO allows you to import complete, pre-configured firewall sec
 
 ## 📖 الدليل العربي: كيفية استيراد القواعد
 
-يتيح لك برنامج Ultimate NetGuard AIO استيراد ملفات قواعد جدار حماية جاهزة ومُعنوتة حسب نوع استخدامك بنقرة واحدة فقط.
+يتيح لك برنامج Oasis استيراد ملفات قواعد جدار حماية جاهزة ومُعنوتة حسب نوع استخدامك بنقرة واحدة فقط.
 
 ### 📥 خطوات الاستيراد:
-1. افتح برنامج **Ultimate NetGuard AIO**.
+1. افتح برنامج **Oasis**.
 2. انتقل إلى تبويب **جدار الحماية** (🛡️ Firewall).
 3. اضغط على زر **📥 استيراد (Import)** في شريط الأزرار العلوي.
 4. حدد المجلد الحقيقي (`Ready_JsonProfiles/`) واختر أي ملف `.json` يناسب احتياجك.
@@ -50,7 +50,7 @@ Ultimate NetGuard AIO allows you to import complete, pre-configured firewall sec
 
 <div align="center">
 
-**Made with ❤️ by Ali Sakkaf**  
-*Website:* [alisakkaf.com](https://alisakkaf.com) | *GitHub:* [github.com/alisakkaf/Ultimate-NetGuard-AIO](https://github.com/alisakkaf/Ultimate-NetGuard-AIO)
+**Made with ❤️ by Oasis**  
+*GitHub:* [github.com/CodeNova5/Oasis](https://github.com/CodeNova5/Oasis)
 
 </div>

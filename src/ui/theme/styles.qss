@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Ultimate NetGuard AIO — Global Fluent stylesheet
+   Oasis — Global Fluent stylesheet
    --------------------------------------------------------------------------
    Authored against design tokens from src/ui/theme/*.h. Every `@token` is
    substituted by ThemeManager for the active mode (dark / light), so this file

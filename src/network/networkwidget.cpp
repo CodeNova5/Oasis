@@ -1,6 +1,6 @@
 /**
  * @file    networkwidget.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "networkwidget.h"
 #include "ui_networkwidget.h"
@@ -185,8 +185,8 @@ PolicyTarget NetworkWidget::policyTargetFor(quint32 pid, const QString &processN
     // still gets a group-scoped option.
     QString effectiveGroup = groupId;
     if (effectiveGroup.isEmpty() && m_monitor && !executablePath.isEmpty()) {
-        for (const NetGuard::ProcessGroup &group : m_monitor->processGroups()) {
-            if (group.contains(NetGuard::GroupMemberType::ExecutablePath, executablePath)) {
+        for (const Oasis::ProcessGroup &group : m_monitor->processGroups()) {
+            if (group.contains(Oasis::GroupMemberType::ExecutablePath, executablePath)) {
                 effectiveGroup = group.id;
                 break;
             }
@@ -195,16 +195,16 @@ PolicyTarget NetworkWidget::policyTargetFor(quint32 pid, const QString &processN
     target.groupId = effectiveGroup;
 
     if (!effectiveGroup.isEmpty() && m_monitor) {
-        for (const NetGuard::ProcessGroup &group : m_monitor->processGroups()) {
+        for (const Oasis::ProcessGroup &group : m_monitor->processGroups()) {
             if (group.id != effectiveGroup) continue;
             target.groupName = group.name;
-            for (const NetGuard::GroupMember &member : group.members) {
-                if (member.type == NetGuard::GroupMemberType::ExecutablePath &&
+            for (const Oasis::GroupMember &member : group.members) {
+                if (member.type == Oasis::GroupMemberType::ExecutablePath &&
                     member.value.compare(executablePath, Qt::CaseInsensitive) == 0) {
                     target.publisher = member.publisher;
                     if (target.processName.isEmpty() && !member.displayName.isEmpty())
                         target.processName = member.displayName;
-                } else if (member.type == NetGuard::GroupMemberType::Service &&
+                } else if (member.type == Oasis::GroupMemberType::Service &&
                            target.serviceName.isEmpty()) {
                     target.serviceName = member.value;
                 }
@@ -316,9 +316,9 @@ ApplicationDetail::Input NetworkWidget::detailInputFor(quint32 pid,
         input.usage.txBytesPerSecond = snapshot.txBytesPerSecond;
         input.usage.packets = snapshot.packets;
         input.usage.foreground =
-            snapshot.foreground == NetGuard::ForegroundAssociation::ForegroundApp;
+            snapshot.foreground == Oasis::ForegroundAssociation::ForegroundApp;
         input.usage.foregroundHelper =
-            snapshot.foreground == NetGuard::ForegroundAssociation::ForegroundChild;
+            snapshot.foreground == Oasis::ForegroundAssociation::ForegroundChild;
 
         // NG-031/NG-032: the names behind each remote address the row is
         // connected to. Expired records are already filtered by the monitor.
@@ -348,9 +348,9 @@ ApplicationDetail::Input NetworkWidget::detailInputFor(quint32 pid,
     // Other live members of the same activity group, which is how the user sees
     // the helpers and services that act on this application's behalf.
     if (!input.groupId.isEmpty() && m_monitor) {
-        for (const NetGuard::ProcessGroup &group : m_monitor->processGroups()) {
+        for (const Oasis::ProcessGroup &group : m_monitor->processGroups()) {
             if (group.id != input.groupId) continue;
-            for (const NetGuard::GroupMember &member : group.members) {
+            for (const Oasis::GroupMember &member : group.members) {
                 if (member.observedPid == 0 || member.observedPid == input.pid) continue;
                 ApplicationDetail::RelatedProcess related;
                 related.pid = member.observedPid;
@@ -586,12 +586,12 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     ui->setupUi(this);
     // ── Ensure Windows Firewall Inbound Rule for Application Traffic ──
     QString appPath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
-    QProcess::execute("netsh", {"advfirewall", "firewall", "add", "rule", "name=NetGuardAIO", "dir=in", "action=allow", "program=" + appPath, "enable=yes"});
+    QProcess::execute("netsh", {"advfirewall", "firewall", "add", "rule", "name=Oasis", "dir=in", "action=allow", "program=" + appPath, "enable=yes"});
 
     qRegisterMetaType<QList<CapturedPacketInfo>>("QList<CapturedPacketInfo>");
-    qRegisterMetaType<NetGuard::ServicePidMap>("NetGuard::ServicePidMap");
-    qRegisterMetaType<QList<NetGuard::ProcessGroup>>("QList<NetGuard::ProcessGroup>");
-    qRegisterMetaType<NetGuard::ForegroundSnapshot>("NetGuard::ForegroundSnapshot");
+    qRegisterMetaType<Oasis::ServicePidMap>("Oasis::ServicePidMap");
+    qRegisterMetaType<QList<Oasis::ProcessGroup>>("QList<Oasis::ProcessGroup>");
+    qRegisterMetaType<Oasis::ForegroundSnapshot>("Oasis::ForegroundSnapshot");
 
     m_model = new NetworkTreeModel(this);
     m_proxy = new QSortFilterProxyModel(this);
@@ -765,7 +765,7 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // NG-041: the foreground sample is advisory and stamped with its sample
     // time; it is kept for the classifier and future recommendation views.
     connect(m_monitor, &NetworkMonitor::foregroundSnapshotReady, this,
-            [this](const NetGuard::ForegroundSnapshot &snapshot) {
+            [this](const Oasis::ForegroundSnapshot &snapshot) {
         m_foregroundSnapshot = snapshot;
     }, Qt::QueuedConnection);
 
@@ -819,14 +819,14 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // policies to whatever is running now; the coordinator skips pairs it has
     // already applied, so a PID-only refresh does not churn firewall or QoS.
     connect(m_monitor, &NetworkMonitor::groupSnapshotReady, this,
-            [this](const QList<NetGuard::ProcessGroup> &groups) {
+            [this](const QList<Oasis::ProcessGroup> &groups) {
         // Remember what is running in each group: scheduled activation needs the
         // paths later, when no group snapshot is being delivered.
         m_runningGroupPaths.clear();
-        for (const NetGuard::ProcessGroup &group : groups) {
+        for (const Oasis::ProcessGroup &group : groups) {
             QStringList running;
-            for (const NetGuard::GroupMember &member : group.members) {
-                if (member.type == NetGuard::GroupMemberType::ExecutablePath &&
+            for (const Oasis::GroupMember &member : group.members) {
+                if (member.type == Oasis::GroupMemberType::ExecutablePath &&
                     member.observedPid != 0) {
                     running << member.value;
                 }
@@ -1627,7 +1627,7 @@ void NetworkWidget::refreshDashboard()
         consumer.rxBytesPerSecond = snap.rxBytesPerSecond;
         consumer.txBytesPerSecond = snap.txBytesPerSecond;
         if (snap.activity.isKnown()) consumer.activity = snap.activity.summary();
-        consumer.foreground = snap.foreground != NetGuard::ForegroundAssociation::None;
+        consumer.foreground = snap.foreground != Oasis::ForegroundAssociation::None;
 
         if (!consumer.path.isEmpty()) {
             consumer.blocked = m_firewall && m_firewall->isBlocked(consumer.path);

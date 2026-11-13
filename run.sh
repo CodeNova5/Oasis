@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Builds and launches Ultimate NetGuard with a Qt kit and the MinGW toolchain
+# Builds and launches Oasis with a Qt kit and the MinGW toolchain
 # that belong together. Override the automatic selection with QT_ROOT (the Qt
 # kit) or MINGW_ROOT (the toolchain root, i.e. the folder containing bin/).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_FILE="$SCRIPT_DIR/UltimateNetGuard.pro"
-APP_FILE="$SCRIPT_DIR/bin/UltimateNetGuard.exe"
+PROJECT_FILE="$SCRIPT_DIR/Oasis.pro"
+APP_FILE="$SCRIPT_DIR/bin/Oasis.exe"
 
 # ─── Qt kit ─────────────────────────────────────────────────────────────────
 # Newest MinGW kit under /c/Qt unless QT_ROOT says otherwise.
@@ -138,7 +138,7 @@ if [[ ! -f "$APP_FILE" ]]; then
     exit 1
 fi
 
-echo "Launching Ultimate NetGuard as administrator..."
+echo "Launching Oasis as administrator..."
 if command -v cygpath >/dev/null 2>&1; then
     APP_WINDOWS_PATH="$(cygpath -w "$APP_FILE")"
 else

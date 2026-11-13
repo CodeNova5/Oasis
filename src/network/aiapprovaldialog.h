@@ -3,7 +3,7 @@
  * @brief   AI approval flow (NG-046): review the local recommendation and an
  *          optional AI explanation, then approve or reject one policy with an
  *          explicit scope and duration.
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * Nothing is sent to a provider until the user presses the send button, and the
  * exact bounded context is shown first. Nothing is written until the user

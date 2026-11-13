@@ -1,6 +1,6 @@
 /**
  * @file    recommendationengine.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "recommendationengine.h"
 

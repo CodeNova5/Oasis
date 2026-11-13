@@ -3,7 +3,7 @@
  * @brief   Deterministic local recommendations (NG-042): turns an NG-040
  *          activity classification into a suggested response with its evidence,
  *          confidence, expected effect, and reversal action.
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * A recommendation is advice only. This engine has no enforcement path, every
  * result requires the user's approval, and the policy it offers is a seed the

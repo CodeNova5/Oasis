@@ -7,7 +7,7 @@
 
 #include <QString>
 
-// Name of a NetGuard firewall rule for one executable and one rule variant
+// Name of a Oasis firewall rule for one executable and one rule variant
 // ("BLOCK_OUT", "BLOCK_IN", "ALLOW_OUT", "ALLOW_IN"). The full executable path
 // is hashed into the name, so two files with the same base name in different
 // folders never share (or overwrite) each other's rules.

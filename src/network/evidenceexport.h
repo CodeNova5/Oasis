@@ -31,7 +31,7 @@
 namespace EvidenceExport {
 
 constexpr int kSchemaVersion = 1;
-constexpr const char *kAttributionFormat = "netguard.attribution";
+constexpr const char *kAttributionFormat = "oasis.attribution";
 
 /// One CSV field: quoted only when it has to be, with embedded quotes doubled.
 QString csvField(const QString &value);

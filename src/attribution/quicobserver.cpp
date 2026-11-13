@@ -1,6 +1,6 @@
 /**
  * @file    quicobserver.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "quicobserver.h"
 

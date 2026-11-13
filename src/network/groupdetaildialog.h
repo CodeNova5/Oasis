@@ -39,7 +39,7 @@ public:
     QString groupId() const { return m_groupId; }
 
 private slots:
-    void onSnapshot(const QList<NetGuard::ProcessGroup> &groups);
+    void onSnapshot(const QList<Oasis::ProcessGroup> &groups);
     void onRemoveSelected();
     void onAddExecutable();
     void onRename();
@@ -49,19 +49,19 @@ protected:
     void showEvent(QShowEvent *event) override;
 
 private:
-    void applyGroup(const NetGuard::ProcessGroup &group);
+    void applyGroup(const Oasis::ProcessGroup &group);
     void refreshTable();
     void sizeTableToMembers();
     void refreshSummary();
     void showMemberDetail();
-    QString memberCategoryText(const NetGuard::GroupMember &member) const;
+    QString memberCategoryText(const Oasis::GroupMember &member) const;
     void setStatus(const QString &message);
     int  selectedRow() const;
 
     NetworkMonitor *m_monitor = nullptr;
     BandwidthGuard *m_bandwidthGuard = nullptr;
     QString         m_groupId;
-    NetGuard::ProcessGroup m_group;
+    Oasis::ProcessGroup m_group;
     bool            m_active = true;
 
     QLineEdit    *m_nameEdit   = nullptr;

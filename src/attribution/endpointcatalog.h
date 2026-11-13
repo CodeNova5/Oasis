@@ -2,7 +2,7 @@
  * @file    endpointcatalog.h
  * @brief   Versioned local rules linking publisher, executable identity,
  *          service, and endpoint evidence to activity categories (NG-034).
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * The catalog is a classification aid only. It contains no policy action and no
  * enforcement channel, so loading or importing a catalog can never block, shape,
@@ -105,7 +105,7 @@ Q_DECLARE_METATYPE(CatalogMatch)
  * persisted user/imported rules, `save()` writes only those local rules, and
  * `importJson()` atomically replaces imported rules from a versioned document.
  *
- * JSON documents use `format` = "netguard.endpoint-catalog" and schema version
+ * JSON documents use `format` = "oasis.endpoint-catalog" and schema version
  * 1. A document from a newer schema, a malformed rule, a duplicate id, or an
  * invalid domain/address pattern is rejected as a whole; the current catalog is
  * left untouched.
@@ -154,6 +154,6 @@ namespace EndpointCatalogContract {
 constexpr int kSchemaVersion = 1;
 constexpr int kMaxRules = 500;
 constexpr int kMaxRulesPerJson = 2000;
-const char *const kFormat = "netguard.endpoint-catalog";
+const char *const kFormat = "oasis.endpoint-catalog";
 const char *const kBuiltinVersion = "2026.11.1";
 }

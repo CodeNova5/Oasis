@@ -1,6 +1,6 @@
 /*
  =============================================================================
-    Copyright (c) 2026  AliSakkaf  |  All Rights Reserved
+    Copyright (c) 2026  Oasis  |  All Rights Reserved
  =============================================================================
 */
 #include "updatechecker.h"
@@ -25,7 +25,7 @@
 #include <QDebug>
 
 static const char *UPDATE_URL      = "https://pastebin.com/raw/QHESkZXK";
-static const char *DOWNLOAD_PAGE   = "https://alisakkaf.com/en/windows-software/ultimate-netguard-aio-network-monitor-firewall-manager";
+static const char *DOWNLOAD_PAGE   = "https://github.com/CodeNova5/Oasis/releases/latest";
 
 // ============================================================================
 //  UpdateChecker
@@ -151,7 +151,7 @@ UpdateDialog::UpdateDialog(const QString &remoteVersion,
     titleRow->setContentsMargins(0, 0, 0, 0);
 
     QLabel *icon = new QLabel;
-    icon->setPixmap(QPixmap(":/icons/Ultimate_NetGuard_AIO.png").scaled(36, 36, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    icon->setPixmap(QPixmap(":/icons/Oasis.png").scaled(36, 36, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     icon->setFixedSize(36, 36);
     titleRow->addWidget(icon);
     titleRow->addSpacing(10);
@@ -180,7 +180,7 @@ UpdateDialog::UpdateDialog(const QString &remoteVersion,
 
     // ── Subtitle ──
     QLabel *subtitle = new QLabel(
-        "A new version of Ultimate NetGuard AIO is available.\n"
+        "A new version of Oasis is available.\n"
         "This update may include new features, improvements, and bug fixes.");
     subtitle->setObjectName("updateSubtitle");
     subtitle->setWordWrap(true);

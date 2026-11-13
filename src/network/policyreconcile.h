@@ -43,7 +43,7 @@ struct FirewallObservation
 
 struct PolicyObservation
 {
-    QList<FirewallObservation> firewallRules;  // NetGuard rules only
+    QList<FirewallObservation> firewallRules;  // Oasis rules only
     QSet<QString> throttledPaths;              // normalized
     QSet<QString> autoAppliedPaths;            // subset the product may remove
     QHash<QString, QString> throttlePolicyIds; // normalized path -> policy id
@@ -81,7 +81,7 @@ struct ReconciliationReport
 
 Q_DECLARE_METATYPE(ReconciliationReport)
 
-// "NetGuard policy <id>" -> "<id>"; anything else -> empty.
+// "Oasis policy <id>" -> "<id>"; anything else -> empty.
 QString reconciledPolicyId(const QString &ruleDescription);
 
 // Pure plan: compares active policies (with the running paths of any groups

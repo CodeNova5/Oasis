@@ -1,6 +1,6 @@
 /**
  * @file    firewallwidget.h
- * @author  Ali Sakkaf
+ * @author  Oasis
  * @brief   UI interactions for Firewall. Supports Extended Selection and Shortcuts.
  */
 #pragma once
@@ -33,8 +33,8 @@ private slots:
     void onCoreFilter(const QString &text);
 
     // Mouse Interactions
-    void onNetGuardContextMenu(const QPoint &pos);
-    void onNetGuardClicked(const QModelIndex &idx);
+    void onOasisContextMenu(const QPoint &pos);
+    void onOasisClicked(const QModelIndex &idx);
 
     void onSysContextMenu(const QPoint &pos);
     void onSysClicked(const QModelIndex &idx);

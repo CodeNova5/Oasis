@@ -2,7 +2,7 @@
  * @file    attributionprivacy.h
  * @brief   Attribution privacy controls (NG-036): which metadata is collected,
  *          how long it is kept, and how destinations are redacted on export.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

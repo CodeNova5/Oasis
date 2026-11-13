@@ -2,7 +2,7 @@
  * @file    packetparser.h
  * @brief   Wire-format structs, ParsedPacket with Q_DECLARE_METATYPE,
  *          ConnectionKey (FNV hash), and PacketParser namespace.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #pragma once
 

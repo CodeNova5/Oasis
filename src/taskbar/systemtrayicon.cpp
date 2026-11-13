@@ -1,7 +1,7 @@
 /**
  * @file    systemtrayicon.cpp
  * @brief   System tray icon using the real app icon with dynamic activity indicator.
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "systemtrayicon.h"
 #include <QStyle>
@@ -18,9 +18,9 @@ SystemTrayIcon::SystemTrayIcon(QObject *parent)
     m_menu->setObjectName("trayMenu");
 
     // English menu actions
-    QAction *actShow  = m_menu->addAction("Show NetGuard");
+    QAction *actShow  = m_menu->addAction("Show Oasis");
     m_menu->addSeparator();
-    QAction *actQuit  = m_menu->addAction("Quit NetGuard");
+    QAction *actQuit  = m_menu->addAction("Quit Oasis");
 
     connect(actShow, &QAction::triggered, this, &SystemTrayIcon::showRequested);
     connect(actQuit, &QAction::triggered, this, &SystemTrayIcon::quitRequested);
@@ -30,7 +30,7 @@ SystemTrayIcon::SystemTrayIcon(QObject *parent)
     m_tray->setContextMenu(m_menu);
 
     // Initial English tooltip
-    m_tray->setToolTip("Ultimate NetGuard AIO [Idle]");
+    m_tray->setToolTip("Oasis [Idle]");
 }
 
 void SystemTrayIcon::setSpeed(quint64 rxBps, quint64 txBps)
@@ -47,7 +47,7 @@ void SystemTrayIcon::setSpeed(quint64 rxBps, quint64 txBps)
 
     // Update the English tooltip with formatted speeds.
     // Using a clean, professional format.
-    m_tray->setToolTip(QString("NetGuard Status:\n"
+    m_tray->setToolTip(QString("Oasis Status:\n"
                                "Download: %1\n"
                                "Upload:   %2")
                            .arg(fmt(rxBps), fmt(txBps)));
@@ -59,7 +59,7 @@ QIcon SystemTrayIcon::buildIcon(quint64 rxBps, quint64 txBps)
     // The previous code used QApplication::windowIcon(), which can be null.
     // We now load it directly from the resources for guaranteed results.
     // We use the PNG version for better inline handling within Qt.
-    QIcon appIcon(":/icons/Ultimate_NetGuard_AIO.png");
+    QIcon appIcon(":/icons/Oasis.png");
 
     // Fallback: If PNG fails, try the ICO version
     if (appIcon.isNull()) {

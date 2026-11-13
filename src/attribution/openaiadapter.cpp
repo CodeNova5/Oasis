@@ -1,7 +1,7 @@
 /**
  * @file    openaiadapter.cpp
  * @brief   Opt-in OpenAI-compatible provider adapter (NG-045).
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "openaiadapter.h"
 
@@ -40,7 +40,7 @@ QString explanationFrom(const QJsonValue &content)
 
 QString OpenAiCompatibleProvider::apiKeyEnvironmentVariable()
 {
-    return QStringLiteral("NETGUARD_AI_API_KEY");
+    return QStringLiteral("OASIS_AI_API_KEY");
 }
 
 QString OpenAiCompatibleProvider::systemPrompt()
@@ -110,7 +110,7 @@ AiProviderResponse OpenAiCompatibleProvider::explain(
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("UltimateNetGuard"));
+                      QStringLiteral("Oasis"));
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Authorization", "Bearer " + apiKey);
 

@@ -1,6 +1,6 @@
 /**
  * @file    attributionconfidence.cpp
- * @author  Ali Sakkaf
+ * @author  Oasis
  */
 #include "attributionconfidence.h"
 

@@ -33,7 +33,7 @@
      </property>
      <widget class="QWidget" name="tabCore">
       <attribute name="title">
-       <string>  NetGuard Core  </string>
+       <string>  Oasis Core  </string>
       </attribute>
       <layout class="QVBoxLayout" name="verticalLayoutCore">
        <property name="spacing">

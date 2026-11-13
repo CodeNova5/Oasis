@@ -1,7 +1,7 @@
 /**
  * @file    windivertapi.h
  * @brief   Minimal WinDivert 2.x ABI surface, resolved at runtime.
- * @author  Ali Sakkaf
+ * @author  Oasis
  *
  * The declarations below mirror include/windivert.h from WinDivert 2.2. They
  * live here so the project builds without the WinDivert SDK: WinDivert.dll is
