@@ -173,7 +173,7 @@ OverviewPage::OverviewPage(QWidget *parent)
     middleRow->setSpacing(Theme::Dim::SpaceLg);
 
     QFrame *chartCard = createCard(QStringLiteral("Network traffic"),
-                                   QStringLiteral("Last 60 minutes"));
+                                   QStringLiteral("Last 30 seconds"));
     m_chart = new TrafficChart(chartCard);
     m_chart->setMinimumHeight(190);
     static_cast<QVBoxLayout *>(chartCard->layout())->addWidget(m_chart, 1);
@@ -404,7 +404,7 @@ void OverviewPage::setTrafficSeries(const QVector<Overview::TrafficPoint> &point
 {
     m_series = points;
     if (!m_series.isEmpty()) {
-        const QDateTime cutoff = m_series.last().timestamp.addSecs(-3600);
+        const QDateTime cutoff = m_series.last().timestamp.addSecs(-30);
         while (!m_series.isEmpty() && m_series.first().timestamp.isValid()
                && m_series.first().timestamp < cutoff)
             m_series.removeFirst();
@@ -414,9 +414,9 @@ void OverviewPage::setTrafficSeries(const QVector<Overview::TrafficPoint> &point
 
 void OverviewPage::appendTrafficPoint(const Overview::TrafficPoint &point)
 {
-    // Keep exactly the last hour, matching the card's subtitle.
+    // Keep exactly the last 30 seconds, matching the card's subtitle.
     m_series.append(point);
-    const QDateTime cutoff = point.timestamp.addSecs(-3600);
+    const QDateTime cutoff = point.timestamp.addSecs(-30);
     while (!m_series.isEmpty() && m_series.first().timestamp.isValid()
            && m_series.first().timestamp < cutoff)
         m_series.removeFirst();

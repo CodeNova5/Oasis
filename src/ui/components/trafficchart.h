@@ -1,6 +1,6 @@
 /**
  * @file    trafficchart.h
- * @brief   Dual-series download/upload area chart for the last hour
+ * @brief   Dual-series download/upload area chart for the last five minutes
  *          (SCREENS_SPEC.md Screen 01, DESIGN_SYSTEM.md §2.2).
  *
  * Custom-painted so the chart follows the theme tokens and stays readable at
@@ -51,7 +51,6 @@ protected:
 private:
     void paintEmpty(QPainter &painter);
     void paintSeries(QPainter &painter);
-    static QString formatRate(double bytesPerSecond);
 
     QVector<Overview::TrafficPoint> m_points;
     QString m_placeholder;

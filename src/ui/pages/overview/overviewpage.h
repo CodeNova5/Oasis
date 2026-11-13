@@ -86,7 +86,7 @@ public:
                         quint64 rxBytesPerSecond, quint64 txBytesPerSecond);
     void setActiveAppCount(int count);
 
-    /// The last 60 minutes. Older samples are dropped when this is called.
+    /// The last 30 seconds. Older samples are dropped when this is called.
     void setTrafficSeries(const QVector<Overview::TrafficPoint> &points);
     void appendTrafficPoint(const Overview::TrafficPoint &point);
 
