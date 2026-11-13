@@ -31,6 +31,11 @@ SOURCES += \
     src/ui/shell/appsidebar.cpp \
     src/ui/shell/appheader.cpp \
     src/ui/shell/systemstatusbar.cpp \
+    src/ui/components/statusbadge.cpp \
+    src/ui/components/metriccard.cpp \
+    src/ui/components/emptystatewidget.cpp \
+    src/ui/components/trafficchart.cpp \
+    src/ui/pages/overview/overviewpage.cpp \
     src/core/updatechecker.cpp \
     src/core/appinstaller.cpp \
     src/core/windowsicon.cpp \
@@ -106,6 +111,11 @@ HEADERS += \
     src/ui/shell/appsidebar.h \
     src/ui/shell/appheader.h \
     src/ui/shell/systemstatusbar.h \
+    src/ui/components/statusbadge.h \
+    src/ui/components/metriccard.h \
+    src/ui/components/emptystatewidget.h \
+    src/ui/components/trafficchart.h \
+    src/ui/pages/overview/overviewpage.h \
     src/core/updatechecker.h \
     src/core/appinstaller.h \
     src/core/windowsicon.h \
@@ -187,6 +197,8 @@ INCLUDEPATH += \
     src/core \
     src/ui/theme \
     src/ui/shell \
+    src/ui/components \
+    src/ui/pages/overview \
     src/network \
     src/firewall \
     src/hardware \

@@ -695,3 +695,118 @@ QScrollArea, QScrollArea > QWidget > QWidget {
     background-color: transparent;
     border: none;
 }
+
+/* ── Overview (Screen 01) ───────────────────────────────────────────────── */
+QFrame#MetricCard:focus {
+    border: 1px solid @focus-ring;
+}
+
+QLabel[uiRole="kpiLabel"] {
+    font-size: @font-size-secondary;
+    font-weight: 600;
+    color: @text-secondary;
+}
+
+QLabel[uiRole="statValue"] {
+    font-size: @font-size-page-title;
+    font-weight: 600;
+    color: @text-primary;
+}
+QLabel[uiRole="statValue"][tone="success"] { color: @semantic-success; }
+QLabel[uiRole="statValue"][tone="warning"] { color: @semantic-warning; }
+QLabel[uiRole="statValue"][tone="danger"]  { color: @semantic-danger; }
+QLabel[uiRole="statValue"][tone="muted"]   { color: @text-secondary; }
+
+QLabel[uiRole="rowTitle"] {
+    font-size: @font-size-body;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+QLabel[uiRole="rowValue"] {
+    font-size: @font-size-secondary;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+QLabel[uiRole="rank"] {
+    font-size: @font-size-meta;
+    color: @text-muted;
+}
+
+QLabel[uiRole="avatar"] {
+    background-color: @surface-elevated;
+    border: 1px solid @border-default;
+    border-radius: @radius-control;
+    color: @text-secondary;
+    font-size: @font-size-meta;
+    font-weight: 600;
+}
+
+QLabel[uiRole="linkText"] {
+    color: @accent-primary;
+    font-size: @font-size-secondary;
+    font-weight: 600;
+}
+
+QPushButton[uiRole="link"] {
+    background: transparent;
+    border: none;
+    color: @accent-primary;
+    min-height: 24px;
+    padding: 0 @space-xs;
+    font-size: @font-size-secondary;
+    font-weight: 600;
+    text-align: left;
+}
+QPushButton[uiRole="link"]:hover {
+    color: @accent-hover;
+    background: transparent;
+    border: none;
+}
+
+/* Clean-list rows: entire surface is the target, never a trailing button. */
+QPushButton[uiRole="listRow"] {
+    background: transparent;
+    border: none;
+    border-radius: @radius-control;
+    padding: 0;
+    text-align: left;
+}
+QPushButton[uiRole="listRow"]:hover {
+    background-color: @surface-hover;
+    border: none;
+}
+QPushButton[uiRole="listRow"]:pressed {
+    background-color: @surface-elevated;
+}
+QPushButton[uiRole="listRow"]:focus {
+    border: 1px solid @focus-ring;
+}
+
+QLabel[uiRole="bannerText"] {
+    color: @text-primary;
+    font-size: @font-size-secondary;
+}
+QLabel[uiRole="bannerIcon"] {
+    color: @semantic-warning;
+    font-size: @font-size-card;
+    font-weight: 600;
+}
+QFrame[uiRole="banner"][severity="danger"] QLabel[uiRole="bannerIcon"] {
+    color: @semantic-danger;
+}
+QFrame[uiRole="banner"][severity="info"] QLabel[uiRole="bannerIcon"] {
+    color: @semantic-info;
+}
+
+QLabel[uiRole="emptyIcon"] {
+    background-color: @surface-elevated;
+    border-radius: 16px;
+    color: @text-muted;
+    font-size: 20px;
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
+}
