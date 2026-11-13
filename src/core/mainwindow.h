@@ -33,8 +33,10 @@ class AuditLogModel;
 class AppSidebar;
 class AppHeader;
 class SystemStatusBar;
+class OverviewPage;
 class QStackedWidget;
 struct BandwidthEvent;
+namespace TopConsumers { struct Summary; }
 
 // Data structure to hold daily traffic per application
 struct DailyAppStat {
@@ -73,6 +75,13 @@ private slots:
     // sidebar selection, so the three never disagree.
     void navigateTo(int index);
 
+    // Overview (Screen 01) is fed from the network layer's one-second beat:
+    // totals, consumers and unresolved traffic from the first-view summary,
+    // rates from the hardware counter, and alerts from the audit store.
+    void refreshOverview(const TopConsumers::Summary &summary);
+    void onOverviewSpeed(quint64 rxBps, quint64 txBps);
+    void refreshOverviewAlerts();
+
     // NG-052: follow a notification to its evidence. A no-op until a
     // notification has named an application.
     void openLastNotificationSubject();
@@ -108,6 +117,10 @@ private:
     void buildShell();
     QWidget *makePlaceholderPage(const QString &title, const QString &detail);
     void setupWidgets();
+    void setupOverview();
+    // Banner, chart placeholder and empty state all follow capture state, so
+    // one place decides what the page says about monitoring.
+    void refreshOverviewState();
     void setupDiagnosticsView();
     void setupAuditLogView();
     void setupAttributionPrivacyView();
@@ -141,7 +154,15 @@ private:
     QStringList        m_screenTitles;
     QStringList        m_screenSubtitles;
     int                m_overviewIndex = 0;
+    int                m_activityIndex = -1;
+    int                m_applicationsIndex = -1;
+    int                m_policiesIndex = -1;
     int                m_settingsIndex = 0;
+
+    OverviewPage      *m_overview = nullptr;
+    quint64            m_overviewRxRate = 0;
+    quint64            m_overviewTxRate = 0;
+    bool               m_overviewHasData = false;
 
     NetworkWidget     *m_netWidget = nullptr;
     AuditLogModel     *m_auditModel = nullptr;

@@ -12,6 +12,8 @@
 #include "ui/shell/appsidebar.h"
 #include "ui/shell/appheader.h"
 #include "ui/shell/systemstatusbar.h"
+#include "ui/pages/overview/overviewpage.h"
+#include "ui/components/trafficchart.h"
 #include "updatechecker.h"
 #include "appinstaller.h"
 #include "windowsicon.h"
@@ -25,6 +27,9 @@
 #include "network/evidenceexport.h"
 #include "network/notificationcoordinator.h"
 #include "network/networkmonitor.h"
+#include "network/topconsumers.h"
+#include "network/policyschedule.h"
+#include "network/policyscope.h"
 #include "firewall/firewallwidget.h"
 #include "hardware/hardwarewidget.h"
 #include "taskbar/taskbaroverlay.h"
@@ -41,6 +46,7 @@
 #include <QSpinBox>
 #include <QApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QTreeView>
 #include <QTableView>
 #include <QHeaderView>
@@ -68,6 +74,55 @@ static QString exportRedactionNote(bool redacted)
                     : QStringLiteral(" (verbatim destinations)");
 }
 
+// ── Overview feed ──────────────────────────────────────────────────────────
+// A short human phrase for a stored audit event. The target is whatever the
+// event actually recorded; when none was recorded the copy says so instead of
+// naming an application.
+static QString overviewAlertTitle(const AuditEvent &event)
+{
+    QString target = event.scope.trimmed();
+    if (target.contains(QLatin1Char('\\')) || target.contains(QLatin1Char('/')))
+        target = QFileInfo(target).fileName();
+    if (target.isEmpty())
+        target = QStringLiteral("an application");
+
+    switch (event.type) {
+    case AuditEvent::EventType::EnforcementResult:
+        return QStringLiteral("Enforcement result for %1").arg(target);
+    case AuditEvent::EventType::EnforcementRequest:
+        return QStringLiteral("Enforcement requested for %1").arg(target);
+    case AuditEvent::EventType::PolicyChange:
+        return QStringLiteral("Policy changed for %1").arg(target);
+    case AuditEvent::EventType::Detection:
+        return QStringLiteral("Traffic detected from %1").arg(target);
+    case AuditEvent::EventType::Classification:
+        return QStringLiteral("Application classified: %1").arg(target);
+    case AuditEvent::EventType::Recommendation:
+        return QStringLiteral("Recommendation for %1").arg(target);
+    case AuditEvent::EventType::UserDecision:
+    case AuditEvent::EventType::AutomaticDecision:
+        return QStringLiteral("Decision recorded for %1").arg(target);
+    case AuditEvent::EventType::ProcessGroupMembershipChange:
+        return QStringLiteral("Activity group changed: %1").arg(target);
+    }
+    return auditEventTypeName(event.type);
+}
+
+// Red only for a recorded failure or block, green only for a confirmed
+// outcome. Anything else stays informational.
+static QString overviewAlertTone(const AuditEvent &event)
+{
+    const QString outcome = (event.result + QLatin1Char(' ') + event.errorInfo).toLower();
+    if (outcome.contains(QStringLiteral("fail")) || outcome.contains(QStringLiteral("error"))
+        || outcome.contains(QStringLiteral("blocked")))
+        return QStringLiteral("danger");
+    if (outcome.contains(QStringLiteral("applied")) || outcome.contains(QStringLiteral("saved"))
+        || outcome.contains(QStringLiteral("allowed"))
+        || outcome.contains(QStringLiteral("throttled")))
+        return QStringLiteral("success");
+    return QStringLiteral("info");
+}
+
 // ============================================================================
 // Initialization & Core Setup
 // ============================================================================
@@ -87,6 +142,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     buildShell();
     setupWidgets();
+    setupOverview();
     setupDiagnosticsView();
     setupAuditLogView();
     setupAttributionPrivacyView();
@@ -1145,7 +1201,11 @@ void MainWindow::buildShell()
         const int index = tabs->indexOf(page);
         if (index >= 0)
             tabs->removeTab(index);
-        page->setParent(nullptr);
+        // Kept parented but hidden. The legacy screens still own the services
+        // the redesigned pages read from (capture, policies, audit, hardware),
+        // so nothing is destroyed while the product is replaced screen by
+        // screen. None of them is reachable from the new shell.
+        page->setParent(this);
         page->hide();
     }
     delete oldRoot;
@@ -1193,9 +1253,14 @@ void MainWindow::buildShell()
     };
 
     m_sidebar->addSection(QStringLiteral("Monitor"));
-    addScreen(QStringLiteral("Overview"), ui->tabNetwork,
+
+    // NG-054 → Screen 01: the redesigned Overview owns the landing screen.
+    // The legacy network tab is never added to the stack; it stays alive only
+    // as the hidden host of NetworkWidget's capture and policy services.
+    m_overview = new OverviewPage;
+    addScreen(QStringLiteral("Overview"), m_overview,
               QStringLiteral("Overview"),
-              QStringLiteral("Live activity, processes and controls"));
+              QStringLiteral("Activity, controls and anomalies at a glance"));
     m_overviewIndex = m_screenTitles.size() - 1;
     addScreen(QStringLiteral("Activity"),
               makePlaceholderPage(QStringLiteral("Activity"),
@@ -1203,12 +1268,14 @@ void MainWindow::buildShell()
                                  "as a dedicated screen. Live monitoring continues on Overview.")),
               QStringLiteral("Activity"),
               QStringLiteral("Bandwidth over time"));
+    m_activityIndex = m_screenTitles.size() - 1;
     addScreen(QStringLiteral("Applications"),
               makePlaceholderPage(QStringLiteral("Applications"),
                   QStringLiteral("The application table is being rebuilt as a dedicated "
                                  "screen. Current process activity is available on Overview.")),
               QStringLiteral("Applications"),
               QStringLiteral("Bandwidth consumers and their identity"));
+    m_applicationsIndex = m_screenTitles.size() - 1;
     addScreen(QStringLiteral("Connections"),
               makePlaceholderPage(QStringLiteral("Connections"),
                   QStringLiteral("Endpoint attribution is being rebuilt as a dedicated "
@@ -1220,6 +1287,7 @@ void MainWindow::buildShell()
     addScreen(QStringLiteral("Policies"), ui->tabFirewall,
               QStringLiteral("Policies"),
               QStringLiteral("Rules and enforcement status"));
+    m_policiesIndex = m_screenTitles.size() - 1;
     addScreen(QStringLiteral("Data Saver"), ui->tabDataSaver,
               QStringLiteral("Data Saver"),
               QStringLiteral("Detected high-bandwidth processes"));
@@ -1263,6 +1331,35 @@ void MainWindow::buildShell()
     });
     connect(m_statusBar, &SystemStatusBar::messageActivated,
             this, &MainWindow::openLastNotificationSubject);
+
+    // The Overview page navigates; it never performs an action itself.
+    connect(m_overview, &OverviewPage::activityRequested, this, [this]() {
+        navigateTo(m_activityIndex);
+    });
+    connect(m_overview, &OverviewPage::applicationsRequested, this, [this]() {
+        navigateTo(m_applicationsIndex);
+    });
+    connect(m_overview, &OverviewPage::policiesRequested, this, [this]() {
+        navigateTo(m_policiesIndex);
+    });
+    connect(m_overview, &OverviewPage::diagnosticsRequested, this, [this]() {
+        navigateTo(m_settingsIndex);
+    });
+    connect(m_overview, &OverviewPage::monitoringRequested, this, [this]() {
+        if (m_netWidget)
+            m_netWidget->startMonitoring();
+    });
+    // A consumer row opens the existing application evidence view, so the
+    // redesigned screen reuses one investigation path instead of a second one.
+    connect(m_overview, &OverviewPage::applicationActivated, this,
+            [this](quint32 pid, const QString &path, const QString &name) {
+        if (m_netWidget)
+            m_netWidget->showApplicationDetails(pid, path, name);
+    });
+    // An alert is followed to the audit log, which is where its evidence lives.
+    connect(m_overview, &OverviewPage::alertActivated, this, [this](int) {
+        navigateTo(m_settingsIndex);
+    });
 
     navigateTo(m_overviewIndex);
 }
@@ -1408,6 +1505,176 @@ void MainWindow::setupWidgets()
                 QStringLiteral("⚠ Adapter unavailable — open diagnostics"), false);
         qWarning() << "Adapter issue:" << adapter << reason;
     });
+}
+
+// ============================================================================
+// Overview (Screen 01)
+// ============================================================================
+
+void MainWindow::setupOverview()
+{
+    if (!m_overview || !m_netWidget)
+        return;
+
+    connect(m_netWidget, &NetworkWidget::dashboardUpdated,
+            this, &MainWindow::refreshOverview);
+    connect(m_netWidget, &NetworkWidget::speedUpdated,
+            this, &MainWindow::onOverviewSpeed);
+    if (AuditEventStore *audit = m_netWidget->auditStore())
+        connect(audit, &AuditEventStore::changed,
+                this, &MainWindow::refreshOverviewAlerts);
+
+    m_overview->setCollecting(true);
+    refreshOverviewState();
+    refreshOverviewAlerts();
+    refreshOverview(m_netWidget->dashboardSummary());
+}
+
+void MainWindow::refreshOverview(const TopConsumers::Summary &summary)
+{
+    if (!m_overview)
+        return;
+
+    const quint64 total = summary.totalRxBytes + summary.totalTxBytes;
+    if (total > 0 || summary.consumerCount > 0)
+        m_overviewHasData = true;
+
+    m_overview->setUsageTotals(total, summary.totalRxBytes, summary.totalTxBytes,
+                               m_overviewRxRate, m_overviewTxRate);
+    m_overview->setActiveAppCount(summary.consumerCount);
+
+    QVector<Overview::Consumer> consumers;
+    consumers.reserve(summary.rows.size());
+    for (const TopConsumers::Row &row : summary.rows) {
+        Overview::Consumer consumer;
+        consumer.pid = row.pid;
+        consumer.name = row.name;
+        consumer.path = row.path;
+        consumer.usage = row.usage;
+        consumer.bytesPerSecond = row.bytesPerSecond;
+        consumer.totalBytes = row.totalBytes;
+
+        // DESIGN_SYSTEM.md §2.3: red only for an enforced block, green only for
+        // a confirmed limit, grey when the attribution could not be pinned down.
+        if (row.control == QLatin1String("Blocked")) {
+            consumer.stateLabel = QStringLiteral("Blocked");
+            consumer.stateToken = QStringLiteral("failed");
+        } else if (row.control == QLatin1String("Limited")) {
+            consumer.stateLabel = QStringLiteral("Limited");
+            consumer.stateToken = QStringLiteral("active");
+        } else if (row.unresolved) {
+            consumer.stateLabel = QStringLiteral("Unknown");
+            consumer.stateToken = QStringLiteral("unknown");
+        }
+
+        consumer.subtitle = row.activity.isEmpty() ? row.identity : row.activity;
+        consumers.append(consumer);
+    }
+    m_overview->setTopConsumers(consumers);
+
+    // Controls. "Active" means the same thing it means to the scheduler: in
+    // force now. A policy this build cannot enforce is reported as stored only
+    // rather than counted as active.
+    Overview::ControlCounts counts;
+    counts.unresolvedConsumers = summary.unresolvedConsumers;
+    counts.unresolvedBytes = summary.unresolvedBytes;
+    counts.totalBytes = total;
+
+    const QDateTime now = QDateTime::currentDateTime();
+    const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    for (const NetworkPolicy &policy : policies) {
+        const PolicyActivationState state = policyActivationAt(policy, now);
+        if (state == PolicyActivationState::Expired) {
+            ++counts.expired;
+            continue;
+        }
+        if (state != PolicyActivationState::Active)
+            continue;
+        if (policyEnforcementSummary(policy).startsWith(QStringLiteral("Stored only"),
+                                                       Qt::CaseInsensitive))
+            ++counts.storedOnly;
+        else
+            ++counts.active;
+    }
+    m_overview->setControls(counts);
+    m_overview->setUpdated(now);
+
+    refreshOverviewState();
+}
+
+void MainWindow::onOverviewSpeed(quint64 rxBps, quint64 txBps)
+{
+    m_overviewRxRate = rxBps;
+    m_overviewTxRate = txBps;
+    if (!m_overview)
+        return;
+
+    Overview::TrafficPoint point;
+    point.timestamp = QDateTime::currentDateTime();
+    point.rxBytesPerSecond = rxBps;
+    point.txBytesPerSecond = txBps;
+    m_overview->appendTrafficPoint(point);
+
+    refreshOverviewState();
+}
+
+void MainWindow::refreshOverviewState()
+{
+    if (!m_overview || !m_netWidget)
+        return;
+
+    const bool capturing = m_netWidget->isCapturing();
+    m_overview->setMonitoringActive(capturing);
+    m_overview->setCollecting(!m_overviewHasData);
+
+    if (m_netWidget->getAdapterList().isEmpty()) {
+        m_overview->setBanner(Overview::BannerSeverity::Warning,
+            QStringLiteral("No network adapter is available, so no traffic can be "
+                           "recorded. Connect an adapter and reopen Oasis."));
+    } else if (!capturing) {
+        m_overview->setBanner(Overview::BannerSeverity::Warning,
+            QStringLiteral("Monitoring is stopped. Figures below are from the last "
+                           "session and are no longer updating."));
+    } else {
+        m_overview->clearBanner();
+    }
+}
+
+void MainWindow::refreshOverviewAlerts()
+{
+    if (!m_overview || !m_netWidget)
+        return;
+
+    AuditEventStore *store = m_netWidget->auditStore();
+    if (!store)
+        return;
+
+    const QList<AuditEvent> events = store->events();
+    QVector<Overview::Alert> alerts;
+    for (int i = events.size() - 1; i >= 0 && alerts.size() < 5; --i) {
+        const AuditEvent &event = events.at(i);
+
+        Overview::Alert alert;
+        alert.at = event.timestamp;
+        alert.title = overviewAlertTitle(event);
+        alert.tone = overviewAlertTone(event);
+
+        QString detail = auditEventTypeName(event.type);
+        const QString outcome = event.result.trimmed();
+        if (!outcome.isEmpty())
+            detail += QStringLiteral(" · ") + outcome;
+        else if (!event.reason.trimmed().isEmpty())
+            detail += QStringLiteral(" · ") + event.reason.trimmed();
+        alert.detail = detail;
+
+        if (event.type == AuditEvent::EventType::PolicyChange
+            || event.type == AuditEvent::EventType::EnforcementRequest
+            || event.type == AuditEvent::EventType::EnforcementResult)
+            alert.actionLabel = QStringLiteral("Review");
+
+        alerts.append(alert);
+    }
+    m_overview->setAlerts(alerts);
 }
 
 void MainWindow::setupTray()

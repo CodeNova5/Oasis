@@ -1440,6 +1440,16 @@ void NetworkWidget::autoStart() {
     onAdapterChanged(0);
     m_monitor->startCapture();
 }
+
+void NetworkWidget::startMonitoring() {
+    if (m_capturing) return;
+    if (m_adapters.isEmpty()) populateAdapterCombo();
+    if (m_adapters.isEmpty()) {
+        ui->lblStatus->setText("⚠ No network adapter available.");
+        return;
+    }
+    m_monitor->startCapture();
+}
 void NetworkWidget::populateAdapterCombo() {
     QString prevIP;
     if (ui->cmbAdapter->currentIndex() >= 0)
@@ -1680,6 +1690,8 @@ void NetworkWidget::refreshDashboard()
     if (addedSuggestion) summary = TopConsumers::build(consumers, policies, now);
 
     m_dashboard->setSummary(summary);
+    m_dashboardSummary = summary;
+    emit dashboardUpdated(summary);
 }
 // void NetworkWidget::onCaptureError(const QString &msg) { ui->lblStatus->setText("⚠ " + msg); QMessageBox::critical(this, "Capture Error", msg); onCaptureStopped(); }
 

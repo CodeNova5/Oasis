@@ -800,6 +800,64 @@ QFrame[uiRole="banner"][severity="info"] QLabel[uiRole="bannerIcon"] {
     color: @semantic-info;
 }
 
+/* Control-state rows in the "Controls in force" card: a divider separates
+   each row, and the first row sits flush under the card header. */
+QFrame[uiRole="statRow"] {
+    background: transparent;
+    border: none;
+    border-top: 1px solid @border-default;
+}
+QFrame[uiRole="statRow"][first="true"] {
+    border-top: none;
+    padding-top: 0;
+}
+
+/* Application tile in a Top consumers row (32 px, set in code). */
+QLabel[uiRole="appTile"] {
+    background-color: @surface-elevated;
+    border: 1px solid @border-default;
+    border-radius: @radius-control;
+    color: @text-secondary;
+    font-size: @font-size-meta;
+    font-weight: 600;
+}
+
+/* Thin share bar under each consumer name. */
+QProgressBar[uiRole="shareBar"] {
+    background-color: @surface-elevated;
+    border: none;
+    border-radius: 2px;
+    min-height: 3px;
+    max-height: 3px;
+}
+QProgressBar[uiRole="shareBar"]::chunk {
+    background-color: @accent-primary;
+    border-radius: 2px;
+}
+
+/* Recent activity feed: a 28 px tinted disc carries the event severity. */
+QLabel[uiRole="feedIcon"] {
+    border-radius: 14px;
+    font-size: @font-size-secondary;
+    font-weight: 600;
+}
+QLabel[uiRole="feedIcon"][tone="success"] {
+    background-color: @success-subtle;
+    color: @semantic-success;
+}
+QLabel[uiRole="feedIcon"][tone="warning"] {
+    background-color: @warning-subtle;
+    color: @semantic-warning;
+}
+QLabel[uiRole="feedIcon"][tone="danger"] {
+    background-color: @danger-subtle;
+    color: @semantic-danger;
+}
+QLabel[uiRole="feedIcon"][tone="info"] {
+    background-color: @info-subtle;
+    color: @semantic-info;
+}
+
 QLabel[uiRole="emptyIcon"] {
     background-color: @surface-elevated;
     border-radius: 16px;

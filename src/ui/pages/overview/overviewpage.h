@@ -38,6 +38,10 @@ struct Consumer
     QString name;
     QString subtitle;     // executable or identity, e.g. "chrome.exe"
     QString usage;        // "1.2 Mbps · 840 MB"
+    // The numbers behind `usage`; the row's bar is proportional to the busiest
+    // consumer on screen.
+    quint64 bytesPerSecond = 0;
+    quint64 totalBytes = 0;
     QString stateLabel;   // empty hides the badge
     QString stateToken;   // QSS badge token: active, degraded, unknown, ...
     QString path;         // executable path, empty when unresolved
@@ -51,6 +55,7 @@ struct Alert
     QString   title;
     QString   detail;
     QString   actionLabel; // "Review", "Inspect", empty for none
+    QString   tone;        // icon tint: success, warning, danger, info
 };
 
 /// KPI counts for the Controls in Force card.
@@ -61,6 +66,8 @@ struct ControlCounts
     int     expired = 0;
     int     unresolvedConsumers = 0;
     quint64 unresolvedBytes = 0;
+    // All captured traffic, so the unresolved row can state its share.
+    quint64 totalBytes = 0;
 };
 
 enum class BannerSeverity { Info, Warning, Danger };
@@ -105,6 +112,7 @@ public:
 signals:
     void activityRequested();
     void applicationsRequested();
+    void monitoringRequested();
     void policiesRequested();
     void diagnosticsRequested();
     void applicationActivated(quint32 pid, const QString &path, const QString &name);
@@ -141,11 +149,12 @@ private:
     QLabel       *m_consumerFootnote = nullptr;
 
     QLabel       *m_activeCount = nullptr;
+    QLabel       *m_activeDetail = nullptr;
     QLabel       *m_storedCount = nullptr;
-    QLabel       *m_expiredCount = nullptr;
+    QLabel       *m_storedDetail = nullptr;
     QLabel       *m_unresolvedCount = nullptr;
-    QLabel       *m_controlSummary = nullptr;
     QLabel       *m_unresolvedDetail = nullptr;
+    QLabel       *m_controlSummary = nullptr;
 
     QVBoxLayout  *m_alertRows = nullptr;
     QLabel       *m_alertEmpty = nullptr;

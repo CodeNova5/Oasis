@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oasis – Overview</title>
+<style>
+:root{
+  --surface-window:#111318;--surface-sidebar:#171A21;--surface-primary:#1C2029;--surface-elevated:#242A35;--surface-hover:#2B3240;--border:#343B48;
+  --accent:#4C8DFF;--success:#3FB982;--warning:#E6AD4D;--danger:#E36B70;--info:#62B5E8;
+  --text:#F3F5F8;--text2:#A1A9B7;--muted:#6C7586;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  --surface-window:#F3F4F7;--surface-sidebar:#EAECF1;--surface-primary:#FFFFFF;--surface-elevated:#F6F7FA;--surface-hover:#E6E9F0;--border:#D5D9E2;
+  --accent:#2F6FE0;--success:#1F9A66;--warning:#B7791F;--danger:#C9454B;--info:#1E88C7;
+  --text:#14171D;--text2:#4B5363;--muted:#80889A;color-scheme:light;}}
+:root[data-theme="light"]{
+  --surface-window:#F3F4F7;--surface-sidebar:#EAECF1;--surface-primary:#FFFFFF;--surface-elevated:#F6F7FA;--surface-hover:#E6E9F0;--border:#D5D9E2;
+  --accent:#2F6FE0;--success:#1F9A66;--warning:#B7791F;--danger:#C9454B;--info:#1E88C7;
+  --text:#14171D;--text2:#4B5363;--muted:#80889A;color-scheme:light;}
+:root[data-theme="dark"]{color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--surface-window);color:var(--text);font:400 13px/18px "Segoe UI Variable","Segoe UI",system-ui,sans-serif;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+svg.i.s{width:16px;height:16px}
+.app{display:grid;grid-template-columns:232px 1fr;grid-template-rows:60px 1fr 28px;height:100%}
+.side{grid-row:1/4;background:var(--surface-sidebar);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:4px;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px;font-size:16px;line-height:24px;font-weight:600}
+.logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--info));display:grid;place-items:center;color:#fff}
+.nav{display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border-radius:6px;border:0;background:none;color:var(--text2);text-align:left;width:100%;position:relative}
+.nav:hover{background:var(--surface-hover);color:var(--text)}
+.nav.on{background:var(--surface-elevated);color:var(--text)}
+.nav.on svg{color:var(--accent)}
+.nav.on::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--accent)}
+.side .sp{flex:1}
+.head{display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--border)}
+.head h1{margin:0;font-size:24px;line-height:32px;font-weight:600}
+.head .grow{flex:1}
+.search{display:flex;align-items:center;gap:8px;height:38px;width:260px;padding:0 12px;background:var(--surface-primary);border:1px solid var(--border);border-radius:6px;color:var(--muted)}
+.search:focus-within{border-color:var(--accent)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--text);font:inherit}
+select{height:36px;background:var(--surface-elevated);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0 8px;font:inherit}
+.ib{width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:6px;background:none;color:var(--text2)}
+.ib:hover{background:var(--surface-hover);color:var(--text)}
+main{overflow:auto;padding:24px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.status{grid-column:2;display:flex;align-items:center;gap:16px;padding:0 16px;background:var(--surface-sidebar);border-top:1px solid var(--border);font-size:11px;line-height:14px;color:var(--text2)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--c,var(--muted));display:inline-block}
+.row{display:grid;gap:16px}
+.r4{grid-template-columns:repeat(4,1fr)}
+.r65{grid-template-columns:65fr 35fr}
+.r50{grid-template-columns:1fr 1fr}
+.card{background:var(--surface-primary);border:1px solid var(--border);border-radius:10px;padding:16px;min-width:0}
+.card.click{cursor:pointer;transition:background .12s}
+.card.click:hover{background:var(--surface-hover)}
+.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.ch h2{margin:0;font-size:14px;line-height:20px;font-weight:600}
+.lbl{display:flex;justify-content:space-between;align-items:center;font-size:12px;line-height:16px;color:var(--text2)}
+.val{font-size:28px;line-height:36px;font-weight:600;margin:4px 0}
+.sub{font-size:11px;line-height:14px;color:var(--muted)}
+.link{color:var(--accent);background:none;border:0;padding:0;font-size:12px}
+.link:hover{text-decoration:underline}
+.badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:6px;font-size:11px;font-weight:600;line-height:14px;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);white-space:nowrap}
+.badge.Active{--c:var(--success)}.badge.Pending{--c:var(--accent)}.badge.Stored{--c:var(--warning)}.badge.Degraded{--c:var(--warning)}.badge.Failed{--c:var(--danger)}.badge.Unknown,.badge.Inactive{--c:var(--text2)}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--c)}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--text2)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+#chart{width:100%;height:240px;display:block}
+.consumer{display:grid;grid-template-columns:32px 1fr auto;gap:12px;align-items:center;height:48px;padding:0 8px;margin:0 -8px;border-radius:6px;cursor:pointer}
+.consumer:hover{background:var(--surface-hover)}
+.app-ic{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:600;font-size:12px;background:var(--surface-elevated);border:1px solid var(--border);color:var(--text2)}
+.nm{font-size:13px}.nm small{display:block;font-size:11px;line-height:14px;color:var(--muted)}
+.bar{height:3px;border-radius:2px;background:var(--surface-elevated);margin-top:4px;overflow:hidden}.bar b{display:block;height:100%;background:var(--accent)}
+.right{text-align:right}
+.stat{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--border)}
+.stat:first-of-type{border-top:0;padding-top:0}
+.stat .n{font-size:20px;line-height:28px;font-weight:600;width:32px}
+.stat p{margin:0;flex:1}.stat p small{display:block;color:var(--text2);font-size:12px;line-height:16px}
+.feed{display:flex;flex-direction:column}
+.fi{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:center;min-height:48px;padding:6px 0;border-top:1px solid var(--border)}
+.fi:first-child{border-top:0}
+.fi .ic{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent)}
+.fi small{display:block;font-size:11px;line-height:14px;color:var(--muted)}
+.banner{display:none;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;border:1px solid color-mix(in srgb,var(--c) 40%,transparent);background:color-mix(in srgb,var(--c) 12%,transparent)}
+.banner.show{display:flex}.banner .t{flex:1}.banner b{font-weight:600}
+.banner.w{--c:var(--warning)}.banner.e{--c:var(--danger)}.banner svg{color:var(--c)}
+.btn{height:36px;padding:0 16px;border-radius:6px;font-weight:600;border:1px solid var(--border);background:var(--surface-elevated)}
+.btn:hover{background:var(--surface-hover)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.p:hover{filter:brightness(1.1)}
+.empty{display:none;flex-direction:column;align-items:center;text-align:center;gap:8px;max-width:420px;margin:24px auto;padding:16px}
+.empty .ci{width:48px;height:48px;border-radius:50%;background:var(--surface-elevated);display:grid;place-items:center;color:var(--muted)}
+.empty h3{margin:8px 0 0;font-size:16px;line-height:24px;font-weight:600}.empty p{margin:0 0 8px;color:var(--text2)}
+body.nodata .empty{display:flex}body.nodata .hasdata{display:none}
+.stalebadge{display:none}.stopped .stalebadge{display:inline-flex}
+.toast{position:fixed;right:24px;bottom:calc(44px + env(safe-area-inset-bottom,0px));width:340px;max-width:calc(100% - 48px);background:var(--surface-elevated);border:1px solid var(--border);border-left:3px solid var(--warning);border-radius:10px;padding:12px 16px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.toast.show{display:block}.toast b{display:block;font-size:13px}.toast span{color:var(--text2);font-size:12px}
+@media (max-width:1100px){.r4{grid-template-columns:1fr 1fr}.r65,.r50{grid-template-columns:1fr}.search{display:none}}
+@media (max-width:760px){
+  body{overflow:auto}.app{grid-template-columns:1fr;grid-template-rows:auto auto 1fr 28px;height:auto;min-height:100%}
+  .side{grid-row:auto;flex-direction:row;overflow-x:auto;padding:8px;border-right:0;border-bottom:1px solid var(--border)}
+  .brand,.side .sp{display:none}.nav{width:auto;flex:none;padding:0 12px}.nav span{display:none}.status{grid-column:1}
+  .head{padding:8px 16px;flex-wrap:wrap;height:auto;min-height:60px}.head h1{font-size:20px}main{padding:16px;overflow:visible}.r4{grid-template-columns:1fr 1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side">
+    <div class="brand"><div class="logo"><svg class="i" viewBox="0 0 24 24"><path d="M2 12c3-6 7-6 10 0s7 6 10 0"/></svg></div>Oasis</div>
+    <div id="nav" style="display:contents"></div>
+    <div class="sp"></div>
+    <div class="badge Active" id="sideBadge" style="align-self:flex-start;margin:0 8px">Monitoring</div>
+  </aside>
+
+  <header class="head">
+    <h1>Overview</h1>
+    <span class="badge Unknown stalebadge" id="stale">Last updated: 14:32:08</span>
+    <div class="grow"></div>
+    <label class="search"><svg class="i s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="Search apps, domains, IPs" aria-label="Search"></label>
+    <select id="state" aria-label="Preview state">
+      <option value="active">Preview: Monitoring active</option>
+      <option value="degraded">Preview: Partial monitoring</option>
+      <option value="stopped">Preview: Monitoring stopped</option>
+      <option value="error">Preview: Enforcement failed</option>
+      <option value="nodata">Preview: No data yet</option>
+    </select>
+    <button class="ib" aria-label="Notifications"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button>
+  </header>
+
+  <main><div class="wrap">
+    <div class="banner w" id="banner"><svg class="i" viewBox="0 0 24 24"><path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4M12 17h.01"/></svg><div class="t" id="bannerText"></div><button class="btn" id="bannerBtn">Open diagnostics</button></div>
+
+    <div class="empty card" id="empty"><div class="ci"><svg class="i" viewBox="0 0 24 24" style="width:24px;height:24px"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><h3>No network data collected yet</h3><p>Oasis starts recording as soon as monitoring is on. Traffic from your apps will appear here within a few seconds.</p><button class="btn p">Start monitoring</button></div>
+
+    <div class="row r4 hasdata" id="kpis"></div>
+
+    <div class="row r65 hasdata">
+      <section class="card click" id="trafficCard">
+        <div class="ch"><h2>Network traffic · last 60 minutes</h2><div class="legend"><span><i style="background:var(--accent)"></i>Download</span><span><i style="background:var(--success)"></i>Upload</span></div></div>
+        <svg id="chart" viewBox="0 0 700 240" preserveAspectRatio="none" role="img" aria-label="Download and upload over the last 60 minutes"></svg>
+        <div class="lbl" style="margin-top:4px"><span>13:32</span><span>13:47</span><span>14:02</span><span>14:17</span><span>Now</span></div>
+      </section>
+      <section class="card">
+        <div class="ch"><h2>Top consumers</h2><span class="sub">This session</span></div>
+        <div id="top"></div>
+        <div style="margin-top:8px"><button class="link">View applications →</button></div>
+      </section>
+    </div>
+
+    <div class="row r50 hasdata">
+      <section class="card">
+        <div class="ch"><h2>Controls in force</h2><button class="link">Review policies →</button></div>
+        <div id="controls"></div>
+      </section>
+      <section class="card">
+        <div class="ch"><h2>Recent activity &amp; alerts</h2><button class="link">View all</button></div>
+        <div class="feed" id="feed"></div>
+      </section>
+    </div>
+  </div></main>
+
+  <footer class="status"><span><span class="dot" id="sdot" style="--c:var(--success)"></span> <span id="stext">Capture driver ready</span></span><span>Adapter: Wi-Fi (Intel AX211)</span><span>Elevated: Yes</span><span style="margin-left:auto">v0.9.2</span></footer>
+</div>
+<div class="toast" id="toast"><b></b><span></span></div>
+
+<script>
+const P={
+ "layout-dashboard":'<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>',
+ activity:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+ "app-window":'<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4M2 8h20M6 4v4"/>',
+ network:'<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/>',
+ shield:'<path d="M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.500 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.500-1.200 6.200-2.700a1.200 1.200 0 0 1 1.600 0C14.500 3.800 17 5 19 5a1 1 0 0 1 1 1z"/>',
+ lightbulb:'<path d="M15 14c.2-1 .7-1.700 1.500-2.500 1-.9 1.500-2.200 1.500-3.500A6 6 0 0 0 6 8c0 1 .2 2.200 1.500 3.500.7.700 1.300 1.500 1.500 2.500M9 18h6M10 22h4"/>',
+ "clipboard-list":'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M12 11h4M12 16h4M8 11h.01M8 16h.01"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M2 12h3M19 12h3M4.900 19.100 7 17M17 7l2.100-2.100"/>',
+ alert:'<path d="m21.700 18-8-14a2 2 0 0 0-3.500 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.700-3M12 9v4M12 17h.01"/>',
+ x:'<path d="M18 6 6 18M6 6l12 12"/>',check:'<path d="M20 6 9 17l-5-5"/>',eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12"/><circle cx="12" cy="12" r="3"/>'};
+const ic=(n,c='')=>`<svg class="i ${c}" viewBox="0 0 24 24">${P[n]}</svg>`;
+const $=s=>document.querySelector(s);
+
+// Nav
+const navItems=[["Overview","layout-dashboard"],["Activity","activity"],["Applications","app-window"],["Connections","network"],["Policies","shield"],["Insights","lightbulb"],["Reports","clipboard-list"],["Settings","settings"]];
+$('#nav').innerHTML=navItems.map((n,i)=>`<button class="nav ${i?'':'on'}">${ic(n[1])}<span>${n[0]}</span></button>`).join('');
+
+// Mock data
+const apps=[["Chrome","CH",1180,"Active","Confirmed"],["Microsoft Teams","MT",640,"Active","Confirmed"],["Steam","ST",310,"Pending","Likely"],["Windows Update","WU",180,"Stored","Confirmed"],["OneDrive","OD",95,"Active","Confirmed"]];
+const fmt=m=>m>=1000?(m/1000).toFixed(1)+' GB':m+' MB';
+const badgeLbl={Stored:'Stored only'};
+const state={
+ active:{dl:'1.8 GB',ul:'600 MB',tot:'2.4 GB',n:12,dr:'↓ 4.2 MB/s',ur:'↑ 0.9 MB/s',trend:'+12% vs. previous hour',s:'Capture driver ready',c:'--success',side:['Active','Monitoring']},
+ degraded:{dl:'1.8 GB',ul:'600 MB',tot:'2.4 GB',n:12,dr:'↓ 4.2 MB/s',ur:'↑ 0.9 MB/s',trend:'Process names may be missing',s:'WinDivert not loaded',c:'--warning',side:['Degraded','Partial'],banner:['w','<b>Partial monitoring.</b> The packet driver is unavailable, so some traffic can’t be tied to an app.']},
+ stopped:{dl:'1.8 GB',ul:'600 MB',tot:'2.4 GB',n:12,dr:'Paused',ur:'Paused',trend:'Not recording',s:'Monitoring stopped',c:'--muted',side:['Inactive','Stopped'],banner:['w','<b>Monitoring is stopped.</b> Figures below are from the last session and are no longer updating.']},
+ error:{dl:'1.8 GB',ul:'600 MB',tot:'2.4 GB',n:12,dr:'↓ 4.2 MB/s',ur:'↑ 0.9 MB/s',trend:'+12% vs. previous hour',s:'Enforcement failed',c:'--danger',side:['Failed','Enforcement failed'],banner:['e','<b>Enforcement failed.</b> Windows Update block could not be applied. Run Oasis as Administrator and retry.'],btn:'Retry'}
+};
+
+function kpi(l,v,s,ico,click){return `<div class="card ${click?'click':''}"><div class="lbl"><span>${l}</span>${ic(ico,'s')}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`}
+function render(k){
+ const d=state[k]||state.active;
+ document.body.classList.toggle('nodata',k==='nodata');
+ document.body.classList.toggle('stopped',k==='stopped');
+ $('#kpis').innerHTML=kpi('Total usage',d.tot,d.trend,'activity',1)+kpi('Download',d.dl,d.dr,'activity')+kpi('Upload',d.ul,d.ur,'activity')+kpi('Active apps',d.n,'2 with unresolved traffic','app-window');
+ const b=$('#banner');b.classList.remove('show','w','e');
+ if(d.banner){b.classList.add('show',d.banner[0]);$('#bannerText').innerHTML=d.banner[1];$('#bannerBtn').textContent=d.btn||'Open diagnostics'}
+ $('#sdot').style.setProperty('--c',`var(${d.c})`);$('#stext').textContent=d.s;
+ const sb=$('#sideBadge');sb.className='badge '+d.side[0];sb.textContent=d.side[1];
+}
+$('#state').onchange=e=>{render(e.target.value);if(e.target.value==='degraded')toast('Policy saved as Stored only','Enforcement driver unavailable. The rule will apply once the driver loads.')};
+$('#bannerBtn').onclick=()=>toast('Opening diagnostics…','Mock action — no backend connected.');
+let tt;function toast(a,b){const t=$('#toast');t.querySelector('b').textContent=a;t.querySelector('span').textContent=b;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),4000)}
+
+// Top consumers
+$('#top').innerHTML=apps.map(a=>`<div class="consumer" tabindex="0"><div class="app-ic">${a[1]}</div><div class="nm">${a[0]}<small>${a[4]} attribution</small><div class="bar"><b style="width:${a[2]/1180*100}%"></b></div></div><div class="right"><div>${fmt(a[2])}</div><span class="badge ${a[3]}" style="margin-top:2px">${badgeLbl[a[3]]||a[3]}</span></div></div>`).join('');
+
+// Controls
+$('#controls').innerHTML=`
+<div class="stat"><div class="n">2</div><p>Active policies<small>Confirmed enforced by the driver</small></p><span class="badge Active">Active</span></div>
+<div class="stat"><div class="n">1</div><p>Stored-only policy<small>Saved, not currently enforced</small></p><span class="badge Stored">Stored only</span></div>
+<div class="stat"><div class="n">7%</div><p>Unresolved traffic<small>203.0.113.42 and 2 more have no known owner</small></p><span class="badge Unknown">Unknown</span></div>`;
+
+// Feed
+const feed=[["check","--success","Block rule applied to Steam","Policy · Active","2 min ago","Inspect"],["alert","--danger","Windows Update block failed","Enforcement · Driver not loaded","14 min ago","Review"],["eye","--info","Unresolved traffic: 203.0.113.42","Attribution unknown · 48 MB","31 min ago","Inspect"],["check","--success","Teams limit set to 2 MB/s","Policy · Pending confirmation","1 hr ago","Review"]];
+$('#feed').innerHTML=feed.map(f=>`<div class="fi" style="--c:var(${f[1]})"><div class="ic">${ic(f[0],'s')}</div><div>${f[2]}<small>${f[3]} · ${f[4]}</small></div><button class="link">${f[5]}</button></div>`).join('');
+
+// Chart
+(function(){
+ const W=700,H=240,N=60;let seed=7;const r=()=>(seed=(seed*16807)%2147483647)/2147483647;
+ const mk=(base,amp)=>Array.from({length:N},(_,i)=>base+Math.sin(i/6)*amp+Math.sin(i/2.3)*amp/3+r()*amp*.6+(i>40&&i<48?amp*1.4:0));
+ const dl=mk(3,2),ul=mk(.8,.5),max=Math.max(...dl)*1.15;
+ const pts=a=>a.map((v,i)=>[i/(N-1)*W,H-12-(v/max)*(H-24)]);
+ const path=p=>p.map((q,i)=>{if(!i)return`M${q[0]},${q[1]}`;const o=p[i-1],cx=(o[0]+q[0])/2;return`C${cx},${o[1]} ${cx},${q[1]} ${q[0]},${q[1]}`}).join(' ');
+ const g=[0,1,2,3].map(i=>`<line x1="0" x2="${W}" y1="${12+i*(H-24)/3}" y2="${12+i*(H-24)/3}" stroke="var(--border)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
+ const s=(a,c,id)=>{const p=pts(a),d=path(p);return`<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".28"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs><path d="${d} L${W},${H} L0,${H}Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke"/>`};
+ $('#chart').innerHTML=g+s(dl,'var(--accent)','gd')+s(ul,'var(--success)','gu');
+})();
+render('active');
+</script>
+</body>
+</html>

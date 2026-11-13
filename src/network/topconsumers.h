@@ -61,6 +61,10 @@ struct Row
     QString identity;
     QString path;
     QString usage;              // "1.2 Mbit/s · 12.4 MB"
+    // The numbers behind `usage`, so a screen can draw a proportional bar
+    // without parsing the formatted string.
+    quint64 bytesPerSecond = 0;
+    quint64 totalBytes = 0;
     QString activity;           // "Browser (Likely)" or "Unresolved"
     QString control;            // "Blocked", "Limited", "Foreground", or "—"
     bool unresolved = false;

@@ -104,6 +104,8 @@ Summary build(const QList<Consumer> &consumers, const QList<NetworkPolicy> &poli
         row.identity = consumer->identity;
         row.path = consumer->path;
         row.usage = usageText(*consumer);
+        row.bytesPerSecond = consumer->totalBytesPerSecond();
+        row.totalBytes = consumer->totalBytes();
         row.activity = activityText(*consumer);
         row.control = controlText(*consumer);
         row.unresolved = isUnresolved(*consumer);

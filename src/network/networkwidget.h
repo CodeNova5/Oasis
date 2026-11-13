@@ -21,6 +21,7 @@
 #include "auditeventstore.h"
 #include "applicationdetail.h"
 #include "policyeditordialog.h"
+#include "topconsumers.h"
 #include "attribution/recommendationengine.h"
 #include "attribution/recommendationfeedback.h"
 #include "attribution/aiprovider.h"
@@ -55,6 +56,10 @@ public:
     ~NetworkWidget() override;
 
     void autoStart();
+    // Start capture if it is stopped and an adapter is available. Used by the
+    // redesigned Overview screen's "Start monitoring" action, which may be
+    // pressed before the first automatic start has happened.
+    void startMonitoring();
     void setDataSaverMode(int mode);
     // Takes back the controls the product applied on its own (NG-026) and
     // reports which policies were removed, which were kept, and what failed.
@@ -68,6 +73,9 @@ protected:
 
 signals:
     void speedUpdated(quint64 rxBps, quint64 txBps);
+    // Emitted once per second with the recalculated first-view summary, so a
+    // host screen can follow the same beat without a timer of its own.
+    void dashboardUpdated(const TopConsumers::Summary &summary);
     void bandwidthAlert(const BandwidthEvent &event);
     // NG-051: a policy channel reported a failure. Critical, so the
     // notification coordinator never rate-limits it away.
@@ -114,6 +122,10 @@ public:
     // the shell status bar. Empty until the adapter list is populated.
     QString activeAdapterDescription() const;
     DiagnosticsModel *diagnosticsModel() const { return m_diagnostics; }
+    // The first-view summary as of the last one-second beat. The Overview page
+    // renders this snapshot; it never queries the process model itself.
+    TopConsumers::Summary dashboardSummary() const { return m_dashboardSummary; }
+    bool isCapturing() const { return m_capturing; }
     // NG-050: the persisted audit log behind the audit view and its export.
     AuditEventStore *auditStore() { return &m_auditStore; }
     // NG-036: attribution privacy controls and the history they bound.
@@ -188,6 +200,8 @@ private:
     // NG-054: paths resolved once per (pid, start time) for the dashboard, so a
     // refresh does not open a process handle for every row every second.
     QHash<QString, QString> m_dashboardPathCache;
+    // Last published first-view summary, readable by a host screen between beats.
+    TopConsumers::Summary m_dashboardSummary;
     // Auto-throttle alerts waiting for the worker thread to report back.
     QHash<QString, BandwidthEvent> m_pendingThrottleEvents;
     // Emergency restore result waiting for the throttle worker's outcome, so

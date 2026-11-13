@@ -14,7 +14,9 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QProgressBar>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QStyle>
 #include <QVBoxLayout>
@@ -50,6 +52,33 @@ void clearLayout(QLayout *layout)
         }
         delete item;
     }
+}
+
+/// Two letters for the application tile, e.g. "Microsoft Teams" -> "MT".
+QString appInitials(const QString &name)
+{
+    QString base = name;
+    if (base.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive))
+        base.chop(4);
+    const QStringList words = base.split(QRegularExpression(QStringLiteral("[\\s._-]+")),
+                                         Qt::SkipEmptyParts);
+    QString initials;
+    for (const QString &word : words) {
+        if (initials.size() >= 2)
+            break;
+        initials += word.left(1).toUpper();
+    }
+    return initials.isEmpty() ? QStringLiteral("?") : initials;
+}
+
+/// A glyph for the alert row's tinted disc. Text only: the build ships no icon
+/// font, so a drawn glyph keeps the feed readable without an asset dependency.
+QString alertGlyph(const QString &tone)
+{
+    if (tone == QLatin1String("success")) return QStringLiteral("✓");
+    if (tone == QLatin1String("danger"))  return QStringLiteral("!");
+    if (tone == QLatin1String("warning")) return QStringLiteral("⚠");
+    return QStringLiteral("i");
 }
 
 StatusBadge::Status badgeStatus(const QString &token)
@@ -194,36 +223,63 @@ OverviewPage::OverviewPage(QWidget *parent)
                                       QStringLiteral("Policies and unresolved traffic"));
     auto *controlsLayout = static_cast<QVBoxLayout *>(controlsCard->layout());
 
-    auto *statsRow = new QHBoxLayout;
-    statsRow->setSpacing(Theme::Dim::SpaceXl);
+    // One row per control state: count, plain-language title and detail, and
+    // the badge that names the state (DESIGN_SYSTEM.md §6.1).
+    const auto addControlRow = [&](const QString &title, const QString &detail,
+                                   StatusBadge::Status badge, bool first,
+                                   QLabel **countOut, QLabel **detailOut) {
+        auto *row = new QFrame(controlsCard);
+        row->setProperty("uiRole", QStringLiteral("statRow"));
+        if (first)
+            row->setProperty("first", true);
 
-    const auto addStat = [&](const QString &caption, QLabel **valueOut) {
-        auto *block = new QWidget(controlsCard);
-        auto *blockLayout = new QVBoxLayout(block);
-        blockLayout->setContentsMargins(0, 0, 0, 0);
-        blockLayout->setSpacing(0);
+        auto *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, Theme::Dim::SpaceSm, 0, Theme::Dim::SpaceSm);
+        rowLayout->setSpacing(Theme::Dim::SpaceMd);
 
-        auto *value = new QLabel(QStringLiteral("—"), block);
-        value->setProperty("uiRole", QStringLiteral("statValue"));
-        auto *label = new QLabel(caption, block);
-        label->setProperty("uiRole", QStringLiteral("muted"));
+        auto *count = new QLabel(QStringLiteral("—"), row);
+        count->setProperty("uiRole", QStringLiteral("statValue"));
+        count->setFixedWidth(52);
+        count->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
-        blockLayout->addWidget(value);
-        blockLayout->addWidget(label);
-        statsRow->addWidget(block);
-        *valueOut = value;
+        auto *text = new QWidget(row);
+        auto *textLayout = new QVBoxLayout(text);
+        textLayout->setContentsMargins(0, 0, 0, 0);
+        textLayout->setSpacing(0);
+
+        auto *caption = new QLabel(title, text);
+        caption->setProperty("uiRole", QStringLiteral("rowTitle"));
+        auto *sub = new QLabel(detail, text);
+        sub->setProperty("uiRole", QStringLiteral("muted"));
+        sub->setWordWrap(true);
+        textLayout->addWidget(caption);
+        textLayout->addWidget(sub);
+
+        auto *status = new StatusBadge(row);
+        status->setStatus(badge);
+
+        rowLayout->addWidget(count, 0, Qt::AlignTop);
+        rowLayout->addWidget(text, 1);
+        rowLayout->addWidget(status, 0, Qt::AlignTop);
+        controlsLayout->addWidget(row);
+
+        *countOut = count;
+        *detailOut = sub;
     };
 
-    addStat(QStringLiteral("Active"), &m_activeCount);
-    addStat(QStringLiteral("Stored only"), &m_storedCount);
-    addStat(QStringLiteral("Expired"), &m_expiredCount);
-    statsRow->addStretch(1);
-    controlsLayout->addLayout(statsRow);
+    addControlRow(QStringLiteral("Active policies"),
+                  QStringLiteral("Confirmed enforced by the operating system"),
+                  StatusBadge::Status::Active, true,
+                  &m_activeCount, &m_activeDetail);
+    addControlRow(QStringLiteral("Stored-only policies"),
+                  QStringLiteral("Saved locally, not currently enforced"),
+                  StatusBadge::Status::StoredOnly, false,
+                  &m_storedCount, &m_storedDetail);
+    addControlRow(QStringLiteral("Unresolved traffic"),
+                  QStringLiteral("Traffic that cannot be tied to an application"),
+                  StatusBadge::Status::Unknown, false,
+                  &m_unresolvedCount, &m_unresolvedDetail);
 
-    m_unresolvedDetail = new QLabel(controlsCard);
-    m_unresolvedDetail->setProperty("uiRole", QStringLiteral("secondary"));
-    m_unresolvedDetail->setWordWrap(true);
-    controlsLayout->addWidget(m_unresolvedDetail);
     controlsLayout->addStretch(1);
 
     auto *controlsFooter = new QHBoxLayout;
@@ -260,6 +316,8 @@ OverviewPage::OverviewPage(QWidget *parent)
     m_loading->setDetail(QStringLiteral(
         "Oasis is warming up the local capture engine. Counters stay blank until "
         "real telemetry arrives — nothing here is estimated."));
+    connect(m_loading, &EmptyStateWidget::actionTriggered,
+            this, &OverviewPage::monitoringRequested);
     m_loading->hide();
     contentLayout->addWidget(m_loading, 0, Qt::AlignHCenter);
 
@@ -389,11 +447,23 @@ void OverviewPage::setAlerts(const QVector<Overview::Alert> &alerts)
 
 void OverviewPage::setBanner(Overview::BannerSeverity severity, const QString &text)
 {
+    if (text.isEmpty()) {
+        clearBanner();
+        return;
+    }
+
     const char *property = "info";
     if (severity == Overview::BannerSeverity::Warning)
         property = "warning";
     else if (severity == Overview::BannerSeverity::Danger)
         property = "danger";
+
+    // The host republishes the banner on every telemetry beat; restyling an
+    // unchanged banner each second would only add flicker.
+    if (m_banner->isVisible()
+        && m_banner->property("severity").toString() == QString::fromLatin1(property)
+        && m_bannerText->text() == text)
+        return;
 
     m_banner->setProperty("severity", QString::fromLatin1(property));
     m_bannerText->setText(text);
@@ -414,13 +484,35 @@ void OverviewPage::setCollecting(bool collecting)
     m_collecting = collecting;
     m_body->setVisible(!collecting);
     m_loading->setVisible(collecting);
+    if (!collecting)
+        return;
+
+    // The empty state always offers the one action that changes it: capture.
+    if (m_monitoringActive) {
+        m_loading->setTitle(QStringLiteral("Waiting for the first samples"));
+        m_loading->setDetail(QStringLiteral(
+            "The capture engine is running. Traffic from your applications appears "
+            "here within a few seconds — nothing on this screen is estimated."));
+        m_loading->setAction(QString());
+    } else {
+        m_loading->setTitle(QStringLiteral("No network data collected yet"));
+        m_loading->setDetail(QStringLiteral(
+            "Oasis starts recording as soon as monitoring is on. Traffic from your "
+            "applications will appear here within a few seconds."));
+        m_loading->setAction(QStringLiteral("Start monitoring"));
+        m_loading->setActionVariant(QStringLiteral("primary"));
+    }
 }
 
 void OverviewPage::setMonitoringActive(bool active)
 {
+    if (m_monitoringActive == active)
+        return;
     m_monitoringActive = active;
     refreshChartState();
     rebuildConsumers();
+    if (m_collecting)
+        setCollecting(true);
 }
 
 void OverviewPage::setUpdated(const QDateTime &when)
@@ -447,13 +539,26 @@ void OverviewPage::rebuildConsumers()
 
     QWidget *parent = m_consumerRows->parentWidget();
     const int shown = std::min<int>(m_consumers.size(), 5);
+
+    // The bar is proportional to the busiest row on screen, so the shape of the
+    // session is readable at a glance. Current rate decides the scale; a paused
+    // session falls back to total volume so the bars are not all empty.
+    quint64 busiestRate = 0;
+    quint64 busiestTotal = 0;
+    for (int i = 0; i < shown; ++i) {
+        busiestRate = std::max(busiestRate, m_consumers.at(i).bytesPerSecond);
+        busiestTotal = std::max(busiestTotal, m_consumers.at(i).totalBytes);
+    }
+    const bool useRate = busiestRate > 0;
+    const quint64 busiest = useRate ? busiestRate : busiestTotal;
+
     for (int i = 0; i < shown; ++i) {
         const Overview::Consumer &consumer = m_consumers.at(i);
 
         auto *row = new QPushButton(parent);
         row->setProperty("uiRole", QStringLiteral("listRow"));
         row->setCursor(Qt::PointingHandCursor);
-        row->setMinimumHeight(44);
+        row->setMinimumHeight(52);
         row->setToolTip(consumer.path.isEmpty()
                             ? consumer.name + QLatin1Char('\n') + consumer.usage
                             : consumer.path + QLatin1Char('\n') + consumer.usage);
@@ -461,27 +566,21 @@ void OverviewPage::rebuildConsumers()
         auto *rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(Theme::Dim::SpaceXs, Theme::Dim::SpaceXs,
                                       Theme::Dim::SpaceXs, Theme::Dim::SpaceXs);
-        rowLayout->setSpacing(Theme::Dim::SpaceSm);
+        rowLayout->setSpacing(Theme::Dim::SpaceMd);
 
-        auto *rank = new QLabel(QString::number(i + 1), row);
-        rank->setProperty("uiRole", QStringLiteral("rank"));
-        rank->setFixedWidth(14);
-        rank->setAlignment(Qt::AlignCenter);
-
-        auto *avatar = new QLabel(row);
-        avatar->setProperty("uiRole", QStringLiteral("avatar"));
-        avatar->setFixedSize(24, 24);
-        avatar->setAlignment(Qt::AlignCenter);
-        if (consumer.icon.isNull()) {
-            avatar->setText(consumer.name.left(1).toUpper());
-        } else {
-            avatar->setPixmap(consumer.icon.pixmap(20, 20));
-        }
+        auto *tile = new QLabel(row);
+        tile->setProperty("uiRole", QStringLiteral("appTile"));
+        tile->setFixedSize(32, 32);
+        tile->setAlignment(Qt::AlignCenter);
+        if (consumer.icon.isNull())
+            tile->setText(appInitials(consumer.name));
+        else
+            tile->setPixmap(consumer.icon.pixmap(22, 22));
 
         auto *textBlock = new QWidget(row);
         auto *textLayout = new QVBoxLayout(textBlock);
         textLayout->setContentsMargins(0, 0, 0, 0);
-        textLayout->setSpacing(0);
+        textLayout->setSpacing(2);
 
         auto *name = new QLabel(consumer.name.isEmpty()
                                     ? QStringLiteral("Unknown")
@@ -491,27 +590,48 @@ void OverviewPage::rebuildConsumers()
         auto *subtitle = new QLabel(consumer.subtitle, textBlock);
         subtitle->setProperty("uiRole", QStringLiteral("muted"));
         subtitle->setVisible(!consumer.subtitle.isEmpty());
+
+        auto *bar = new QProgressBar(textBlock);
+        bar->setProperty("uiRole", QStringLiteral("shareBar"));
+        bar->setRange(0, 1000);
+        bar->setTextVisible(false);
+        bar->setFixedHeight(3);
+        const quint64 value = useRate ? consumer.bytesPerSecond : consumer.totalBytes;
+        bar->setValue(busiest > 0 ? int(1000.0 * double(value) / double(busiest)) : 0);
+        bar->setVisible(busiest > 0);
+        bar->setAccessibleName(QStringLiteral("Share of the busiest consumer"));
+
         textLayout->addWidget(name);
         textLayout->addWidget(subtitle);
+        textLayout->addSpacing(2);
+        textLayout->addWidget(bar);
 
-        auto *usage = new QLabel(consumer.usage, row);
+        auto *right = new QWidget(row);
+        auto *rightLayout = new QVBoxLayout(right);
+        rightLayout->setContentsMargins(0, 0, 0, 0);
+        rightLayout->setSpacing(2);
+        rightLayout->setAlignment(Qt::AlignRight);
+
+        auto *usage = new QLabel(consumer.usage, right);
         usage->setProperty("uiRole", QStringLiteral("rowValue"));
         usage->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        rightLayout->addWidget(usage, 0, Qt::AlignRight);
 
-        for (QWidget *child : { static_cast<QWidget *>(rank), static_cast<QWidget *>(avatar),
-                                static_cast<QWidget *>(textBlock), static_cast<QWidget *>(usage) })
+        StatusBadge *badge = nullptr;
+        if (!consumer.stateLabel.isEmpty()) {
+            badge = new StatusBadge(right);
+            badge->setStatus(badgeStatus(consumer.stateToken), consumer.stateLabel);
+            rightLayout->addWidget(badge, 0, Qt::AlignRight);
+        }
+
+        for (QWidget *child : { static_cast<QWidget *>(tile),
+                                static_cast<QWidget *>(textBlock),
+                                static_cast<QWidget *>(right) })
             makeClickThrough(child);
 
-        rowLayout->addWidget(rank);
-        rowLayout->addWidget(avatar);
+        rowLayout->addWidget(tile, 0, Qt::AlignTop);
         rowLayout->addWidget(textBlock, 1);
-        if (!consumer.stateLabel.isEmpty()) {
-            auto *badge = new StatusBadge(row);
-            badge->setStatus(badgeStatus(consumer.stateToken), consumer.stateLabel);
-            makeClickThrough(badge);
-            rowLayout->addWidget(badge, 0, Qt::AlignVCenter);
-        }
-        rowLayout->addWidget(usage);
+        rowLayout->addWidget(right, 0, Qt::AlignVCenter);
 
         row->setAccessibleName(consumer.name);
         connect(row, &QPushButton::clicked, this, [this, consumer]() {
@@ -555,13 +675,14 @@ void OverviewPage::rebuildAlerts()
         auto *rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(Theme::Dim::SpaceXs, Theme::Dim::SpaceXs,
                                       Theme::Dim::SpaceXs, Theme::Dim::SpaceXs);
-        rowLayout->setSpacing(Theme::Dim::SpaceSm);
+        rowLayout->setSpacing(Theme::Dim::SpaceMd);
 
-        auto *time = new QLabel(alert.at.isValid() ? relativeTime(alert.at)
-                                                   : QString(),
-                                row);
-        time->setProperty("uiRole", QStringLiteral("muted"));
-        time->setFixedWidth(64);
+        auto *icon = new QLabel(alertGlyph(alert.tone), row);
+        icon->setProperty("uiRole", QStringLiteral("feedIcon"));
+        icon->setProperty("tone", alert.tone.isEmpty()
+                                      ? QStringLiteral("info") : alert.tone);
+        icon->setFixedSize(28, 28);
+        icon->setAlignment(Qt::AlignCenter);
 
         auto *textBlock = new QWidget(row);
         auto *textLayout = new QVBoxLayout(textBlock);
@@ -571,10 +692,19 @@ void OverviewPage::rebuildAlerts()
         auto *title = new QLabel(alert.title, textBlock);
         title->setProperty("uiRole", QStringLiteral("rowTitle"));
         title->setWordWrap(true);
-        auto *detail = new QLabel(alert.detail, textBlock);
+
+        // The mock keeps the relative time on the detail line, not in its own
+        // column: "Enforcement · Driver not loaded · 14 min ago".
+        QString subtitle = alert.detail;
+        if (alert.at.isValid()) {
+            const QString when = relativeTime(alert.at);
+            subtitle = subtitle.isEmpty() ? when
+                                          : subtitle + QStringLiteral(" · ") + when;
+        }
+        auto *detail = new QLabel(subtitle, textBlock);
         detail->setProperty("uiRole", QStringLiteral("muted"));
         detail->setWordWrap(true);
-        detail->setVisible(!alert.detail.isEmpty());
+        detail->setVisible(!subtitle.isEmpty());
         textLayout->addWidget(title);
         textLayout->addWidget(detail);
 
@@ -582,11 +712,11 @@ void OverviewPage::rebuildAlerts()
         action->setProperty("uiRole", QStringLiteral("linkText"));
         action->setVisible(!alert.actionLabel.isEmpty());
 
-        for (QWidget *child : { static_cast<QWidget *>(time), static_cast<QWidget *>(textBlock),
+        for (QWidget *child : { static_cast<QWidget *>(icon), static_cast<QWidget *>(textBlock),
                                 static_cast<QWidget *>(action) })
             makeClickThrough(child);
 
-        rowLayout->addWidget(time, 0, Qt::AlignTop);
+        rowLayout->addWidget(icon, 0, Qt::AlignTop);
         rowLayout->addWidget(textBlock, 1);
         rowLayout->addWidget(action, 0, Qt::AlignVCenter);
 
@@ -603,29 +733,40 @@ void OverviewPage::refreshControls()
         return;
 
     const Overview::ControlCounts &counts = m_controlCounts;
+
     m_activeCount->setText(QString::number(counts.active));
     m_activeCount->setProperty("tone", counts.active > 0 ? QStringLiteral("success")
                                                          : QStringLiteral("muted"));
+    m_activeDetail->setText(counts.active > 0
+        ? QStringLiteral("Confirmed enforced by the operating system")
+        : QStringLiteral("No policy is in force right now"));
+
     m_storedCount->setText(QString::number(counts.storedOnly));
     m_storedCount->setProperty("tone", counts.storedOnly > 0 ? QStringLiteral("warning")
                                                              : QStringLiteral("muted"));
-    m_expiredCount->setText(QString::number(counts.expired));
-    m_expiredCount->setProperty("tone", QStringLiteral("muted"));
+    m_storedDetail->setText(counts.storedOnly > 0
+        ? QStringLiteral("Saved, not applied by this build")
+        : QStringLiteral("Every saved policy is enforceable"));
 
-    for (QLabel *value : { m_activeCount, m_storedCount, m_expiredCount })
-        repolish(value);
-
+    const int share = counts.totalBytes > 0
+        ? int(qRound(100.0 * double(counts.unresolvedBytes) / double(counts.totalBytes)))
+        : 0;
+    m_unresolvedCount->setText(QStringLiteral("%1%").arg(share));
+    m_unresolvedCount->setProperty("tone", share > 0 ? QStringLiteral("warning")
+                                                     : QStringLiteral("muted"));
     if (counts.unresolvedConsumers > 0) {
         m_unresolvedDetail->setText(
-            QStringLiteral("%1 application%2 and %3 of traffic could not be tied to a "
-                           "verified identity. They are never guessed.")
+            QStringLiteral("%1 application%2 · %3 has no known owner. It is never guessed.")
                 .arg(counts.unresolvedConsumers)
                 .arg(counts.unresolvedConsumers == 1 ? QString() : QStringLiteral("s"))
                 .arg(formatBytes(counts.unresolvedBytes)));
     } else {
         m_unresolvedDetail->setText(
-            QStringLiteral("Every observed consumer is currently attributed to an application."));
+            QStringLiteral("Every observed consumer is attributed to an application."));
     }
+
+    for (QLabel *value : { m_activeCount, m_storedCount, m_unresolvedCount })
+        repolish(value);
 
     QStringList parts;
     parts << QStringLiteral("%1 enforced").arg(counts.active);
