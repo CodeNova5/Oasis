@@ -511,6 +511,9 @@ void NetworkTreeModel::onTick()
     for (int pRow = 0; pRow < m_procs.size(); ++pRow) {
         ProcessNode &p = m_procs[pRow];
         quint64 sumRx = 0, sumTx = 0;
+        QString primaryDomain;
+        quint64 primarySpeed = 0;
+        quint64 primaryBytes = 0;
 
         for (auto &c : p.conns) {
             // NG-031: a connection with no new traffic must still lose a name
@@ -535,14 +538,33 @@ void NetworkTreeModel::onTick()
             c.prevTx  = c.txBytes;
             sumRx    += c.rxSpeed;
             sumTx    += c.txSpeed;
+
+            // The one destination the classifier sees: the named connection
+            // carrying the most traffic right now, then the most bytes, so an
+            // idle long-lived connection cannot outvote the active one.
+            if (c.domain.isEmpty()) continue;
+            const quint64 speed = c.rxSpeed + c.txSpeed;
+            const quint64 bytes = c.rxBytes + c.txBytes;
+            if (speed < primarySpeed
+                || (speed == primarySpeed && bytes <= primaryBytes)) {
+                continue;
+            }
+            primaryDomain = c.domain;
+            primarySpeed = speed;
+            primaryBytes = bytes;
         }
         p.totalRxSpeed = sumRx;
         p.totalTxSpeed = sumTx;
 
+        // NG-030/NG-040: a new primary destination can change which catalog
+        // rule matches, so those rows reclassify on the tick that saw it.
+        const bool domainChanged = p.primaryDomain != primaryDomain;
+        p.primaryDomain = primaryDomain;
+
         // NG-041: a foreground transfer can cross the classifier's sustained-rate
         // threshold between packets. Re-evaluate only foreground rows; the
         // signature check makes this a no-op when nothing changed.
-        if (p.foreground != Oasis::ForegroundAssociation::None)
+        if (domainChanged || p.foreground != Oasis::ForegroundAssociation::None)
             refreshActivity(pRow);
 
         // ── FIX: Emit dataChanged starting from COL_NAME to update parent UI correctly ──
@@ -572,6 +594,9 @@ ActivityQuery NetworkTreeModel::activityQueryForRow(int pRow) const
     query.executableName = p.name;
     query.displayName = p.identityName;
     query.publisher = p.publisher;
+    // NG-030: the destination evidence the catalog's endpoint rules need. A
+    // row can hold many connections, so the tick caches the busiest named one.
+    query.domain = p.primaryDomain;
     query.publisherVerified =
         p.signerStatus == ApplicationIdentity::SignerStatus::Signed;
     query.identityId = p.identityId;
@@ -641,7 +666,8 @@ void NetworkTreeModel::refreshActivity(int pRow)
 
     QStringList signature;
     signature << p.name << p.identityId << p.identityName << p.publisher
-              << p.groupId << p.groupName << QString::number(p.services.size());
+              << p.groupId << p.groupName << QString::number(p.services.size())
+              << p.primaryDomain;
     if (!p.services.isEmpty()) signature << p.services.first().serviceName;
 
     // NG-041: a foreground transfer only changes category when it crosses the

@@ -2169,6 +2169,16 @@ void testEndpointCatalog()
     check(!catalog.bestMatch(query).matched,
           QStringLiteral("an exact endpoint does not match a subdomain"));
 
+    // Destination evidence is weaker than naming the process: a browser that
+    // happens to talk to an update endpoint is still a browser.
+    query = CatalogQuery();
+    query.executableName = QStringLiteral("chrome.exe");
+    query.domain = QStringLiteral("update.googleapis.com");
+    match = catalog.bestMatch(query);
+    check(match.matched && match.category == CatalogCategory::Browser &&
+              match.ruleId == QStringLiteral("builtin-chrome-browser"),
+          QStringLiteral("a process rule outranks an endpoint-only rule"));
+
     // Local rules can use address prefixes and identity evidence.
     CatalogRule rangeRule;
     rangeRule.id = QStringLiteral("user-corporate-range");

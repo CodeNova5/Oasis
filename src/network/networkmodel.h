@@ -66,6 +66,10 @@ struct ProcessNode
     // evidence behind it changes (see refreshActivity()).
     ActivityClassification activity;
     QString  activitySignature;
+    // NG-031/NG-040: the name the row's busiest named connection is using,
+    // cached once per tick. The catalog's endpoint rules need one destination
+    // per process, and this is the one carrying the traffic.
+    QString  primaryDomain;
     // NG-041: the owning PID is the foreground application or one of its live
     // helpers. Advisory; it feeds classification and never changes a policy.
     Oasis::ForegroundAssociation foreground = Oasis::ForegroundAssociation::None;

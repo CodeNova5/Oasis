@@ -197,6 +197,23 @@ int criteriaCount(const CatalogRule &rule)
     return count;
 }
 
+// A rule that identifies the process or service itself is stronger evidence
+// than one that only knows a destination: with destination evidence now
+// reaching the catalog, a browser visiting an update endpoint must stay a
+// browser instead of being relabelled as the updater that also ends there.
+int evidenceRank(const CatalogRule &rule)
+{
+    if (!rule.identityId.trimmed().isEmpty()
+        || !rule.publisherContains.trimmed().isEmpty()
+        || !rule.productContains.trimmed().isEmpty()
+        || !rule.executableName.trimmed().isEmpty()
+        || !rule.executablePath.trimmed().isEmpty()
+        || !rule.serviceName.trimmed().isEmpty()) {
+        return 1;
+    }
+    return 0;
+}
+
 int sourceRank(CatalogRuleSource source)
 {
     switch (source) {
@@ -211,6 +228,7 @@ struct MatchResult
 {
     CatalogMatch match;
     int specificity = 0;
+    int evidence = 0;
 };
 
 bool matchRule(const CatalogRule &rule, const CatalogQuery &query, CatalogMatch *match)
@@ -870,6 +888,7 @@ QList<CatalogMatch> EndpointCatalog::matches(const CatalogQuery &query) const
         MatchResult entry;
         entry.match = match;
         entry.specificity = criteriaCount(rule);
+        entry.evidence = evidenceRank(rule);
         ranked.append(entry);
     }
 
@@ -877,6 +896,8 @@ QList<CatalogMatch> EndpointCatalog::matches(const CatalogQuery &query) const
                      [](const MatchResult &left, const MatchResult &right) {
         if (left.specificity != right.specificity)
             return left.specificity > right.specificity;
+        if (left.evidence != right.evidence)
+            return left.evidence > right.evidence;
         return sourceRank(left.match.source) > sourceRank(right.match.source);
     });
 

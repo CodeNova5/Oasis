@@ -141,10 +141,13 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
     // no possible action. So a window only becomes reportable once the unresolved
     // rate has risen clear of its own recent baseline for several beats; a
     // constant trickle never does, and a transfer that stands out still does.
+    // Clamped to [1, 60] so a paused or resumed tick cannot skew the rate.
+    // Every argument is qint64: mixing int literals with a qint64 value makes
+    // qBound's mixed-type overloads ambiguous.
     int elapsedSeconds = 1;
     if (m_unresolvedLastBeatMs > 0)
         elapsedSeconds = int(qBound<qint64>(
-            1, (nowMs - m_unresolvedLastBeatMs) / 1000, 60));
+            qint64(1), (nowMs - m_unresolvedLastBeatMs) / 1000, qint64(60)));
     m_unresolvedLastBeatMs = nowMs;
 
     if (unresolvedBytes < m_unresolvedLastBytes) {
