@@ -101,6 +101,29 @@ body.nodata .empty{display:flex}body.nodata .hasdata{display:none}
 .stalebadge{display:none}.stopped .stalebadge{display:inline-flex}
 .toast{position:fixed;right:24px;bottom:calc(44px + env(safe-area-inset-bottom,0px));width:340px;max-width:calc(100% - 48px);background:var(--surface-elevated);border:1px solid var(--border);border-left:3px solid var(--warning);border-radius:10px;padding:12px 16px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
 .toast.show{display:block}.toast b{display:block;font-size:13px}.toast span{color:var(--text2);font-size:12px}
+[hidden]{display:none!important}
+.tb{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.seg{display:flex;background:var(--surface-primary);border:1px solid var(--border);border-radius:8px;padding:2px;gap:2px}
+.seg button{height:32px;padding:0 12px;border:0;border-bottom:2px solid transparent;border-radius:6px;background:none;color:var(--text2);display:flex;align-items:center;gap:6px}
+.seg button:hover{background:var(--surface-hover);color:var(--text)}
+.seg button.on{background:var(--surface-elevated);border-bottom-color:var(--accent);color:var(--text)}
+.sum{display:flex;gap:32px;flex-wrap:wrap;margin-bottom:12px}
+.sum .val{margin:2px 0 0}
+.cw{position:relative;touch-action:none;cursor:crosshair;user-select:none}
+.selb{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--accent) 16%,transparent);border-left:1px solid var(--accent);border-right:1px solid var(--accent);min-width:2px;pointer-events:none}
+.xh{position:absolute;top:0;bottom:0;width:1px;background:var(--muted);pointer-events:none}
+.tip{position:absolute;top:8px;z-index:2;pointer-events:none;background:var(--surface-elevated);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;line-height:16px;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.tw{max-height:400px;overflow:auto;border-top:1px solid var(--border)}
+table{width:100%;border-collapse:collapse}
+th{position:sticky;top:0;background:var(--surface-elevated);text-align:left;font-weight:400;font-size:12px;color:var(--text2);height:40px;padding:0 12px;white-space:nowrap}
+td{height:40px;padding:0 12px;border-top:1px solid var(--border);white-space:nowrap}
+th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr:hover{background:var(--surface-hover)}
+td .link{font-size:13px}
+.xw{position:relative}
+.menu{position:absolute;right:0;top:40px;z-index:5;background:var(--surface-elevated);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:140px;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.menu button{display:block;width:100%;text-align:left;height:32px;border:0;background:none;padding:0 12px;border-radius:6px}
+.menu button:hover{background:var(--surface-hover)}
 @media (max-width:1100px){.r4{grid-template-columns:1fr 1fr}.r65,.r50{grid-template-columns:1fr}.search{display:none}}
 @media (max-width:760px){
   body{overflow:auto}.app{grid-template-columns:1fr;grid-template-rows:auto auto 1fr 28px;height:auto;min-height:100%}
@@ -121,7 +144,7 @@ body.nodata .empty{display:flex}body.nodata .hasdata{display:none}
   </aside>
 
   <header class="head">
-    <h1>Overview</h1>
+    <h1 id="title">Overview</h1>
     <span class="badge Unknown stalebadge" id="stale">Last updated: 14:32:08</span>
     <div class="grow"></div>
     <label class="search"><svg class="i s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="Search apps, domains, IPs" aria-label="Search"></label>
@@ -135,7 +158,7 @@ body.nodata .empty{display:flex}body.nodata .hasdata{display:none}
     <button class="ib" aria-label="Notifications"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button>
   </header>
 
-  <main><div class="wrap">
+  <main><div class="wrap" id="v-overview">
     <div class="banner w" id="banner"><svg class="i" viewBox="0 0 24 24"><path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4M12 17h.01"/></svg><div class="t" id="bannerText"></div><button class="btn" id="bannerBtn">Open diagnostics</button></div>
 
     <div class="empty card" id="empty"><div class="ci"><svg class="i" viewBox="0 0 24 24" style="width:24px;height:24px"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><h3>No network data collected yet</h3><p>Oasis starts recording as soon as monitoring is on. Traffic from your apps will appear here within a few seconds.</p><button class="btn p">Start monitoring</button></div>
@@ -165,7 +188,28 @@ body.nodata .empty{display:flex}body.nodata .hasdata{display:none}
         <div class="feed" id="feed"></div>
       </section>
     </div>
-  </div></main>
+  </div>
+<div class="wrap" id="v-activity" hidden>
+ <div class="tb">
+  <div class="seg" id="range" role="group" aria-label="Time range"></div>
+  <select id="fApp" aria-label="Application"></select>
+  <select id="fDir" aria-label="Direction"><option value="All">All directions</option><option>Download</option><option>Upload</option></select>
+  <select id="fProto" aria-label="Protocol"><option value="All">All protocols</option><option>TCP</option><option>UDP</option><option>Other</option></select>
+  <div style="flex:1"></div>
+  <div class="xw"><button class="btn" id="exp">Export</button><div class="menu" id="menu" hidden><button data-f="CSV">Export as CSV</button><button data-f="JSON">Export as JSON</button></div></div>
+ </div>
+ <section class="card">
+  <div class="ch"><h2 id="tlTitle"></h2><button class="link" id="clr" hidden>Clear selection</button></div>
+  <div class="sum"><div><div class="lbl"><span style="color:var(--accent)">Downloaded</span></div><div class="val" id="tD"></div></div><div><div class="lbl"><span style="color:var(--success)">Uploaded</span></div><div class="val" id="tU"></div></div><div><div class="lbl"><span>Peak</span></div><div class="val" id="tP" style="font-size:20px;line-height:36px"></div></div></div>
+  <div class="cw" id="cw"><svg id="ach" viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:220px;display:block" role="img" aria-label="Bandwidth over time"></svg><div class="selb" id="selb" hidden></div><div class="xh" id="xh" hidden></div><div class="tip" id="tip" hidden></div></div>
+  <div class="lbl" id="xl" style="margin-top:4px"></div>
+  <div class="sub" style="margin-top:8px">Drag across the chart to filter the records below to that period.</div>
+ </section>
+ <section class="card" style="padding:0;overflow:hidden">
+  <div class="ch" style="margin:0;padding:16px"><h2>Activity records</h2><span class="sub" id="cnt"></span></div>
+  <div class="tw"><table><thead><tr><th>Time window</th><th>Application</th><th>Direction</th><th>Protocol</th><th class="n">Downloaded</th><th class="n">Uploaded</th><th class="n">Total</th></tr></thead><tbody id="tb"></tbody></table></div>
+ </section>
+</div></main>
 
   <footer class="status"><span><span class="dot" id="sdot" style="--c:var(--success)"></span> <span id="stext">Capture driver ready</span></span><span>Adapter: Wi-Fi (Intel AX211)</span><span>Elevated: Yes</span><span style="margin-left:auto">v0.9.2</span></footer>
 </div>
@@ -188,7 +232,7 @@ const $=s=>document.querySelector(s);
 
 // Nav
 const navItems=[["Overview","layout-dashboard"],["Activity","activity"],["Applications","app-window"],["Connections","network"],["Policies","shield"],["Insights","lightbulb"],["Reports","clipboard-list"],["Settings","settings"]];
-$('#nav').innerHTML=navItems.map((n,i)=>`<button class="nav ${i?'':'on'}">${ic(n[1])}<span>${n[0]}</span></button>`).join('');
+$('#nav').innerHTML=navItems.map((n,i)=>`<button class="nav ${i?'':'on'}" data-n="${n[0]}">${ic(n[1])}<span>${n[0]}</span></button>`).join('');
 
 // Mock data
 const apps=[["Chrome","CH",1180,"Active","Confirmed"],["Microsoft Teams","MT",640,"Active","Confirmed"],["Steam","ST",310,"Pending","Likely"],["Windows Update","WU",180,"Stored","Confirmed"],["OneDrive","OD",95,"Active","Confirmed"]];
@@ -241,6 +285,76 @@ $('#feed').innerHTML=feed.map(f=>`<div class="fi" style="--c:var(${f[1]})"><div 
  $('#chart').innerHTML=g+s(dl,'var(--accent)','gd')+s(ul,'var(--success)','gu');
 })();
 render('active');
+
+// ---------- Navigation ----------
+const views={Overview:'#v-overview',Activity:'#v-activity'};
+function show(n){
+ if(!views[n]){toast(n,'Not built in this mock yet.');return}
+ for(const k in views)$(views[k]).hidden=k!==n;
+ $('#title').textContent=n;
+ document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+}
+document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>show(b.dataset.n));
+$('#kpis').addEventListener('click',e=>{if(e.target.closest('.card.click')){setRange('1 hour');show('Activity')}});
+$('#trafficCard').onclick=()=>{setRange('1 hour');show('Activity')};
+
+// ---------- Activity ----------
+const PAIRS=[['Chrome','TCP',1,.06],['Chrome','UDP',.5,.05],['Microsoft Teams','UDP',.45,.4],['Microsoft Teams','TCP',.1,.05],['Steam','TCP',.7,.02],['Windows Update','TCP',.3,.01],['OneDrive','TCP',.12,.3],['System','Other',.04,.02]];
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const RG={'Live':{n:60,step:5,sc:.0006,end:new Date(2026,10,14,14,32,10),pk:'5 s'},'1 hour':{n:60,step:60,sc:8,end:new Date(2026,10,14,14,33),pk:'minute'},'24 hours':{n:24,step:3600,sc:350,end:new Date(2026,10,14,15,0),pk:'hour'},'7 days':{n:7,step:86400,sc:6000,end:new Date(2026,10,15),pk:'day'},'30 days':{n:30,step:86400,sc:5000,end:new Date(2026,10,15),pk:'day'}};
+const p2=x=>String(x).padStart(2,'0');
+const tf=(d,st)=>st<60?`${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`:st<86400?`${p2(d.getHours())}:${p2(d.getMinutes())}`:`${MON[d.getMonth()]} ${d.getDate()}`;
+const fm=m=>m>=1000?(m/1000).toFixed(2)+' GB':m>=1?m.toFixed(1)+' MB':Math.round(m*1024)+' KB';
+let F={range:'1 hour',app:'All',dir:'All',proto:'All'},D=[],W=[],SEL=null,SD=[],SU=[],RC=0;
+function build(){
+ const g=RG[F.range];let s=F.range.length*13+5;const r=()=>(s=(s*16807)%2147483647)/2147483647;
+ D=[];W=[];
+ for(let i=0;i<g.n;i++){
+  const a=new Date(g.end-(g.n-i)*g.step*1000),b=new Date(+a+g.step*1000);
+  const dp=g.step===3600&&a.getDate()!==14?MON[a.getMonth()]+' '+a.getDate()+' ':'';
+  W.push(g.step>=86400?tf(a,g.step):dp+tf(a,g.step)+'–'+tf(b,g.step));
+  const f=.7+.5*Math.sin(i/5)+(i%17===11?1.6:0);
+  D.push(PAIRS.map(p=>({app:p[0],proto:p[1],dl:r()<.2?0:p[2]*g.sc*f*(.3+r()*1.4),ul:p[3]*g.sc*f*(.3+r()*1.4)})).filter(x=>x.dl>0));
+ }
+}
+const pth=p=>p.map((q,i)=>{if(!i)return`M${q[0]},${q[1]}`;const o=p[i-1],cx=(o[0]+q[0])/2;return`C${cx},${o[1]} ${cx},${q[1]} ${q[0]},${q[1]}`}).join(' ');
+function drawAct(){
+ const V=D.map((rs,i)=>rs.filter(x=>(F.app==='All'||x.app===F.app)&&(F.proto==='All'||x.proto===F.proto)).map(x=>({i,app:x.app,proto:x.proto,dl:F.dir==='Upload'?0:x.dl,ul:F.dir==='Download'?0:x.ul})));
+ const n=V.length;SD=V.map(r=>r.reduce((a,x)=>a+x.dl,0));SU=V.map(r=>r.reduce((a,x)=>a+x.ul,0));
+ const [a,b]=SEL||[0,n-1],T=arr=>arr.slice(a,b+1).reduce((x,y)=>x+y,0);
+ $('#tD').textContent=fm(T(SD));$('#tU').textContent=fm(T(SU));
+ $('#tP').textContent=fm(Math.max(...SD.slice(a,b+1).map((v,i)=>v+SU[a+i])))+' / '+RG[F.range].pk;
+ $('#tlTitle').textContent=SEL?`Selection · ${W[a].split('–')[0]} to ${W[b].split('–').pop()}`:(F.range==='Live'?'Bandwidth · live, last 5 minutes':'Bandwidth · last '+F.range);
+ $('#clr').hidden=!SEL;
+ const H=220,Wd=800,mx=(Math.max(...SD)*1.15)||1,pt=arr=>arr.map((v,i)=>[i/(n-1)*Wd,H-10-(v/mx)*(H-20)]);
+ const grid=[0,1,2,3].map(i=>`<line x1="0" x2="${Wd}" y1="${10+i*(H-20)/3}" y2="${10+i*(H-20)/3}" stroke="var(--border)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
+ const ser=(arr,c,id)=>{const p=pt(arr),d=pth(p);return`<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".28"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs><path d="${d} L${Wd},${H} L0,${H}Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke"/>`};
+ $('#ach').innerHTML=grid+ser(SD,'var(--accent)','ad')+ser(SU,'var(--success)','au');
+ $('#xl').innerHTML=[0,1,2,3,4].map(k=>`<span>${k===4&&RG[F.range].step<86400?W[n-1].split('–').pop():W[Math.round(k*(n-1)/4)].split('–')[0]}</span>`).join('');
+ const sb=$('#selb');sb.hidden=!SEL;if(SEL){sb.style.left=a/(n-1)*100+'%';sb.style.width=(b-a)/(n-1)*100+'%'}
+ const R=V.slice(a,b+1).flat().sort((x,y)=>y.i-x.i||(y.dl+y.ul)-(x.dl+x.ul));RC=R.length;
+ $('#cnt').textContent=`Showing ${Math.min(150,R.length)} of ${R.length} records`;
+ $('#tb').innerHTML=R.slice(0,150).map(x=>`<tr><td>${W[x.i]}</td><td><button class="link" data-a="${x.app}">${x.app}</button></td><td>${x.dl&&x.ul?'↓↑ Both':x.dl?'↓ Download':'↑ Upload'}</td><td>${x.proto}</td><td class="n">${x.dl?fm(x.dl):'—'}</td><td class="n">${x.ul?fm(x.ul):'—'}</td><td class="n">${fm(x.dl+x.ul)}</td></tr>`).join('');
+}
+function setRange(k){F.range=k;SEL=null;build();document.querySelectorAll('#range button').forEach(b=>b.classList.toggle('on',b.dataset.r===k));drawAct()}
+$('#range').innerHTML=Object.keys(RG).map(k=>`<button data-r="${k}">${k==='Live'?'<span class="dot" style="--c:var(--danger)"></span>':''}${k}</button>`).join('');
+$('#range').onclick=e=>{const b=e.target.closest('button');if(b)setRange(b.dataset.r)};
+$('#fApp').innerHTML='<option value="All">All applications</option>'+[...new Set(PAIRS.map(p=>p[0]))].map(a=>`<option>${a}</option>`).join('');
+[['fApp','app'],['fDir','dir'],['fProto','proto']].forEach(([id,k])=>$('#'+id).onchange=e=>{F[k]=e.target.value;drawAct()});
+$('#clr').onclick=()=>{SEL=null;drawAct()};
+$('#tb').onclick=e=>{const b=e.target.closest('[data-a]');if(b)toast('Application Details','Opening '+b.dataset.a+' (mock)')};
+$('#exp').onclick=e=>{e.stopPropagation();$('#menu').hidden=!$('#menu').hidden};
+$('#menu').onclick=e=>{const b=e.target.closest('[data-f]');if(b)toast('Exported '+RC+' records','Saved as '+b.dataset.f+' (mock)')};
+document.addEventListener('click',()=>$('#menu').hidden=true);
+const cw=$('#cw');let drag=null;
+const ix=e=>{const r=cw.getBoundingClientRect();return Math.max(0,Math.min(D.length-1,Math.round((e.clientX-r.left)/r.width*(D.length-1))))};
+cw.onpointerdown=e=>{cw.setPointerCapture(e.pointerId);drag=ix(e);SEL=[drag,drag];drawAct()};
+cw.onpointermove=e=>{const i=ix(e);if(drag!==null){SEL=[Math.min(drag,i),Math.max(drag,i)];drawAct()}
+ const r=cw.getBoundingClientRect(),x=i/(D.length-1)*r.width,xh=$('#xh'),t=$('#tip');xh.hidden=t.hidden=false;xh.style.left=x+'px';
+ t.innerHTML=`<b>${W[i]}</b><br>↓ ${fm(SD[i])} &nbsp; ↑ ${fm(SU[i])}`;t.style.left=(x>r.width/2?x-t.offsetWidth-12:x+12)+'px'};
+cw.onpointerup=()=>drag=null;
+cw.onpointerleave=()=>{$('#xh').hidden=$('#tip').hidden=true};
+setRange('1 hour');
 </script>
 </body>
 </html>

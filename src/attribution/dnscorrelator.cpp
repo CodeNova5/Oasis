@@ -281,6 +281,25 @@ QList<DestinationNameSummary> DnsCorrelator::summaries(const QDateTime &now) con
     return result;
 }
 
+QList<DomainAttribution> DnsCorrelator::records(const QDateTime &now) const
+{
+    QList<DomainAttribution> result;
+    QMutexLocker locker(&m_mutex);
+    for (auto it = m_byAddress.constBegin(); it != m_byAddress.constEnd(); ++it) {
+        for (const DomainAttribution &record : it.value()) {
+            if (record.expiresAt > now &&
+                record.lastSeen.addSecs(m_retentionSeconds) > now) {
+                result.append(record);
+            }
+        }
+    }
+    std::sort(result.begin(), result.end(),
+              [](const DomainAttribution &left, const DomainAttribution &right) {
+                  return left.lastSeen > right.lastSeen;
+              });
+    return result;
+}
+
 void DnsCorrelator::pruneLocked(const QDateTime &now)
 {
     for (auto it = m_byAddress.begin(); it != m_byAddress.end();) {

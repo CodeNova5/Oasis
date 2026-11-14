@@ -53,6 +53,9 @@
 #include "network/topconsumers.h"
 #include "network/policyreconcile.h"
 #include "network/testfixtures.h"
+#include "activity/activitydetector.h"
+#include "activity/activityevent.h"
+#include "activity/activityseries.h"
 
 namespace {
 
@@ -5577,6 +5580,189 @@ void testTopConsumers()
                QStringLiteral("an empty suggestion section says so"));
 }
 
+// ============================================================================
+// Activity (Screen 02) data layer
+// ============================================================================
+
+void testActivityEventModel()
+{
+    const QDateTime at = QDateTime::currentDateTime();
+
+    Activity::Event spike;
+    spike.id = Activity::makeEventId(Activity::Category::Spike, at,
+                                     QStringLiteral("chrome.exe"));
+    spike.at = at;
+    spike.category = Activity::Category::Spike;
+    spike.appName = QStringLiteral("chrome.exe");
+    spike.destination = QStringLiteral("203.0.113.9");
+
+    Activity::Event unresolved;
+    unresolved.id = Activity::makeEventId(Activity::Category::Unresolved, at,
+                                          QStringLiteral("unresolved"));
+    unresolved.at = at.addSecs(-5);
+    unresolved.category = Activity::Category::Unresolved;
+    unresolved.appName = QStringLiteral("Unrecognized traffic");
+    unresolved.attribution = QStringLiteral("Unknown");
+    unresolved.extra.append({ QStringLiteral("Local match"), QStringLiteral("None") });
+
+    QList<Activity::Event> events{ spike, unresolved };
+
+    Activity::EventFilter byApp;
+    byApp.app = QStringLiteral("chrome.exe");
+    checkEqual(int(Activity::filterEvents(events, byApp).size()), 1,
+               QStringLiteral("activity app filter matches one event"));
+
+    Activity::EventFilter byText;
+    byText.text = QStringLiteral("203.0.113.9");
+    checkEqual(int(Activity::filterEvents(events, byText).size()), 1,
+               QStringLiteral("activity search covers the destination"));
+
+    Activity::EventFilter byUnresolved;
+    byUnresolved.hasCategory = true;
+    byUnresolved.category = Activity::Category::Unresolved;
+    checkEqual(int(Activity::filterEvents(events, byUnresolved).size()), 1,
+               QStringLiteral("activity category filter matches unresolved"));
+
+    const QHash<int, int> counts = Activity::categoryCounts(events, Activity::EventFilter());
+    checkEqual(counts.value(static_cast<int>(Activity::Category::Spike)), 1,
+               QStringLiteral("activity counts spikes"));
+    checkEqual(counts.value(static_cast<int>(Activity::Category::Unresolved)), 1,
+               QStringLiteral("activity counts unresolved"));
+
+    const QString json = Activity::exportJson(events, true);
+    const QJsonObject root = QJsonDocument::fromJson(json.toUtf8()).object();
+    checkEqual(root.value(QStringLiteral("format")).toString(),
+               QStringLiteral("oasis.activity-feed"),
+               QStringLiteral("activity export names its format"));
+    checkEqual(root.value(QStringLiteral("count")).toInt(), 2,
+               QStringLiteral("activity export counts events"));
+    check(!json.contains(QStringLiteral("203.0.113.9")),
+          QStringLiteral("activity JSON export redacts the destination by default"));
+
+    const QString csv = Activity::exportCsv(events, true);
+    check(csv.contains(QStringLiteral("volume_bytes")),
+          QStringLiteral("activity CSV export has the volume column"));
+    check(!csv.contains(QStringLiteral("203.0.113.9")),
+          QStringLiteral("activity CSV export redacts the destination by default"));
+}
+
+void testActivitySeries()
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    Activity::SeriesStore store;
+    QList<Activity::AppRate> apps;
+    apps.append({ QStringLiteral("chrome.exe"), 80, 20 });
+    store.addSample(now, 100, 50, apps, 1);
+
+    const QVector<Activity::SeriesPoint> points = store.series(Activity::Range::Hour);
+    checkEqual(int(points.size()), Activity::rangeBucketCount(Activity::Range::Hour),
+               QStringLiteral("activity hour series has one bucket per minute"));
+
+    quint64 rx = 0;
+    quint64 tx = 0;
+    for (const Activity::SeriesPoint &point : points) {
+        rx += point.rxBytes;
+        tx += point.txBytes;
+    }
+    check(rx >= 100, QStringLiteral("activity series keeps the downloaded bytes"));
+    check(tx >= 50, QStringLiteral("activity series keeps the uploaded bytes"));
+    check(store.appNames(Activity::Range::Hour).contains(QStringLiteral("chrome.exe")),
+          QStringLiteral("activity series retains application names"));
+
+    const QString json = store.toJsonString();
+    Activity::SeriesStore restored;
+    check(restored.fromJsonString(json),
+          QStringLiteral("activity series JSON round-trips"));
+    const Activity::SeriesTotals before = store.totals(Activity::Range::Hour);
+    const Activity::SeriesTotals after = restored.totals(Activity::Range::Hour);
+    checkEqual(after.rxBytes, before.rxBytes,
+               QStringLiteral("activity series round-trip keeps download totals"));
+    checkEqual(after.txBytes, before.txBytes,
+               QStringLiteral("activity series round-trip keeps upload totals"));
+
+    Activity::SeriesStore empty;
+    check(empty.series(Activity::Range::Week).isEmpty(),
+          QStringLiteral("an empty activity store returns no week points"));
+}
+
+void testActivityDetector()
+{
+    Activity::DetectorSettings settings;
+    settings.absoluteFloorBytesPerSecond = 1000;
+    settings.baselineMultiplier = 3.0;
+    settings.sustainSeconds = 3;
+    settings.baselineSeconds = 5;
+    settings.cooldownSeconds = 60;
+    settings.unresolvedBytesThreshold = 100;
+    settings.unresolvedWindowSeconds = 300;
+    settings.unresolvedCooldownSeconds = 60;
+
+    Activity::Detector detector(settings);
+    const QDateTime start = QDateTime::currentDateTime();
+
+    Activity::ProcessRate calm;
+    calm.name = QStringLiteral("chrome.exe");
+    calm.pid = 42;
+    calm.rxBytesPerSecond = 100;
+    calm.txBytesPerSecond = 0;
+
+    for (int i = 0; i < 5; ++i)
+        detector.observe(start.addSecs(i), { calm }, 0);
+
+    Activity::ProcessRate spike = calm;
+    spike.rxBytesPerSecond = 5000;
+    spike.destination = QStringLiteral("cdn.example.net");
+    spike.attribution = QStringLiteral("Likely");
+
+    QList<Activity::Event> events;
+    for (int i = 0; i < 3; ++i)
+        events += detector.observe(start.addSecs(5 + i), { spike }, 0);
+
+    checkEqual(int(events.size()), 1, QStringLiteral("a sustained spike produces one event"));
+    if (!events.isEmpty()) {
+        check(events.first().category == Activity::Category::Spike,
+              QStringLiteral("the detected event is a spike"));
+        checkEqual(events.first().appName, QStringLiteral("chrome.exe"),
+                   QStringLiteral("the spike names the application"));
+        checkEqual(events.first().destination, QStringLiteral("cdn.example.net"),
+                   QStringLiteral("the spike carries the observed destination"));
+        check(events.first().peakBytesPerSecond >= 5000,
+              QStringLiteral("the spike records its peak rate"));
+    }
+
+    // Same application, immediately above the threshold again: the cooldown
+    // suppresses a second card for the same sustained transfer.
+    for (int i = 0; i < 4; ++i)
+        events += detector.observe(start.addSecs(10 + i), { spike }, 0);
+    checkEqual(int(events.size()), 1, QStringLiteral("the spike cooldown prevents duplicates"));
+
+    Activity::Detector brief(settings);
+    brief.observe(start, { calm }, 0);
+    brief.observe(start.addSecs(1), { spike }, 0);
+    brief.observe(start.addSecs(2), { calm }, 0);
+    brief.observe(start.addSecs(3), { calm }, 0);
+    checkEqual(int(brief.observe(start.addSecs(4), { calm }, 0).size()), 0,
+               QStringLiteral("a one-second burst is not a spike"));
+
+    // Unresolved traffic: 60 + 60 bytes crosses the 100-byte window.
+    Activity::Detector unresolved(settings);
+    unresolved.observe(start, {}, 0);
+    checkEqual(int(unresolved.observe(start.addSecs(1), {}, 60).size()), 0,
+               QStringLiteral("a small unresolved sample stays quiet"));
+    const QList<Activity::Event> unresolvedEvents =
+        unresolved.observe(start.addSecs(2), {}, 120);
+    checkEqual(int(unresolvedEvents.size()), 1,
+               QStringLiteral("accumulated unresolved bytes produce an event"));
+    if (!unresolvedEvents.isEmpty()) {
+        check(unresolvedEvents.first().category == Activity::Category::Unresolved,
+              QStringLiteral("the event is classified unresolved"));
+        checkEqual(unresolvedEvents.first().attribution, QStringLiteral("Unknown"),
+                   QStringLiteral("unresolved attribution stays explicitly unknown"));
+        check(unresolvedEvents.first().appPath.isEmpty(),
+              QStringLiteral("unresolved traffic claims no executable"));
+    }
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -5627,6 +5813,9 @@ int main(int argc, char *argv[])
     testEvidenceExport();
     testPolicyScopePresentation();
     testTopConsumers();
+    testActivityEventModel();
+    testActivitySeries();
+    testActivityDetector();
 
     QSettings().clear();
 

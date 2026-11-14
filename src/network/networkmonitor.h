@@ -91,6 +91,10 @@ public:
     // connection never inherits a stale name.
     QList<DomainAttribution> attributionsForAddress(const QString &address) const;
 
+    // Every live DNS/SNI record, most recently seen first. The Activity screen
+    // uses this to name the destination behind a spike without inventing one.
+    QList<DomainAttribution> attributionRecords() const;
+
     // Every live address as one combined summary, sorted by address. Used by the
     // NG-055 attribution export so support receives the same resolution the
     // tree shows, including each name's confidence and evidence.

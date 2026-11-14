@@ -141,6 +141,15 @@ public:
     // notification uses, so a warning can be followed by its evidence.
     void showApplicationDetails(quint32 pid, const QString &executablePath,
                                 const QString &processName = QString());
+    // Activity actions route through the existing policy editor and list, so the
+    // feed never becomes a second enforcement path.
+    void showPolicyEditorFor(quint32 pid, const QString &executablePath,
+                             const QString &processName = QString());
+    void showPolicies();
+    // Most recent DNS/SNI name observed for the process, when one exists. The
+    // out parameter receives its plain confidence label (Confirmed/Likely/...).
+    QString primaryDestinationForPid(quint32 pid,
+                                     QString *confidence = nullptr) const;
 
 private:
     void populateAdapterCombo();

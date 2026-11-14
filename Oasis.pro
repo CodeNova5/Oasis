@@ -36,6 +36,11 @@ SOURCES += \
     src/ui/components/emptystatewidget.cpp \
     src/ui/components/trafficchart.cpp \
     src/ui/pages/overview/overviewpage.cpp \
+    src/ui/pages/activity/activitypage.cpp \
+    src/ui/pages/activity/activitytimeline.cpp \
+    src/activity/activityevent.cpp \
+    src/activity/activityseries.cpp \
+    src/activity/activitydetector.cpp \
     src/core/updatechecker.cpp \
     src/core/appinstaller.cpp \
     src/core/windowsicon.cpp \
@@ -114,6 +119,11 @@ HEADERS += \
     src/ui/components/emptystatewidget.h \
     src/ui/components/trafficchart.h \
     src/ui/pages/overview/overviewpage.h \
+    src/ui/pages/activity/activitypage.h \
+    src/ui/pages/activity/activitytimeline.h \
+    src/activity/activityevent.h \
+    src/activity/activityseries.h \
+    src/activity/activitydetector.h \
     src/core/updatechecker.h \
     src/core/appinstaller.h \
     src/core/windowsicon.h \

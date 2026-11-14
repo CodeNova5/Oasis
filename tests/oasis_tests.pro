@@ -43,6 +43,9 @@ SOURCES += \
     ../src/network/policyscope.cpp \
     ../src/network/topconsumers.cpp \
     ../src/network/policyreconcileplan.cpp \
+    ../src/activity/activityevent.cpp \
+    ../src/activity/activityseries.cpp \
+    ../src/activity/activitydetector.cpp \
     ../src/attribution/dnsobserver.cpp \
     ../src/attribution/attributionprivacy.cpp \
     ../src/attribution/activityclassifier.cpp \
@@ -77,6 +80,9 @@ HEADERS += \
     ../src/network/policyscope.h \
     ../src/network/topconsumers.h \
     ../src/network/policyreconcile.h \
+    ../src/activity/activityevent.h \
+    ../src/activity/activityseries.h \
+    ../src/activity/activitydetector.h \
     ../src/attribution/dnsobserver.h \
     ../src/attribution/attributionprivacy.h \
     ../src/attribution/activityclassifier.h \

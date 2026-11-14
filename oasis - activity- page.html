@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oasis – Activity</title>
+<style>
+:root{
+  --surface-window:#111318;--surface-sidebar:#171A21;--surface-primary:#1C2029;--surface-elevated:#242A35;--surface-hover:#2B3240;--border:#343B48;
+  --accent:#4C8DFF;--success:#3FB982;--warning:#E6AD4D;--danger:#E36B70;--info:#62B5E8;
+  --text:#F3F5F8;--text2:#A1A9B7;--muted:#6C7586;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  --surface-window:#F3F4F7;--surface-sidebar:#EAECF1;--surface-primary:#FFFFFF;--surface-elevated:#F6F7FA;--surface-hover:#E6E9F0;--border:#D5D9E2;
+  --accent:#2F6FE0;--success:#1F9A66;--warning:#B7791F;--danger:#C9454B;--info:#1E88C7;
+  --text:#14171D;--text2:#4B5363;--muted:#80889A;color-scheme:light;}}
+:root[data-theme="light"]{
+  --surface-window:#F3F4F7;--surface-sidebar:#EAECF1;--surface-primary:#FFFFFF;--surface-elevated:#F6F7FA;--surface-hover:#E6E9F0;--border:#D5D9E2;
+  --accent:#2F6FE0;--success:#1F9A66;--warning:#B7791F;--danger:#C9454B;--info:#1E88C7;
+  --text:#14171D;--text2:#4B5363;--muted:#80889A;color-scheme:light;}
+:root[data-theme="dark"]{color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--surface-window);color:var(--text);font:400 13px/18px "Segoe UI Variable","Segoe UI",system-ui,sans-serif;overflow:hidden}
+button,select{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+svg.i.s{width:16px;height:16px}
+
+/* App Shell */
+.app{display:grid;grid-template-columns:232px 1fr;grid-template-rows:60px 1fr 28px;height:100%}
+.side{grid-row:1/4;background:var(--surface-sidebar);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:4px;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px;font-size:16px;line-height:24px;font-weight:600}
+.logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--info));display:grid;place-items:center;color:#fff}
+.nav{display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border-radius:6px;border:0;background:none;color:var(--text2);text-align:left;width:100%;position:relative}
+.nav:hover{background:var(--surface-hover);color:var(--text)}
+.nav.on{background:var(--surface-elevated);color:var(--text)}
+.nav.on svg{color:var(--accent)}
+.nav.on::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--accent)}
+.side .sp{flex:1}
+
+.head{display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--border)}
+.head h1{margin:0;font-size:24px;line-height:32px;font-weight:600}
+.head .grow{flex:1}
+.search{display:flex;align-items:center;gap:8px;height:38px;width:260px;padding:0 12px;background:var(--surface-primary);border:1px solid var(--border);border-radius:6px;color:var(--muted)}
+.search:focus-within{border-color:var(--accent)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--text);font:inherit}
+select{height:36px;background:var(--surface-elevated);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0 10px}
+.ib{width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:6px;background:none;color:var(--text2)}
+.ib:hover{background:var(--surface-hover);color:var(--text)}
+
+main{overflow:auto;padding:24px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.status{grid-column:2;display:flex;align-items:center;gap:16px;padding:0 16px;background:var(--surface-sidebar);border-top:1px solid var(--border);font-size:11px;line-height:14px;color:var(--text2)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--c,var(--muted));display:inline-block}
+
+/* Cards & Controls */
+.card{background:var(--surface-primary);border:1px solid var(--border);border-radius:10px;padding:16px;min-width:0}
+.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}
+.ch h2{margin:0;font-size:14px;line-height:20px;font-weight:600}
+.lbl{display:flex;justify-content:space-between;align-items:center;font-size:12px;line-height:16px;color:var(--text2)}
+.val{font-size:28px;line-height:36px;font-weight:600;margin:2px 0 0}
+.sub{font-size:11px;line-height:14px;color:var(--muted)}
+.link{color:var(--accent);background:none;border:0;padding:0;font-size:12px}
+.link:hover{text-decoration:underline}
+
+.btn{height:32px;padding:0 12px;border-radius:6px;font-weight:600;font-size:12px;border:1px solid var(--border);background:var(--surface-elevated);display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--surface-hover)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.p:hover{filter:brightness(1.1)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--text2)}
+.btn.ghost:hover{background:var(--surface-hover);color:var(--text)}
+
+.badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:6px;font-size:11px;font-weight:600;line-height:14px;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);white-space:nowrap}
+.badge.Spike{--c:var(--warning)}.badge.Unresolved{--c:var(--danger)}.badge.Policy{--c:var(--success)}.badge.Respawn{--c:var(--info)}.badge.Active{--c:var(--success)}.badge.Unknown{--c:var(--text2)}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--c)}
+
+/* Toolbar & Timeline */
+.tb{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.seg{display:flex;background:var(--surface-primary);border:1px solid var(--border);border-radius:8px;padding:2px;gap:2px}
+.seg button{height:32px;padding:0 12px;border:0;border-bottom:2px solid transparent;border-radius:6px;background:none;color:var(--text2);display:flex;align-items:center;gap:6px;font-size:12px}
+.seg button:hover{background:var(--surface-hover);color:var(--text)}
+.seg button.on{background:var(--surface-elevated);border-bottom-color:var(--accent);color:var(--text);font-weight:600}
+
+.sum{display:flex;gap:32px;flex-wrap:wrap;margin-bottom:12px}
+.cw{position:relative;touch-action:none;cursor:crosshair;user-select:none}
+.selb{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--accent) 16%,transparent);border-left:1px solid var(--accent);border-right:1px solid var(--accent);min-width:2px;pointer-events:none}
+.xh{position:absolute;top:0;bottom:0;width:1px;background:var(--muted);pointer-events:none}
+.tip{position:absolute;top:8px;z-index:2;pointer-events:none;background:var(--surface-elevated);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;line-height:16px;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+
+/* Anomaly & Spike Feed */
+.feed-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{height:28px;padding:0 12px;border-radius:14px;border:1px solid var(--border);background:var(--surface-primary);color:var(--text2);font-size:12px;display:inline-flex;align-items:center;gap:6px}
+.pill:hover{background:var(--surface-hover);color:var(--text)}
+.pill.on{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:var(--accent);color:var(--text);font-weight:600}
+.pill .cnt{background:var(--surface-elevated);padding:1px 6px;border-radius:10px;font-size:11px;color:var(--text2)}
+.pill.on .cnt{background:var(--accent);color:#fff}
+
+.stream{display:flex;flex-direction:column;gap:10px}
+.ev{background:var(--surface-primary);border:1px solid var(--border);border-left:3px solid var(--ec,var(--border));border-radius:10px;padding:16px;display:grid;grid-template-columns:36px 1fr;gap:14px;transition:transform .12s,background .12s}
+.ev:hover{background:color-mix(in srgb,var(--surface-primary) 85%,var(--surface-hover))}
+.ev.Spike{--ec:var(--warning)}.ev.Unresolved{--ec:var(--danger)}.ev.Policy{--ec:var(--success)}.ev.Respawn{--ec:var(--info)}
+
+.ev-ic{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:var(--ec);background:color-mix(in srgb,var(--ec) 12%,transparent)}
+.ev-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
+.ev-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ev-time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ev-desc{color:var(--text);margin:4px 0 8px;line-height:19px}
+.ev-meta{display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--text2);background:var(--surface-elevated);padding:8px 12px;border-radius:6px;margin-bottom:12px}
+.ev-meta span b{color:var(--text);font-weight:600}
+.ev-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+
+/* Empty State */
+.empty-feed{text-align:center;padding:48px 24px;background:var(--surface-primary);border:1px dashed var(--border);border-radius:10px;color:var(--text2)}
+.empty-feed h3{margin:8px 0 4px;color:var(--text);font-size:15px}
+
+/* Export Menu & Toast */
+.xw{position:relative}
+.menu{position:absolute;right:0;top:38px;z-index:5;background:var(--surface-elevated);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:150px;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.menu button{display:block;width:100%;text-align:left;height:32px;border:0;background:none;padding:0 12px;border-radius:6px}
+.menu button:hover{background:var(--surface-hover)}
+
+.toast{position:fixed;right:24px;bottom:calc(44px + env(safe-area-inset-bottom,0px));width:350px;max-width:calc(100% - 48px);background:var(--surface-elevated);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:12px 16px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:20}
+.toast.show{display:block}.toast b{display:block;font-size:13px;margin-bottom:2px}.toast span{color:var(--text2);font-size:12px}
+[hidden]{display:none!important}
+
+@media (max-width:760px){
+  body{overflow:auto}.app{grid-template-columns:1fr;grid-template-rows:auto auto 1fr 28px;height:auto;min-height:100%}
+  .side{grid-row:auto;flex-direction:row;overflow-x:auto;padding:8px;border-right:0;border-bottom:1px solid var(--border)}
+  .brand,.side .sp{display:none}.nav{width:auto;flex:none;padding:0 12px}.nav span{display:none}.status{grid-column:1}
+  .head{padding:8px 16px;flex-wrap:wrap;height:auto;min-height:60px}.head h1{font-size:20px}main{padding:16px;overflow:visible}.search{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="logo"><svg class="i" viewBox="0 0 24 24"><path d="M2 12c3-6 7-6 10 0s7 6 10 0"/></svg></div>Oasis</div>
+    <div id="nav" style="display:contents"></div>
+    <div class="sp"></div>
+    <div class="badge Active" style="align-self:flex-start;margin:0 8px">Monitoring</div>
+  </aside>
+
+  <header class="head">
+    <h1>Activity</h1>
+    <div class="grow"></div>
+    <label class="search">
+      <svg class="i s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="qSearch" placeholder="Filter events, apps, IPs..." aria-label="Search events">
+    </label>
+    <button class="btn" id="simSpikeBtn" title="Simulate a new live anomaly">+ Simulate spike</button>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <!-- Top Time & Application Toolbar -->
+      <div class="tb">
+        <div class="seg" id="range" role="group" aria-label="Time range"></div>
+        <select id="fApp" aria-label="Application"></select>
+        <div style="flex:1"></div>
+        <div class="xw">
+          <button class="btn" style="height:36px" id="exp">Export feed</button>
+          <div class="menu" id="menu" hidden>
+            <button data-f="JSON">Export events (JSON)</button>
+            <button data-f="CSV">Export events (CSV)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bandwidth Timeline Card -->
+      <section class="card">
+        <div class="ch">
+          <h2 id="tlTitle">Bandwidth · last 1 hour</h2>
+          <button class="link" id="clr" hidden>Clear time slice</button>
+        </div>
+        <div class="sum">
+          <div><div class="lbl"><span style="color:var(--accent)">Downloaded</span></div><div class="val" id="tD">0 MB</div></div>
+          <div><div class="lbl"><span style="color:var(--success)">Uploaded</span></div><div class="val" id="tU">0 MB</div></div>
+          <div><div class="lbl"><span>Peak Rate</span></div><div class="val" id="tP" style="font-size:20px;line-height:36px">0 MB/s</div></div>
+        </div>
+        <div class="cw" id="cw">
+          <svg id="ach" viewBox="0 0 800 200" preserveAspectRatio="none" style="width:100%;height:200px;display:block" role="img" aria-label="Bandwidth over time"></svg>
+          <div class="selb" id="selb" hidden></div>
+          <div class="xh" id="xh" hidden></div>
+          <div class="tip" id="tip" hidden></div>
+        </div>
+        <div class="lbl" id="xl" style="margin-top:4px"></div>
+        <div class="sub" style="margin-top:8px">Drag across the timeline to isolate anomalies and spikes within that exact window.</div>
+      </section>
+
+      <!-- Anomaly & Spike Stream Section -->
+      <div>
+        <div class="feed-header">
+          <div class="pills" id="catPills"></div>
+          <span class="sub" id="feedCount">Showing 0 notable events</span>
+        </div>
+        <div class="stream" id="stream"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="status">
+    <span><span class="dot" style="--c:var(--success)"></span> Capture driver ready</span>
+    <span>Adapter: Wi-Fi (Intel AX211)</span>
+    <span>Noise filter: Active (Routine chatter collapsed)</span>
+    <span style="margin-left:auto">v1.2.0</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast"><b></b><span></span></div>
+
+<script>
+const P = {
+  "layout-dashboard": '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  "app-window": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4M2 8h20M6 4v4"/>',
+  network: '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  lightbulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/>',
+  "clipboard-list": '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M12 11h4M12 16h4M8 11h.01M8 16h.01"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  alert: '<path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3M12 9v4M12 17h.01"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'
+};
+const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24">${P[n]}</svg>`;
+const $ = s => document.querySelector(s);
+
+// Navigation setup
+const navItems = [
+  ["Overview", "layout-dashboard"], ["Activity", "activity"], ["Applications", "app-window"],
+  ["Connections", "network"], ["Policies", "shield"], ["Insights", "lightbulb"],
+  ["Reports", "clipboard-list"], ["Settings", "settings"]
+];
+$('#nav').innerHTML = navItems.map(n => `<button class="nav ${n[0] === 'Activity' ? 'on' : ''}" data-n="${n[0]}">${ic(n[1])}<span>${n[0]}</span></button>`).join('');
+document.querySelectorAll('.nav').forEach(b => b.onclick = () => {
+  if (b.dataset.n !== 'Activity') toast(b.dataset.n, 'Standalone Activity view demo.');
+});
+
+// Toast Helper
+let tt;
+function toast(title, msg) {
+  const t = $('#toast');
+  t.querySelector('b').textContent = title;
+  t.querySelector('span').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(tt);
+  tt = setTimeout(() => t.classList.remove('show'), 3800);
+}
+
+// Mock Data for Timeline Chart
+const RG = {
+  'Live': { n: 60, step: 5, sc: 0.008, end: new Date(2026, 10, 14, 15, 2, 0), pk: '5 s' },
+  '1 hour': { n: 60, step: 60, sc: 12, end: new Date(2026, 10, 14, 15, 2), pk: 'min' },
+  '24 hours': { n: 24, step: 3600, sc: 420, end: new Date(2026, 10, 14, 15, 0), pk: 'hr' },
+  '7 days': { n: 7, step: 86400, sc: 6500, end: new Date(2026, 10, 15), pk: 'day' }
+};
+const p2 = x => String(x).padStart(2, '0');
+const tf = (d, st) => st < 60 ? `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}` : st < 86400 ? `${p2(d.getHours())}:${p2(d.getMinutes())}` : `Nov ${d.getDate()}`;
+const fm = m => m >= 1000 ? (m / 1000).toFixed(2) + ' GB' : m >= 1 ? m.toFixed(1) + ' MB' : Math.round(m * 1024) + ' KB';
+
+// Mock Anomaly & Spike Events (Bucket index 0..59 maps to the 1-hour chart)
+let EVENTS = [
+  {
+    id: 'ev-1',
+    type: 'Spike',
+    badge: 'Bandwidth Spike',
+    icon: 'zap',
+    bucket: 52,
+    time: '14:54:12',
+    app: 'Steam',
+    title: 'Steam initiated a large background download',
+    desc: 'Sustained high-throughput transfer detected from Steam Content Delivery Network while running in background.',
+    meta: { Volume: '1.24 GB', 'Peak Rate': '42.8 Mbps (78% cap)', Attribution: 'Confirmed (Valve Corp.)', Destination: 'cache12-iad1.steamcontent.com' },
+    actions: [
+      { label: 'Throttle to 5 Mbps', style: 'p', act: 'throttle' },
+      { label: 'Allow for 1 hour', style: '', act: 'allow' },
+      { label: 'Dismiss', style: 'ghost', act: 'dismiss' }
+    ]
+  },
+  {
+    id: 'ev-2',
+    type: 'Unresolved',
+    badge: 'Unrecognized Traffic',
+    icon: 'alert',
+    bucket: 44,
+    time: '14:46:05',
+    app: 'Unknown Process',
+    title: 'Unattributed external data transfer detected',
+    desc: 'Direct IP connection transferred 48.2 MB without a DNS query, TLS SNI header, or confirmed local PID mapping.',
+    meta: { Volume: '48.2 MB', 'Remote IP': '203.0.113.42:443 (UDP)', Attribution: 'Unknown', 'Local Match': 'None' },
+    actions: [
+      { label: 'Block IP', style: 'p', act: 'block' },
+      { label: 'Inspect Connection', style: '', act: 'inspect' },
+      { label: 'Dismiss', style: 'ghost', act: 'dismiss' }
+    ]
+  },
+  {
+    id: 'ev-3',
+    type: 'Respawn',
+    badge: 'Respawn Caught',
+    icon: 'refresh',
+    bucket: 31,
+    time: '14:33:19',
+    app: 'Windows Update',
+    title: 'Background updater respawned under a new PID',
+    desc: 'Delivery Optimization (svchost.exe) spawned a child worker process. Durable service policy automatically re-applied.',
+    meta: { 'New PID': '18492', 'Enforced Limit': '2.0 Mbps Download', Scope: 'Windows Service Identity', Saved: '310 MB est.' },
+    actions: [
+      { label: 'View Policy Rule', style: '', act: 'policy' },
+      { label: 'Dismiss', style: 'ghost', act: 'dismiss' }
+    ]
+  },
+  {
+    id: 'ev-4',
+    type: 'Policy',
+    badge: 'Auto-Throttled',
+    icon: 'check',
+    bucket: 18,
+    time: '14:20:44',
+    app: 'OneDrive',
+    title: 'Cloud sync upload surge automatically paced',
+    desc: 'OneDrive exceeded the 15 MB/min background threshold during metered Wi-Fi hours and was throttled by Data Saver.',
+    meta: { 'Data Saved': '420 MB', 'Active Cap': '1.5 Mbps Upload', Trigger: 'Metered Connection Rule', Attribution: 'Confirmed (Microsoft)' },
+    actions: [
+      { label: 'Pause Limit (30m)', style: '', act: 'allow' },
+      { label: 'Dismiss', style: 'ghost', act: 'dismiss' }
+    ]
+  },
+  {
+    id: 'ev-5',
+    type: 'Spike',
+    badge: 'Upload Surge',
+    icon: 'zap',
+    bucket: 9,
+    time: '14:11:03',
+    app: 'Chrome',
+    title: 'Unusual upstream burst in foreground browser',
+    desc: 'Google Chrome uploaded 185 MB in 90 seconds to cloud storage endpoints.',
+    meta: { Volume: '185 MB', 'Peak Upload': '16.4 Mbps', Destination: 'upload.drive.google.com', Attribution: 'Confirmed (Google LLC)' },
+    actions: [
+      { label: 'Throttle Upload', style: '', act: 'throttle' },
+      { label: 'Dismiss', style: 'ghost', act: 'dismiss' }
+    ]
+  }
+];
+
+let STATE = {
+  range: '1 hour',
+  app: 'All',
+  cat: 'All',
+  query: '',
+  sel: null, // [startIdx, endIdx]
+  dl: [],
+  ul: [],
+  windows: []
+};
+
+// Populate App Dropdown
+function updateAppSelect() {
+  const apps = ['All', ...new Set(EVENTS.map(e => e.app))];
+  const cur = STATE.app;
+  $('#fApp').innerHTML = apps.map(a => `<option value="${a}">${a === 'All' ? 'All applications' : a}</option>`).join('');
+  $('#fApp').value = apps.includes(cur) ? cur : 'All';
+}
+
+// Build Chart Telemetry Series
+function buildTimeline() {
+  const g = RG[STATE.range];
+  let seed = STATE.range.length * 19 + 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  STATE.dl = [];
+  STATE.ul = [];
+  STATE.windows = [];
+
+  for (let i = 0; i < g.n; i++) {
+    const a = new Date(g.end - (g.n - i) * g.step * 1000);
+    const b = new Date(+a + g.step * 1000);
+    STATE.windows.push(g.step >= 86400 ? tf(a, g.step) : `${tf(a, g.step)}–${tf(b, g.step)}`);
+
+    // Base low noise + spike bumps where events sit
+    let dVal = g.sc * (0.25 + rnd() * 0.45);
+    let uVal = g.sc * 0.12 * (0.2 + rnd() * 0.5);
+
+    if (STATE.range === '1 hour') {
+      if (i >= 50 && i <= 55) dVal += g.sc * 4.2; // Steam spike
+      if (i >= 43 && i <= 45) dVal += g.sc * 1.4; // Unresolved burst
+      if (i >= 8 && i <= 11) uVal += g.sc * 2.8;  // Chrome upload
+    } else {
+      if (i % 7 === 3) dVal += g.sc * 2.5;
+    }
+
+    if (STATE.app !== 'All') {
+      dVal *= 0.45;
+      uVal *= 0.45;
+    }
+    STATE.dl.push(dVal);
+    STATE.ul.push(uVal);
+  }
+}
+
+const smoothPath = p => p.map((q, i) => {
+  if (!i) return `M${q[0]},${q[1]}`;
+  const o = p[i - 1], cx = (o[0] + q[0]) / 2;
+  return `C${cx},${o[1]} ${cx},${q[1]} ${q[0]},${q[1]}`;
+}).join(' ');
+
+function renderChart() {
+  const n = STATE.dl.length;
+  const [a, b] = STATE.sel || [0, n - 1];
+  const sumSlice = arr => arr.slice(a, b + 1).reduce((x, y) => x + y, 0);
+
+  $('#tD').textContent = fm(sumSlice(STATE.dl));
+  $('#tU').textContent = fm(sumSlice(STATE.ul));
+  const peak = Math.max(...STATE.dl.slice(a, b + 1).map((v, idx) => v + STATE.ul[a + idx]));
+  $('#tP').textContent = `${fm(peak)} / ${RG[STATE.range].pk}`;
+
+  $('#tlTitle').textContent = STATE.sel
+    ? `Selected window · ${STATE.windows[a].split('–')[0]} to ${STATE.windows[b].split('–').pop()}`
+    : (STATE.range === 'Live' ? 'Bandwidth · live stream' : `Bandwidth · last ${STATE.range}`);
+  $('#clr').hidden = !STATE.sel;
+
+  const H = 200, W = 800;
+  const maxVal = (Math.max(...STATE.dl, ...STATE.ul) * 1.18) || 1;
+  const toPts = arr => arr.map((v, i) => [i / (n - 1) * W, H - 10 - (v / maxVal) * (H - 22)]);
+
+  const grid = [0, 1, 2, 3].map(i => `<line x1="0" x2="${W}" y1="${10 + i * (H - 22) / 3}" y2="${10 + i * (H - 22) / 3}" stroke="var(--border)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
+  const series = (arr, color, id) => {
+    const pts = toPts(arr), d = smoothPath(pts);
+    return `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".26"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+            <path d="${d} L${W},${H} L0,${H}Z" fill="url(#${id})"/>
+            <path d="${d}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  };
+
+  // Plot anomaly marker dots directly on the timeline
+  const markers = EVENTS.map(ev => {
+    const idx = Math.min(n - 1, Math.max(0, ev.bucket));
+    const x = idx / (n - 1) * W;
+    const y = H - 10 - (STATE.dl[idx] / maxVal) * (H - 22);
+    const col = ev.type === 'Unresolved' ? 'var(--danger)' : ev.type === 'Spike' ? 'var(--warning)' : 'var(--success)';
+    return `<circle cx="${x}" cy="${y}" r="4.5" fill="${col}" stroke="var(--surface-primary)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  }).join('');
+
+  $('#ach').innerHTML = grid + series(STATE.dl, 'var(--accent)', 'gd') + series(STATE.ul, 'var(--success)', 'gu') + markers;
+  $('#xl').innerHTML = [0, 1, 2, 3, 4].map(k => {
+    const idx = Math.round(k * (n - 1) / 4);
+    return `<span>${k === 4 && RG[STATE.range].step < 86400 ? STATE.windows[n - 1].split('–').pop() : STATE.windows[idx].split('–')[0]}</span>`;
+  }).join('');
+
+  const sb = $('#selb');
+  sb.hidden = !STATE.sel;
+  if (STATE.sel) {
+    sb.style.left = (a / (n - 1) * 100) + '%';
+    sb.style.width = Math.max(0.5, (b - a) / (n - 1) * 100) + '%';
+  }
+}
+
+// Render Category Pills & Filtered Feed
+function renderFeed() {
+  const categories = [
+    { id: 'All', label: 'All Events' },
+    { id: 'Spike', label: 'Spikes & Surges' },
+    { id: 'Unresolved', label: 'Unrecognized' },
+    { id: 'Policy', label: 'Policy Actions' },
+    { id: 'Respawn', label: 'Respawns' }
+  ];
+
+  // Filter by time slice, app, and search query first to get accurate category counts
+  const baseFiltered = EVENTS.filter(ev => {
+    if (STATE.app !== 'All' && ev.app !== STATE.app) return false;
+    if (STATE.sel && (ev.bucket < STATE.sel[0] || ev.bucket > STATE.sel[1])) return false;
+    if (STATE.query) {
+      const q = STATE.query.toLowerCase();
+      const hay = `${ev.title} ${ev.desc} ${ev.app} ${Object.values(ev.meta).join(' ')}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  $('#catPills').innerHTML = categories.map(c => {
+    const count = c.id === 'All' ? baseFiltered.length : baseFiltered.filter(e => e.type === c.id).length;
+    return `<button class="pill ${STATE.cat === c.id ? 'on' : ''}" data-c="${c.id}">${c.label}<span class="cnt">${count}</span></button>`;
+  }).join('');
+
+  const visible = STATE.cat === 'All' ? baseFiltered : baseFiltered.filter(e => e.type === STATE.cat);
+  $('#feedCount').textContent = `Showing ${visible.length} notable ${visible.length === 1 ? 'event' : 'events'}`;
+
+  if (!visible.length) {
+    $('#stream').innerHTML = `
+      <div class="empty-feed">
+        ${ic('check')}
+        <h3>No anomalies or spikes in this view</h3>
+        <p class="sub" style="font-size:12px">Routine background traffic is running quietly within normal thresholds.</p>
+      </div>`;
+    return;
+  }
+
+  $('#stream').innerHTML = visible.map(ev => {
+    const metaHtml = Object.entries(ev.meta).map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('');
+    const btnHtml = ev.actions.map(a => `<button class="btn ${a.style}" data-id="${ev.id}" data-act="${a.act}">${a.label}</button>`).join('');
+    return `
+      <article class="ev ${ev.type}">
+        <div class="ev-ic">${ic(ev.icon)}</div>
+        <div>
+          <div class="ev-top">
+            <div class="ev-title">
+              <span>${ev.title}</span>
+              <span class="badge ${ev.type}">${ev.badge}</span>
+            </div>
+            <span class="ev-time">${ev.time}</span>
+          </div>
+          <p class="ev-desc">${ev.desc}</p>
+          <div class="ev-meta">${metaHtml}</div>
+          <div class="ev-actions">${btnHtml}</div>
+        </div>
+      </article>`;
+  }).join('');
+}
+
+function refreshAll() {
+  renderChart();
+  renderFeed();
+}
+
+// Event Listeners
+$('#range').innerHTML = Object.keys(RG).map(k => `<button data-r="${k}">${k === 'Live' ? '<span class="dot" style="--c:var(--danger)"></span>' : ''}${k}</button>`).join('');
+$('#range').onclick = e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  STATE.range = b.dataset.r;
+  STATE.sel = null;
+  document.querySelectorAll('#range button').forEach(x => x.classList.toggle('on', x.dataset.r === STATE.range));
+  buildTimeline();
+  refreshAll();
+};
+
+$('#fApp').onchange = e => {
+  STATE.app = e.target.value;
+  buildTimeline();
+  refreshAll();
+};
+
+$('#qSearch').oninput = e => {
+  STATE.query = e.target.value.trim();
+  renderFeed();
+};
+
+$('#catPills').onclick = e => {
+  const p = e.target.closest('.pill');
+  if (!p) return;
+  STATE.cat = p.dataset.c;
+  renderFeed();
+};
+
+$('#clr').onclick = () => {
+  STATE.sel = null;
+  refreshAll();
+};
+
+// Feed Action Buttons
+$('#stream').onclick = e => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const { id, act } = btn.dataset;
+  const ev = EVENTS.find(x => x.id === id);
+  if (!ev) return;
+
+  if (act === 'dismiss') {
+    EVENTS = EVENTS.filter(x => x.id !== id);
+    updateAppSelect();
+    refreshAll();
+    toast('Event dismissed', 'Removed from your active anomaly stream.');
+  } else if (act === 'throttle') {
+    ev.type = 'Policy';
+    ev.badge = 'Throttled';
+    ev.icon = 'check';
+    ev.actions = [{ label: 'Dismiss', style: 'ghost', act: 'dismiss' }];
+    refreshAll();
+    toast('Throttle policy applied', `${ev.app} limited to 5 Mbps (durable path scope).`);
+  } else if (act === 'block') {
+    ev.type = 'Policy';
+    ev.badge = 'Blocked';
+    ev.icon = 'shield';
+    ev.actions = [{ label: 'Dismiss', style: 'ghost', act: 'dismiss' }];
+    refreshAll();
+    toast('Firewall rule created', `Blocked outbound/inbound traffic for ${ev.meta['Remote IP'] || ev.app}.`);
+  } else if (act === 'allow') {
+    toast('Temporary exemption granted', `${ev.app} allowed unrestricted bandwidth for 1 hour.`);
+  } else {
+    toast('Inspecting details', `Opening full telemetry drawer for ${ev.app}...`);
+  }
+};
+
+// Simulate Live Spike Button
+$('#simSpikeBtn').onclick = () => {
+  const now = new Date();
+  const timeStr = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
+  const newEv = {
+    id: 'ev-' + Date.now(),
+    type: 'Spike',
+    badge: 'Live Spike',
+    icon: 'zap',
+    bucket: STATE.dl.length - 1,
+    time: timeStr,
+    app: 'Docker Desktop',
+    title: 'Container image pull caused a sudden download burst',
+    desc: 'com.docker.backend.exe pulled 340 MB in 18 seconds from registry-1.docker.io.',
+    meta: { Volume: '340 MB', 'Peak Rate': '151 Mbps', Attribution: 'Confirmed (Docker Inc.)', Destination: 'registry-1.docker.io' },
+    actions: [
+      { label: 'Throttle to 10 Mbps', style: 'p', act: 'throttle' },
+      { label: 'Dismiss', style: 'ghost', act: 'dismiss' }
+    ]
+  };
+  EVENTS.unshift(newEv);
+  STATE.dl[STATE.dl.length - 1] += RG[STATE.range].sc * 4.5;
+  updateAppSelect();
+  refreshAll();
+  toast('New spike detected', 'Docker Desktop pulled 340 MB.');
+};
+
+// Export Dropdown
+$('#exp').onclick = e => { e.stopPropagation(); $('#menu').hidden = !$('#menu').hidden; };
+$('#menu').onclick = e => {
+  const b = e.target.closest('[data-f]');
+  if (b) toast('Feed exported', `Saved ${EVENTS.length} notable events as ${b.dataset.f}.`);
+};
+document.addEventListener('click', () => $('#menu').hidden = true);
+
+// Interactive Timeline Brush Selection
+const cw = $('#cw');
+let dragStart = null;
+const getIdx = e => {
+  const r = cw.getBoundingClientRect();
+  return Math.max(0, Math.min(STATE.dl.length - 1, Math.round((e.clientX - r.left) / r.width * (STATE.dl.length - 1))));
+};
+
+cw.onpointerdown = e => {
+  cw.setPointerCapture(e.pointerId);
+  dragStart = getIdx(e);
+  STATE.sel = [dragStart, dragStart];
+  refreshAll();
+};
+
+cw.onpointermove = e => {
+  const i = getIdx(e);
+  if (dragStart !== null) {
+    STATE.sel = [Math.min(dragStart, i), Math.max(dragStart, i)];
+    refreshAll();
+  }
+  const r = cw.getBoundingClientRect();
+  const x = i / (STATE.dl.length - 1) * r.width;
+  const xh = $('#xh'), tip = $('#tip');
+  xh.hidden = tip.hidden = false;
+  xh.style.left = x + 'px';
+  tip.innerHTML = `<b>${STATE.windows[i]}</b><br>↓ ${fm(STATE.dl[i])} &nbsp; ↑ ${fm(STATE.ul[i])}`;
+  tip.style.left = (x > r.width / 2 ? x - tip.offsetWidth - 12 : x + 12) + 'px';
+};
+
+cw.onpointerup = () => {
+  if (dragStart !== null && STATE.sel && STATE.sel[0] === STATE.sel[1]) {
+    STATE.sel = null; // Single click clears selection
+    refreshAll();
+  }
+  dragStart = null;
+};
+cw.onpointerleave = () => { $('#xh').hidden = $('#tip').hidden = true; };
+
+// Initialize Page
+document.querySelector('#range button[data-r="1 hour"]').classList.add('on');
+updateAppSelect();
+buildTimeline();
+refreshAll();
+</script>
+</body>
+</html>

@@ -16,8 +16,12 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QSet>
 #include <QStringList>
 
+#include "activity/activitydetector.h"
+#include "activity/activityevent.h"
+#include "activity/activityseries.h"
 #include "ui/theme/thememanager.h"
 #include "hardware/hardwaremonitor.h"
 #include "network/notificationcoordinator.h"
@@ -33,6 +37,7 @@ class AppSidebar;
 class AppHeader;
 class SystemStatusBar;
 class OverviewPage;
+class ActivityPage;
 class QStackedWidget;
 struct BandwidthEvent;
 namespace TopConsumers { struct Summary; }
@@ -85,6 +90,13 @@ private slots:
     // notification has named an application.
     void openLastNotificationSubject();
 
+    // Activity (Screen 02): one-second samples feed the bounded series and the
+    // detector; stored audits become policy/respawn cards.
+    void onActivityTelemetry(const TopConsumers::Summary &summary);
+    void refreshActivityAuditEvents();
+    void exportActivityFeed(const QString &format);
+    void saveActivitySeries();
+
     void onExportHistory();
     void onClearHistory();
     void onHistoryFilterChanged(int index);
@@ -117,6 +129,8 @@ private:
     QWidget *makePlaceholderPage(const QString &title, const QString &detail);
     void setupWidgets();
     void setupOverview();
+    void setupActivity();
+    void appendActivityEvent(const Activity::Event &event);
     // Banner, chart placeholder and empty state all follow capture state, so
     // one place decides what the page says about monitoring.
     void refreshOverviewState();
@@ -162,6 +176,16 @@ private:
     quint64            m_overviewRxRate = 0;
     quint64            m_overviewTxRate = 0;
     bool               m_overviewHasData = false;
+
+    ActivityPage      *m_activity = nullptr;
+    Activity::SeriesStore m_activitySeries;
+    Activity::Detector    m_activityDetector;
+    QList<Activity::Event> m_activityEvents;
+    QSet<QString>          m_activityEventIds;
+    QString                m_activitySeriesFilePath;
+    QDateTime              m_activityLastBeat;
+    QStringList            m_activityApplications;
+    QTimer                *m_activitySaveTimer = nullptr;
 
     NetworkWidget     *m_netWidget = nullptr;
     AuditLogModel     *m_auditModel = nullptr;

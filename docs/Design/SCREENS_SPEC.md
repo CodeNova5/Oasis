@@ -44,28 +44,32 @@ Every screen must explicitly implement these states rather than only designing f
 * Monitoring active, Monitoring stopped, No network adapter available, Elevation/permission unavailable, Partial monitoring, No data collected yet, High unresolved traffic alert.
 
 ---
-
 ## Screen 02 — Activity (`ActivityPage`) — **P1**
 
-**Purpose:** Show how network consumption changes over time. *(Strictly time-oriented; must not duplicate the identity-oriented Applications table).*
+**Purpose:** Surface intelligent, event-driven anomalies, bandwidth spikes, and policy actions rather than an endless raw telemetry log. *(Transforms time-oriented tracking into a high-signal, zero-friction action stream).*
 
 ### Layout Structure
 1. **Control Toolbar:**
-   * Segmented time range selector (`FilterBar`): `Live` | `1 hour` | `24 hours` | `7 days` | `30 days`.
-   * Filter dropdowns: `Application`, `Direction (All/Download/Upload)`, `Protocol (TCP/UDP/Other)`.
-   * Right-aligned `ButtonSecondary`: `Export` (CSV/JSON).
+   * Segmented time range selector (`FilterBar`): `Live` | `1 hour` | `24 hours` | `7 days`.
+   * Application filter dropdown (`All applications` or specific app).
+   * Right-aligned utility buttons: `+ Simulate spike` and `Export feed` (JSON/CSV).
 2. **Bandwidth Timeline Card:**
-   * Interactive `TrafficChart` supporting brush/range selection.
-   * Summary header displaying total **Downloaded** and **Uploaded** volume for the selected timeframe.
-3. **Activity Records Table (`QTableView`, `40 px` compact rows):**
-   * Displays time-bucketed traffic entries matching the chart selection.
-   * Columns: `Time Window`, `Application`, `Direction`, `Protocol`, `Downloaded`, `Uploaded`, `Total`.
+   * Interactive `TrafficChart` supporting brush/range selection with **embedded anomaly marker dots** plotted directly on the time series.
+   * Summary KPI strip: **Downloaded volume**, **Uploaded volume**, and **Peak Rate** for the selected timeframe.
+3. **Anomaly & Spike Stream Feed:**
+   * Category filter pills: `All Events`, `Spikes & Surges`, `Unrecognized`, `Policy Actions`, `Respawns` (each displaying live event counts).
+   * Event Cards (`36 px` icon, left-border severity accent):
+     * Header: Event title, category badge (`Spike`, `Unresolved`, `Policy`, `Respawn`), and tabular timestamp.
+     * Description: Plain-language summary explaining the anomaly or background event.
+     * Metadata Box (`#242A35` surface): Structured technical details (Volume, Peak Rate, Attribution confidence, Destination domain/IP, or PID info).
+     * Action Footer: Contextual one-click remediation buttons (e.g., `Throttle to 5 Mbps`, `Block IP`, `View Policy Rule`, `Dismiss`).
 
-### Interactions
-* Dragging/selecting a time slice on the timeline filters the **Activity Records** table below to that exact period.
-* Clicking an application name opens **Application Details**.
-
----
+### Interactions & Behavior
+* **Timeline Brush Selection:** Dragging across the chart filters the anomaly stream feed below to that exact time slice. Clicking the chart clears the selection.
+* **Marker Correlation:** Anomaly dots on the timeline visually link spikes to their respective stream entries.
+* **Category Filtering:** Clicking category pills instantly filters the stream feed by event classification.
+* **Action Execution:** Clicking action buttons on feed cards triggers immediate policy adjustments or dismisses the item with toast feedback[cite: 2].
+```[cite: 2]
 
 ## Screen 03 — Applications (`ApplicationsPage`) — **P0**
 

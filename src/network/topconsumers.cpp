@@ -82,10 +82,13 @@ Summary build(const QList<Consumer> &consumers, const QList<NetworkPolicy> &poli
 {
     Summary summary;
     summary.consumerCount = consumers.size();
+    summary.consumers = consumers;
 
     for (const Consumer &consumer : consumers) {
         summary.totalRxBytes += consumer.rxBytes;
         summary.totalTxBytes += consumer.txBytes;
+        summary.totalRxBytesPerSecond += consumer.rxBytesPerSecond;
+        summary.totalTxBytesPerSecond += consumer.txBytesPerSecond;
         summary.totalBytesPerSecond += consumer.totalBytesPerSecond();
 
         if (isUnresolved(consumer)) {

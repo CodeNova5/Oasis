@@ -868,3 +868,78 @@ QLabel[uiRole="emptyIcon"] {
     min-height: 32px;
     max-height: 32px;
 }
+
+/* ── Activity (Screen 02) ───────────────────────────────────────────────── */
+QFrame[uiRole="activityCard"] {
+    background-color: @surface-primary;
+    border: 1px solid @border-default;
+    border-radius: @radius-card;
+}
+QFrame[uiRole="activityCard"]:hover {
+    border-color: @surface-hover;
+}
+QFrame[uiRole="activityAccent"][tone="warning"] { background-color: @semantic-warning; }
+QFrame[uiRole="activityAccent"][tone="danger"]  { background-color: @semantic-danger; }
+QFrame[uiRole="activityAccent"][tone="success"] { background-color: @semantic-success; }
+QFrame[uiRole="activityAccent"][tone="info"]    { background-color: @semantic-info; }
+
+QLabel[uiRole="activityIcon"] {
+    border-radius: 18px;
+    font-size: @font-size-card;
+    font-weight: 700;
+}
+QLabel[uiRole="activityIcon"][tone="warning"] {
+    background-color: @warning-subtle;
+    color: @semantic-warning;
+}
+QLabel[uiRole="activityIcon"][tone="danger"] {
+    background-color: @danger-subtle;
+    color: @semantic-danger;
+}
+QLabel[uiRole="activityIcon"][tone="success"] {
+    background-color: @success-subtle;
+    color: @semantic-success;
+}
+QLabel[uiRole="activityIcon"][tone="info"] {
+    background-color: @info-subtle;
+    color: @semantic-info;
+}
+
+QLabel[uiRole="eventTitle"] {
+    color: @text-primary;
+    font-size: @font-size-body;
+    font-weight: 600;
+}
+QLabel[uiRole="eventBody"] {
+    color: @text-secondary;
+    font-size: @font-size-secondary;
+}
+QLabel[uiRole="eventTimestamp"] {
+    color: @text-muted;
+    font-size: @font-size-meta;
+}
+
+QFrame[uiRole="metaBox"] {
+    background-color: @surface-elevated;
+    border: 1px solid @border-default;
+    border-radius: @radius-control;
+}
+QLabel[uiRole="metaKey"] {
+    color: @text-muted;
+    font-size: @font-size-meta;
+}
+QLabel[uiRole="metaValue"] {
+    color: @text-primary;
+    font-size: @font-size-meta;
+    font-weight: 600;
+}
+
+QLabel[uiRole="activityKpiValue"] {
+    color: @text-primary;
+    font-size: @font-size-section;
+    font-weight: 600;
+}
+QLabel[uiRole="activityKpiLabel"] {
+    color: @text-muted;
+    font-size: @font-size-meta;
+}

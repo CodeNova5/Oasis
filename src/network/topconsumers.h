@@ -96,9 +96,15 @@ struct Recommendation
 struct Summary
 {
     QList<Row> rows;
+    // Every consumer, not only the ranked rows above. The Activity screen uses
+    // this to keep a per-application time series and to populate its filter, so
+    // an application outside the top five still gets a chart of its own.
+    QList<Consumer> consumers;
     int consumerCount = 0;
     quint64 totalRxBytes = 0;
     quint64 totalTxBytes = 0;
+    quint64 totalRxBytesPerSecond = 0;
+    quint64 totalTxBytesPerSecond = 0;
     quint64 totalBytesPerSecond = 0;
 
     quint32 topPid = 0;

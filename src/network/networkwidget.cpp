@@ -17,6 +17,7 @@
 #include "recommendationdialog.h"
 #include "aiapprovaldialog.h"
 #include "attribution/aiapproval.h"
+#include "attribution/attributionconfidence.h"
 #include "attribution/openaiadapter.h"
 
 // ── Theme Manager ──
@@ -446,6 +447,43 @@ void NetworkWidget::showApplicationDetails(quint32 pid, const QString &executabl
     dlg.exec();
 }
 
+void NetworkWidget::showPolicyEditorFor(quint32 pid, const QString &executablePath,
+                                        const QString &processName)
+{
+    QString name = processName.trimmed();
+    QString path = executablePath.trimmed();
+    const int row = (m_model && pid != 0) ? m_model->rowForPid(pid) : -1;
+    if (name.isEmpty() && row >= 0)
+        name = m_model->snapshotForRow(row).name;
+    if (path.isEmpty())
+        path = getExactProcessPath(pid, name);
+    createPolicyForTarget(policyTargetFor(pid, name, path));
+}
+
+void NetworkWidget::showPolicies()
+{
+    if (ui && ui->btnPolicies)
+        ui->btnPolicies->click();
+}
+
+QString NetworkWidget::primaryDestinationForPid(quint32 pid, QString *confidence) const
+{
+    if (confidence)
+        confidence->clear();
+    if (!m_monitor || pid == 0)
+        return QString();
+
+    const QList<DomainAttribution> records = m_monitor->attributionRecords();
+    for (const DomainAttribution &record : records) {
+        if (record.pid != pid || record.name.isEmpty())
+            continue;
+        if (confidence)
+            *confidence = AttributionConfidenceModel::displayName(record.confidence);
+        return record.name;
+    }
+    return QString();
+}
+
 // ============================================================================
 // ── Process Properties Dialog Implementation ──
 // ============================================================================
@@ -850,7 +888,27 @@ NetworkWidget::NetworkWidget(QWidget *parent)
 
         for (auto it = m_runningGroupPaths.constBegin();
              it != m_runningGroupPaths.constEnd(); ++it) {
-            m_enforcement->reapplyGroupPolicies(it.key(), it.value(), activeGroupPolicies);
+            const QList<EnforcementResult> reapplied =
+                m_enforcement->reapplyGroupPolicies(it.key(), it.value(),
+                                                    activeGroupPolicies);
+            // NG-050: a replacement process that inherited a durable group
+            // policy is exactly the "respawn caught" event the Activity feed
+            // explains. Only newly applied pairs are reported, so a refresh
+            // does not repeat the same card.
+            for (const EnforcementResult &result : reapplied) {
+                AuditEvent audit;
+                audit.type = AuditEvent::EventType::ProcessGroupMembershipChange;
+                audit.scope = result.executablePath;
+                audit.reason = QStringLiteral(
+                    "durable policy re-applied to a respawned process");
+                audit.result = enforcementStatusName(result.status);
+                audit.relatedPolicyId = result.policyId;
+                audit.details = QStringLiteral("group: %1; channels: %2")
+                                    .arg(it.key(), result.channels);
+                if (result.status == EnforcementResult::Status::Failed)
+                    audit.errorInfo = result.message;
+                m_auditStore.append(audit);
+            }
         }
     }, Qt::QueuedConnection);
 
@@ -1253,6 +1311,21 @@ void NetworkWidget::onThrottleApplied(const QString &executablePath, const Throt
         alert.throttleMessage = applied
             ? QStringLiteral("A 50 KiB/s limit was applied to this executable.")
             : result.message;
+
+        // NG-050: the feed needs the automatic decision, not just the alert.
+        AuditEvent audit;
+        audit.type = AuditEvent::EventType::AutomaticDecision;
+        audit.scope = alert.executablePath;
+        audit.reason = QStringLiteral("Data Saver automatically limited sustained bandwidth");
+        audit.result = applied ? QStringLiteral("applied") : QStringLiteral("failed");
+        if (!applied)
+            audit.errorInfo = result.message;
+        audit.details = QStringLiteral("limit: 50 KiB/s; category: %1%2")
+                            .arg(BandwidthGuard::categoryDisplayName(alert.category),
+                                 alert.groupName.isEmpty()
+                                     ? QString()
+                                     : QStringLiteral("; group: %1").arg(alert.groupName));
+        m_auditStore.append(audit);
 
         ui->lblStatus->setText(applied
             ? "⚙ " + bandwidthUsageText(alert) + " - throttled to 50 KiB/s"

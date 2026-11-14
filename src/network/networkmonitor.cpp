@@ -214,6 +214,11 @@ QList<DestinationNameSummary> NetworkMonitor::attributionSummaries() const
     return m_dnsCorrelator.summaries();
 }
 
+QList<DomainAttribution> NetworkMonitor::attributionRecords() const
+{
+    return m_dnsCorrelator.records();
+}
+
 void NetworkMonitor::setAttributionPrivacy(const AttributionPrivacySettings &settings)
 {
     m_collectDns.store(settings.collectDns);

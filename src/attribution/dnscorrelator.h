@@ -114,6 +114,12 @@ public:
     QList<DestinationNameSummary> summaries(
         const QDateTime &now = QDateTime::currentDateTimeUtc()) const;
 
+    /// Every live record, most recently seen first. Unlike summaries(), this
+    /// keeps the querying process and identity, which lets an Activity event
+    /// name the destination an application was actually seen talking to.
+    QList<DomainAttribution> records(
+        const QDateTime &now = QDateTime::currentDateTimeUtc()) const;
+
     /// NG-036: bound how long a record may live, in seconds. New records are
     /// capped to this window and records last seen outside it are dropped, so
     /// lowering retention immediately shortens what was already stored.
