@@ -2210,6 +2210,74 @@ void testEndpointCatalog()
     check(catalog.bestMatch(query).category == CatalogCategory::PackageManager,
           QStringLiteral("winget is a package manager"));
 
+    query = CatalogQuery();
+    query.publisher = QStringLiteral("Apple Inc.");
+    query.product = QStringLiteral("iCloud");
+    check(catalog.bestMatch(query).category == CatalogCategory::CloudSync,
+          QStringLiteral("iCloud is a cloud sync client"));
+
+    query = CatalogQuery();
+    query.domain = QStringLiteral("dl.boxcloud.com");
+    match = catalog.bestMatch(query);
+    check(match.category == CatalogCategory::CloudSync &&
+              match.ruleId == QStringLiteral("builtin-box"),
+          QStringLiteral("Box is matched on its endpoints"));
+
+    // A publisher substring of "box" must not swallow Dropbox.
+    query = CatalogQuery();
+    query.publisher = QStringLiteral("Dropbox, Inc.");
+    query.product = QStringLiteral("Dropbox");
+    query.executableName = QStringLiteral("dropbox.exe");
+    match = catalog.bestMatch(query);
+    check(match.category == CatalogCategory::CloudSync &&
+              match.ruleId == QStringLiteral("builtin-dropbox"),
+          QStringLiteral("Dropbox is not mistaken for Box"));
+
+    query = CatalogQuery();
+    query.executableName = QStringLiteral("Origin.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::GameLauncher,
+          QStringLiteral("Origin is a game launcher"));
+    query.executableName = QStringLiteral("EADesktop.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::GameLauncher,
+          QStringLiteral("the EA app is a game launcher"));
+    query.executableName = QStringLiteral("UbisoftConnect.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::GameLauncher,
+          QStringLiteral("Ubisoft Connect is a game launcher"));
+    query.executableName = QStringLiteral("GalaxyClient.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::GameLauncher,
+          QStringLiteral("GOG Galaxy is a game launcher"));
+
+    query = CatalogQuery();
+    query.domain = QStringLiteral("registry-1.docker.io");
+    check(catalog.bestMatch(query).category == CatalogCategory::DeveloperTool,
+          QStringLiteral("Docker pulls are developer tool traffic"));
+    query = CatalogQuery();
+    query.executableName = QStringLiteral("git.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::DeveloperTool,
+          QStringLiteral("git is a developer tool"));
+    query.executableName = QStringLiteral("git-remote-https.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::DeveloperTool,
+          QStringLiteral("git's HTTPS transport is developer tool traffic"));
+
+    query = CatalogQuery();
+    query.executableName = QStringLiteral("EABackgroundService.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::GameLauncher,
+          QStringLiteral("the EA background service is launcher traffic"));
+    query.executableName = QStringLiteral("GalaxyClientService.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::GameLauncher,
+          QStringLiteral("the GOG Galaxy service is launcher traffic"));
+
+    // iCloud components classify by name when the product string is missing.
+    for (const QString &component : { QStringLiteral("iCloudServices.exe"),
+                                      QStringLiteral("iCloudDrive.exe"),
+                                      QStringLiteral("iCloudPhotos.exe"),
+                                      QStringLiteral("ApplePhotoStreams.exe") }) {
+        query = CatalogQuery();
+        query.executableName = component;
+        check(catalog.bestMatch(query).category == CatalogCategory::CloudSync,
+              QStringLiteral("%1 is cloud sync traffic").arg(component));
+    }
+
     // Local rules can use address prefixes and identity evidence.
     CatalogRule rangeRule;
     rangeRule.id = QStringLiteral("user-corporate-range");

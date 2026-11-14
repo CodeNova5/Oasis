@@ -856,6 +856,124 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
     jetBrains.publisherContains = QStringLiteral("jetbrains");
     rules.append(jetBrains);
 
+    // iCloud is a set of separate components (iCloudServices, iCloudDrive,
+    // iCloudPhotos), so the signed product covers them in one rule the way
+    // OneDrive's rule does.
+    CatalogRule icloud = builtinRule(
+        QStringLiteral("builtin-icloud"),
+        CatalogCategory::CloudSync,
+        QStringLiteral("Apple iCloud for Windows"));
+    icloud.publisherContains = QStringLiteral("apple");
+    icloud.productContains = QStringLiteral("icloud");
+    rules.append(icloud);
+
+    // Box is matched on its endpoints rather than its publisher: a
+    // publisherContains of "box" would also match "Dropbox, Inc.".
+    CatalogRule boxDrive = builtinRule(
+        QStringLiteral("builtin-box"),
+        CatalogCategory::CloudSync,
+        QStringLiteral("Box Drive endpoint"));
+    boxDrive.domainPatterns = {
+        QStringLiteral("*.box.com"),
+        QStringLiteral("*.boxcloud.com")
+    };
+    rules.append(boxDrive);
+
+    // Launchers are matched by executable, not by publisher: the publishers
+    // also sign the games themselves, which are not launcher traffic.
+    CatalogRule origin = builtinRule(
+        QStringLiteral("builtin-origin"),
+        CatalogCategory::GameLauncher,
+        QStringLiteral("EA Origin launcher"));
+    origin.executableName = QStringLiteral("origin.exe");
+    rules.append(origin);
+
+    CatalogRule eaApp = builtinRule(
+        QStringLiteral("builtin-ea-app"),
+        CatalogCategory::GameLauncher,
+        QStringLiteral("EA app launcher"));
+    eaApp.executableName = QStringLiteral("eadesktop.exe");
+    rules.append(eaApp);
+
+    CatalogRule ubisoftConnect = builtinRule(
+        QStringLiteral("builtin-ubisoft-connect"),
+        CatalogCategory::GameLauncher,
+        QStringLiteral("Ubisoft Connect launcher"));
+    ubisoftConnect.executableName = QStringLiteral("ubisoftconnect.exe");
+    rules.append(ubisoftConnect);
+
+    CatalogRule gogGalaxy = builtinRule(
+        QStringLiteral("builtin-gog-galaxy"),
+        CatalogCategory::GameLauncher,
+        QStringLiteral("GOG Galaxy launcher"));
+    gogGalaxy.executableName = QStringLiteral("galaxyclient.exe");
+    rules.append(gogGalaxy);
+
+    // Docker pulls are performed by daemon helpers and by com.docker.backend,
+    // so the registry endpoint is the reliable handle.
+    CatalogRule docker = builtinRule(
+        QStringLiteral("builtin-docker"),
+        CatalogCategory::DeveloperTool,
+        QStringLiteral("Docker registry endpoint"));
+    docker.domainPatterns = {
+        QStringLiteral("*.docker.io"),
+        QStringLiteral("*.docker.com")
+    };
+    rules.append(docker);
+
+    // git fetches through a child process, so both the command and its HTTPS
+    // transport count as git traffic.
+    CatalogRule git = builtinRule(
+        QStringLiteral("builtin-git"),
+        CatalogCategory::DeveloperTool,
+        QStringLiteral("git client"));
+    git.executableName = QStringLiteral("git.exe");
+    rules.append(git);
+
+    CatalogRule gitTransport = builtinRule(
+        QStringLiteral("builtin-git-transport"),
+        CatalogCategory::DeveloperTool,
+        QStringLiteral("git HTTPS transport"));
+    gitTransport.executableName = QStringLiteral("git-remote-https.exe");
+    rules.append(gitTransport);
+
+    // The download side of both launchers runs in a separate service process,
+    // which the launcher rules above do not cover.
+    CatalogRule eaBackgroundService = builtinRule(
+        QStringLiteral("builtin-ea-background-service"),
+        CatalogCategory::GameLauncher,
+        QStringLiteral("EA app background service"));
+    eaBackgroundService.executableName = QStringLiteral("eabackgroundservice.exe");
+    rules.append(eaBackgroundService);
+
+    CatalogRule gogGalaxyService = builtinRule(
+        QStringLiteral("builtin-gog-galaxy-service"),
+        CatalogCategory::GameLauncher,
+        QStringLiteral("GOG Galaxy background service"));
+    gogGalaxyService.executableName = QStringLiteral("galaxyclientservice.exe");
+    rules.append(gogGalaxyService);
+
+    // iCloud fallbacks: the product rule above needs both the publisher and a
+    // product string, and each iCloud component is its own process. These match
+    // the components by name when the version metadata is incomplete.
+    const struct {
+        const char *id;
+        const char *executable;
+        const char *explanation;
+    } icloudComponents[] = {
+        { "builtin-icloud-services", "icloudservices.exe", "iCloud services client" },
+        { "builtin-icloud-drive", "iclouddrive.exe", "iCloud Drive sync" },
+        { "builtin-icloud-photos", "icloudphotos.exe", "iCloud Photos sync" },
+        { "builtin-icloud-photo-streams", "applephotostreams.exe", "iCloud Photo Stream" },
+    };
+    for (const auto &component : icloudComponents) {
+        CatalogRule rule = builtinRule(QString::fromLatin1(component.id),
+                                       CatalogCategory::CloudSync,
+                                       QString::fromLatin1(component.explanation));
+        rule.executableName = QString::fromLatin1(component.executable);
+        rules.append(rule);
+    }
+
     return rules;
 }
 
