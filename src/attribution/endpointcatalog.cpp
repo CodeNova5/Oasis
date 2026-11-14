@@ -1051,25 +1051,63 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
         rules.append(rule);
     }
 
-    // Media streaming. Playback is real time, so these are never throttled.
-    // Netflix's Windows client is packaged, and its video is served from the
-    // nflxvideo CDN, so either handle can classify the session.
-    CatalogRule spotify = builtinRule(
-        QStringLiteral("builtin-spotify"),
-        CatalogCategory::Media,
-        QStringLiteral("Spotify streaming"));
-    spotify.executableName = QStringLiteral("spotify.exe");
-    rules.append(spotify);
+    // Media playback. Playback is real time, so these are never throttled.
+    // Streaming services and local players share the category; packaged
+    // clients (Netflix, Disney+, Prime Video) are matched by process name,
+    // which is the handle their bytes carry.
+    const struct {
+        const char *id;
+        const char *executable;
+        const char *explanation;
+    } mediaPlayers[] = {
+        // Streaming services.
+        { "builtin-spotify", "spotify.exe", "Spotify streaming" },
+        { "builtin-netflix", "netflix.exe", "Netflix streaming" },
+        { "builtin-prime-video", "primevideo.exe", "Prime Video streaming" },
+        { "builtin-disney-plus", "disneyplus.exe", "Disney+ streaming" },
+        { "builtin-hulu", "hulu.exe", "Hulu streaming" },
+        { "builtin-hbo-max", "hbomax.exe", "HBO Max streaming" },
+        { "builtin-apple-tv", "appletv.exe", "Apple TV streaming" },
+        { "builtin-twitch", "twitch.exe", "Twitch streaming" },
+        { "builtin-crunchyroll", "crunchyroll.exe", "Crunchyroll streaming" },
+        // Music services and players.
+        { "builtin-amazon-music", "amazonmusic.exe", "Amazon Music" },
+        { "builtin-tidal", "tidal.exe", "TIDAL streaming" },
+        { "builtin-deezer", "deezer.exe", "Deezer streaming" },
+        { "builtin-itunes", "itunes.exe", "iTunes media" },
+        { "builtin-winamp", "winamp.exe", "Winamp playback" },
+        { "builtin-foobar2000", "foobar2000.exe", "foobar2000 playback" },
+        { "builtin-musicbee", "musicbee.exe", "MusicBee playback" },
+        { "builtin-groove-music", "music.ui.exe", "Groove Music playback" },
+        // Local video players. These stream from a home server or the network
+        // as often as they open a local file.
+        { "builtin-vlc", "vlc.exe", "VLC playback" },
+        { "builtin-mpv", "mpv.exe", "mpv playback" },
+        { "builtin-kodi", "kodi.exe", "Kodi playback" },
+        { "builtin-mpc-hc64", "mpc-hc64.exe", "Media Player Classic playback" },
+        { "builtin-mpc-hc32", "mpc-hc32.exe", "Media Player Classic playback" },
+        { "builtin-mpc-be64", "mpc-be64.exe", "Media Player Classic BE playback" },
+        { "builtin-mpc-be32", "mpc-be.exe", "Media Player Classic BE playback" },
+        { "builtin-potplayer-64", "potplayermini64.exe", "PotPlayer playback" },
+        { "builtin-potplayer-32", "potplayermini.exe", "PotPlayer playback" },
+        { "builtin-windows-media-player", "wmplayer.exe", "Windows Media Player playback" },
+        { "builtin-windows-media-player-uwp", "microsoft.media.player.exe",
+          "Media Player playback" },
+        { "builtin-jellyfin", "jellyfinmediaplayer.exe", "Jellyfin playback" },
+        { "builtin-plexamp", "plexamp.exe", "Plexamp playback" },
+        { "builtin-plex", "plex.exe", "Plex playback" },
+        { "builtin-plex-media-server", "plex media server.exe", "Plex media server" },
+    };
+    for (const auto &client : mediaPlayers) {
+        CatalogRule rule = builtinRule(QString::fromLatin1(client.id),
+                                       CatalogCategory::Media,
+                                       QString::fromLatin1(client.explanation));
+        rule.executableName = QString::fromLatin1(client.executable);
+        rules.append(rule);
+    }
 
-    CatalogRule netflix = builtinRule(
-        QStringLiteral("builtin-netflix"),
-        CatalogCategory::Media,
-        QStringLiteral("Netflix streaming"));
-    netflix.executableName = QStringLiteral("netflix.exe");
-    rules.append(netflix);
-
-    // Streaming video CDNs. Destination-only evidence ranks below an executable
-    // match, so watching these services in a browser still reports Browser.
+    // Streaming CDNs. Destination-only evidence ranks below an executable match,
+    // so watching any of these services in a browser still reports Browser.
     const struct {
         const char *id;
         const char *domain;
@@ -1079,6 +1117,17 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
         { "builtin-twitch-cdn", "*.ttvnw.net", "Twitch video streaming" },
         { "builtin-prime-video-cdn", "*.aiv-cdn.net", "Prime Video streaming" },
         { "builtin-prime-video-delivery", "*.aiv-delivery.net", "Prime Video delivery" },
+        { "builtin-youtube-cdn", "*.googlevideo.com", "YouTube video streaming" },
+        { "builtin-spotify-cdn", "*.scdn.co", "Spotify audio streaming" },
+        { "builtin-spotify-audio", "*.spotifycdn.com", "Spotify audio streaming" },
+        { "builtin-soundcloud-cdn", "*.sndcdn.com", "SoundCloud audio streaming" },
+        { "builtin-deezer-cdn", "*.dzcdn.net", "Deezer audio streaming" },
+        { "builtin-tidal-cdn", "*.tidal.com", "TIDAL audio streaming" },
+        { "builtin-vimeo-cdn", "*.vimeocdn.com", "Vimeo video streaming" },
+        { "builtin-hulu-cdn", "*.huluim.com", "Hulu video streaming" },
+        { "builtin-hbo-max-cdn", "*.hbomaxcdn.com", "HBO Max video streaming" },
+        { "builtin-crunchyroll-cdn", "*.crunchyroll.com", "Crunchyroll video streaming" },
+        { "builtin-plex-remote", "*.plex.direct", "Plex remote streaming" },
     };
     for (const auto &cdn : streamingCdns) {
         CatalogRule rule = builtinRule(QString::fromLatin1(cdn.id),

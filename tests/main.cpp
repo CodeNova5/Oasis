@@ -2314,7 +2314,37 @@ void testEndpointCatalog()
     // Media playback is matched by client or, when the client is packaged and
     // its traffic arrives from a CDN, by the streaming endpoint.
     for (const QString &client : { QStringLiteral("Spotify.exe"),
-                                   QStringLiteral("Netflix.exe") }) {
+                                   QStringLiteral("Netflix.exe"),
+                                   QStringLiteral("PrimeVideo.exe"),
+                                   QStringLiteral("DisneyPlus.exe"),
+                                   QStringLiteral("Hulu.exe"),
+                                   QStringLiteral("HBOmax.exe"),
+                                   QStringLiteral("AppleTV.exe"),
+                                   QStringLiteral("Twitch.exe"),
+                                   QStringLiteral("Crunchyroll.exe"),
+                                   QStringLiteral("AmazonMusic.exe"),
+                                   QStringLiteral("TIDAL.exe"),
+                                   QStringLiteral("Deezer.exe"),
+                                   QStringLiteral("iTunes.exe"),
+                                   QStringLiteral("Winamp.exe"),
+                                   QStringLiteral("foobar2000.exe"),
+                                   QStringLiteral("MusicBee.exe"),
+                                   QStringLiteral("Music.UI.exe"),
+                                   QStringLiteral("vlc.exe"),
+                                   QStringLiteral("mpv.exe"),
+                                   QStringLiteral("kodi.exe"),
+                                   QStringLiteral("mpc-hc64.exe"),
+                                   QStringLiteral("mpc-hc32.exe"),
+                                   QStringLiteral("mpc-be64.exe"),
+                                   QStringLiteral("mpc-be.exe"),
+                                   QStringLiteral("PotPlayerMini64.exe"),
+                                   QStringLiteral("PotPlayerMini.exe"),
+                                   QStringLiteral("wmplayer.exe"),
+                                   QStringLiteral("Microsoft.Media.Player.exe"),
+                                   QStringLiteral("JellyfinMediaPlayer.exe"),
+                                   QStringLiteral("Plexamp.exe"),
+                                   QStringLiteral("Plex.exe"),
+                                   QStringLiteral("Plex Media Server.exe") }) {
         query = CatalogQuery();
         query.executableName = client;
         check(catalog.bestMatch(query).category == CatalogCategory::Media,
@@ -2323,7 +2353,16 @@ void testEndpointCatalog()
 
     for (const QString &cdn : { QStringLiteral("ipv4-c001-ams1.nflxvideo.net"),
                                 QStringLiteral("video-edge-abc.ttvnw.net"),
-                                QStringLiteral("d25xi40x97liuc.aiv-cdn.net") }) {
+                                QStringLiteral("d25xi40x97liuc.aiv-cdn.net"),
+                                QStringLiteral("d25xi40x97liuc.aiv-delivery.net"),
+                                QStringLiteral("rr1---sn-abc.googlevideo.com"),
+                                QStringLiteral("i.scdn.co"),
+                                QStringLiteral("audio-fa.scdn.co"),
+                                QStringLiteral("audio.spotifycdn.com"),
+                                QStringLiteral("cf-media.sndcdn.com"),
+                                QStringLiteral("cdns.dzcdn.net"),
+                                QStringLiteral("sp-pr-fa.audio.tidal.com"),
+                                QStringLiteral("f.vimeocdn.com") }) {
         query = CatalogQuery();
         query.domain = cdn;
         check(catalog.bestMatch(query).category == CatalogCategory::Media,
