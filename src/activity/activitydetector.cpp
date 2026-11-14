@@ -12,6 +12,15 @@ namespace Activity {
 
 namespace {
 
+QString rateLabel(quint64 bytesPerSecond)
+{
+    const double mib = static_cast<double>(bytesPerSecond) / (1024.0 * 1024.0);
+    if (mib >= 1.0)
+        return QStringLiteral("%1 MiB/s").arg(mib, 0, 'f', 1);
+    return QStringLiteral("%1 KiB/s")
+        .arg(static_cast<double>(bytesPerSecond) / 1024.0, 0, 'f', 0);
+}
+
 /// Median rather than mean: a spike must not raise the baseline it is being
 /// compared with. Five high seconds inside a sixty-second window cannot move
 /// the median, so a sustained transfer keeps qualifying through its run.
@@ -144,8 +153,34 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
                >= static_cast<qint64>(m_settings.unresolvedCooldownSeconds) * 1000;
     if (m_unresolvedWindowBytes >= m_settings.unresolvedBytesThreshold
         && unresolvedCooledDown) {
+        // Name the busiest rows that landed in the unresolved bucket instead of
+        // reporting a bare "Unknown": the same condition that makes a row
+        // unattributed (no executable path or no activity match) is checked
+        // here, and the largest rates are the most likely cause.
+        QList<ProcessRate> unmatched;
+        for (const ProcessRate &rate : rates) {
+            if (rate.path.trimmed().isEmpty() || rate.attribution.trimmed().isEmpty())
+                unmatched.append(rate);
+        }
+        std::stable_sort(unmatched.begin(), unmatched.end(),
+                         [](const ProcessRate &a, const ProcessRate &b) {
+            return a.rxBytesPerSecond + a.txBytesPerSecond
+                 > b.rxBytesPerSecond + b.txBytesPerSecond;
+        });
+
+        QStringList contributors;
+        QStringList contributorNames;
+        for (const ProcessRate &rate : unmatched) {
+            if (contributors.size() >= 3) break;
+            const quint64 current = rate.rxBytesPerSecond + rate.txBytesPerSecond;
+            if (current == 0 || contributorNames.contains(rate.name)) continue;
+            contributorNames.append(rate.name);
+            contributors.append(QStringLiteral("%1 (%2)")
+                                    .arg(rate.name, rateLabel(current)));
+        }
+
         events.append(makeUnresolvedEvent(at, m_unresolvedWindowBytes,
-                                          m_unresolvedWindowStart));
+                                          m_unresolvedWindowStart, contributors));
         m_unresolvedLastEventMs = nowMs;
         m_unresolvedWindowBytes = 0;
         m_unresolvedWindowStart = at;
@@ -181,7 +216,8 @@ Event Detector::makeSpikeEvent(const QDateTime &at, const ProcessRate &rate,
 }
 
 Event Detector::makeUnresolvedEvent(const QDateTime &at, quint64 bytes,
-                                    const QDateTime &windowStart) const
+                                    const QDateTime &windowStart,
+                                    const QStringList &contributors) const
 {
     Event event;
     event.at = at;
@@ -190,11 +226,16 @@ Event Detector::makeUnresolvedEvent(const QDateTime &at, quint64 bytes,
     event.title = QStringLiteral("Unattributed external data transfer detected");
     event.description = QStringLiteral(
         "Data moved without a confirmed owning process or destination name. "
-        "Oasis did not guess an owner.");
+        "Oasis lists the busiest applications it could not match rather than "
+        "guessing an owner.");
     event.appName = QStringLiteral("Unrecognized traffic");
     event.attribution = QStringLiteral("Unknown");
     event.volumeBytes = bytes;
     event.extra.append({ QStringLiteral("Local match"), QStringLiteral("None") });
+    if (!contributors.isEmpty()) {
+        event.extra.append({ QStringLiteral("Most active without a match"),
+                             contributors.join(QStringLiteral(", ")) });
+    }
     if (windowStart.isValid()) {
         event.extra.append({
             QStringLiteral("Window"),

@@ -24,6 +24,7 @@ enum class CatalogCategory
     WindowsUpdate,
     BackgroundTransfer,
     BrowserUpdate,
+    Browser,
     CloudSync,
     GameLauncher,
     DeveloperTool,

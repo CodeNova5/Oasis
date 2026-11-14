@@ -520,6 +520,7 @@ QString catalogCategoryToken(CatalogCategory category)
     case CatalogCategory::WindowsUpdate:      return QStringLiteral("windows-update");
     case CatalogCategory::BackgroundTransfer: return QStringLiteral("background-transfer");
     case CatalogCategory::BrowserUpdate:      return QStringLiteral("browser-update");
+    case CatalogCategory::Browser:            return QStringLiteral("browser");
     case CatalogCategory::CloudSync:          return QStringLiteral("cloud-sync");
     case CatalogCategory::GameLauncher:       return QStringLiteral("game-launcher");
     case CatalogCategory::DeveloperTool:      return QStringLiteral("developer-tool");
@@ -536,6 +537,7 @@ QString catalogCategoryDisplayName(CatalogCategory category)
     case CatalogCategory::WindowsUpdate:      return QStringLiteral("Windows Update");
     case CatalogCategory::BackgroundTransfer: return QStringLiteral("Background transfer");
     case CatalogCategory::BrowserUpdate:      return QStringLiteral("Browser update");
+    case CatalogCategory::Browser:            return QStringLiteral("Browser");
     case CatalogCategory::CloudSync:          return QStringLiteral("Cloud sync");
     case CatalogCategory::GameLauncher:       return QStringLiteral("Game launcher");
     case CatalogCategory::DeveloperTool:      return QStringLiteral("Developer tool");
@@ -556,6 +558,8 @@ bool catalogCategoryFromToken(const QString &token, CatalogCategory *category)
         *category = CatalogCategory::BackgroundTransfer;
     } else if (value == QStringLiteral("browser-update")) {
         *category = CatalogCategory::BrowserUpdate;
+    } else if (value == QStringLiteral("browser")) {
+        *category = CatalogCategory::Browser;
     } else if (value == QStringLiteral("cloud-sync")) {
         *category = CatalogCategory::CloudSync;
     } else if (value == QStringLiteral("game-launcher")) {
@@ -580,6 +584,7 @@ QStringList catalogCategoryTokens()
         QStringLiteral("windows-update"),
         QStringLiteral("background-transfer"),
         QStringLiteral("browser-update"),
+        QStringLiteral("browser"),
         QStringLiteral("cloud-sync"),
         QStringLiteral("game-launcher"),
         QStringLiteral("developer-tool"),
@@ -691,6 +696,38 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
     braveUpdate.publisherContains = QStringLiteral("brave");
     braveUpdate.productContains = QStringLiteral("update");
     rules.append(braveUpdate);
+
+    // Browsers themselves, not just their updaters. Without these rules every
+    // page load and download was reported as unrecognized traffic: the only
+    // browser rules matched update executables, so a browser window had no
+    // activity label and its bytes counted as unattributed.
+    CatalogRule chromeBrowser = builtinRule(
+        QStringLiteral("builtin-chrome-browser"),
+        CatalogCategory::Browser,
+        QStringLiteral("Google Chrome browsing traffic"));
+    chromeBrowser.executableName = QStringLiteral("chrome.exe");
+    rules.append(chromeBrowser);
+
+    CatalogRule edgeBrowser = builtinRule(
+        QStringLiteral("builtin-edge-browser"),
+        CatalogCategory::Browser,
+        QStringLiteral("Microsoft Edge browsing traffic"));
+    edgeBrowser.executableName = QStringLiteral("msedge.exe");
+    rules.append(edgeBrowser);
+
+    CatalogRule braveBrowser = builtinRule(
+        QStringLiteral("builtin-brave-browser"),
+        CatalogCategory::Browser,
+        QStringLiteral("Brave browsing traffic"));
+    braveBrowser.executableName = QStringLiteral("brave.exe");
+    rules.append(braveBrowser);
+
+    CatalogRule firefoxBrowser = builtinRule(
+        QStringLiteral("builtin-firefox-browser"),
+        CatalogCategory::Browser,
+        QStringLiteral("Mozilla Firefox browsing traffic"));
+    firefoxBrowser.executableName = QStringLiteral("firefox.exe");
+    rules.append(firefoxBrowser);
 
     CatalogRule onedrive = builtinRule(
         QStringLiteral("builtin-onedrive"),

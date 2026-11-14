@@ -198,6 +198,7 @@ RecommendationAction RecommendationEngine::recommendedActionFor(CatalogCategory 
     case CatalogCategory::DeveloperTool:
         return RecommendationAction::ReviewSettings;
     case CatalogCategory::ForegroundDownload:
+    case CatalogCategory::Browser:
         return RecommendationAction::NoAction;
     case CatalogCategory::Unknown:
         break;

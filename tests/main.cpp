@@ -2105,7 +2105,7 @@ void testEndpointCatalog()
     checkEqual(catalogCategoryDisplayName(CatalogCategory::WindowsUpdate),
                QStringLiteral("Windows Update"),
                QStringLiteral("the category has a printable name"));
-    checkEqual(QString::number(catalogCategoryTokens().size()), QStringLiteral("9"),
+    checkEqual(QString::number(catalogCategoryTokens().size()), QStringLiteral("10"),
                QStringLiteral("all categories have tokens"));
 
     CatalogRuleSource parsedSource = CatalogRuleSource::BuiltIn;

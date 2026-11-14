@@ -22,6 +22,7 @@
 #include <QHash>
 #include <QList>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 #include "activity/activityevent.h"
@@ -80,7 +81,8 @@ private:
     Event makeSpikeEvent(const QDateTime &at, const ProcessRate &rate,
                          const Track &track) const;
     Event makeUnresolvedEvent(const QDateTime &at, quint64 bytes,
-                              const QDateTime &windowStart) const;
+                              const QDateTime &windowStart,
+                              const QStringList &contributors) const;
 
     DetectorSettings m_settings;
     QHash<QString, Track> m_tracks; // application name -> rolling evidence
