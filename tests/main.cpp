@@ -2179,6 +2179,37 @@ void testEndpointCatalog()
               match.ruleId == QStringLiteral("builtin-chrome-browser"),
           QStringLiteral("a process rule outranks an endpoint-only rule"));
 
+    // Everyday clients that previously had no rule at all.
+    query = CatalogQuery();
+    query.executableName = QStringLiteral("Dropbox.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::CloudSync,
+          QStringLiteral("Dropbox is a cloud sync client"));
+    query.executableName = QStringLiteral("C:\\Program Files\\Google\\Drive File Stream\\GoogleDriveFS.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::CloudSync,
+          QStringLiteral("Google Drive for desktop is a cloud sync client"));
+    query.executableName = QStringLiteral("Battle.net.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::GameLauncher,
+          QStringLiteral("Battle.net is a game launcher"));
+    query.executableName = QStringLiteral("devenv.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::DeveloperTool,
+          QStringLiteral("Visual Studio is a developer tool"));
+
+    query = CatalogQuery();
+    query.publisher = QStringLiteral("JetBrains s.r.o.");
+    check(catalog.bestMatch(query).category == CatalogCategory::DeveloperTool,
+          QStringLiteral("the JetBrains signer covers every IDE"));
+
+    query = CatalogQuery();
+    query.domain = QStringLiteral("files.pythonhosted.org");
+    check(catalog.bestMatch(query).category == CatalogCategory::PackageManager,
+          QStringLiteral("PyPI is a package manager"));
+    query.domain = QStringLiteral("api.nuget.org");
+    check(catalog.bestMatch(query).category == CatalogCategory::PackageManager,
+          QStringLiteral("NuGet is a package manager"));
+    query.domain = QStringLiteral("cdn.winget.microsoft.com");
+    check(catalog.bestMatch(query).category == CatalogCategory::PackageManager,
+          QStringLiteral("winget is a package manager"));
+
     // Local rules can use address prefixes and identity evidence.
     CatalogRule rangeRule;
     rangeRule.id = QStringLiteral("user-corporate-range");

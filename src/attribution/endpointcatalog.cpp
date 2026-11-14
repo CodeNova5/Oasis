@@ -783,6 +783,79 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
     npm.domainPatterns = { QStringLiteral("registry.npmjs.org") };
     rules.append(npm);
 
+    // Cloud sync beyond OneDrive. Dropbox and Drive move large steady transfers
+    // and were the most common sync rows with no label at all.
+    CatalogRule dropbox = builtinRule(
+        QStringLiteral("builtin-dropbox"),
+        CatalogCategory::CloudSync,
+        QStringLiteral("Dropbox desktop client"));
+    dropbox.executableName = QStringLiteral("dropbox.exe");
+    rules.append(dropbox);
+
+    CatalogRule googleDrive = builtinRule(
+        QStringLiteral("builtin-google-drive"),
+        CatalogCategory::CloudSync,
+        QStringLiteral("Google Drive for desktop"));
+    googleDrive.executableName = QStringLiteral("googledrivefs.exe");
+    rules.append(googleDrive);
+
+    CatalogRule battleNet = builtinRule(
+        QStringLiteral("builtin-battle-net"),
+        CatalogCategory::GameLauncher,
+        QStringLiteral("Battle.net launcher"));
+    battleNet.executableName = QStringLiteral("battle.net.exe");
+    rules.append(battleNet);
+
+    // Package feeds. The transfer usually belongs to a generic runtime (pip's
+    // python.exe, dotnet's MSBuild, winget's WindowsPackageManagerServer), so
+    // these match the feed rather than a process.
+    CatalogRule pypi = builtinRule(
+        QStringLiteral("builtin-pypi"),
+        CatalogCategory::PackageManager,
+        QStringLiteral("Python package index"));
+    pypi.domainPatterns = {
+        QStringLiteral("pypi.org"),
+        QStringLiteral("files.pythonhosted.org")
+    };
+    rules.append(pypi);
+
+    CatalogRule nuget = builtinRule(
+        QStringLiteral("builtin-nuget"),
+        CatalogCategory::PackageManager,
+        QStringLiteral("NuGet package feed"));
+    nuget.domainPatterns = {
+        QStringLiteral("nuget.org"),
+        QStringLiteral("*.nuget.org")
+    };
+    rules.append(nuget);
+
+    CatalogRule winget = builtinRule(
+        QStringLiteral("builtin-winget"),
+        CatalogCategory::PackageManager,
+        QStringLiteral("winget package source"));
+    winget.domainPatterns = {
+        QStringLiteral("winget.microsoft.com"),
+        QStringLiteral("*.winget.microsoft.com")
+    };
+    rules.append(winget);
+
+    CatalogRule visualStudio = builtinRule(
+        QStringLiteral("builtin-visual-studio"),
+        CatalogCategory::DeveloperTool,
+        QStringLiteral("Visual Studio IDE"));
+    visualStudio.executableName = QStringLiteral("devenv.exe");
+    rules.append(visualStudio);
+
+    // Publisher-family rule: every JetBrains IDE ships its own executable
+    // (idea64.exe, pycharm64.exe, clion64.exe, ...), so matching the signer
+    // covers the family in one rule instead of a dozen per-product entries.
+    CatalogRule jetBrains = builtinRule(
+        QStringLiteral("builtin-jetbrains"),
+        CatalogCategory::DeveloperTool,
+        QStringLiteral("JetBrains IDE"));
+    jetBrains.publisherContains = QStringLiteral("jetbrains");
+    rules.append(jetBrains);
+
     return rules;
 }
 
