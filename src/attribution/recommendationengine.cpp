@@ -190,6 +190,8 @@ RecommendationAction RecommendationEngine::recommendedActionFor(CatalogCategory 
     case CatalogCategory::BackgroundTransfer:
     case CatalogCategory::BrowserUpdate:
     case CatalogCategory::PackageManager:
+    // Definition and engine updates care about completion, not latency.
+    case CatalogCategory::Security:
         return RecommendationAction::Throttle;
     case CatalogCategory::CloudSync:
         return RecommendationAction::Schedule;

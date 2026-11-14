@@ -195,6 +195,7 @@ The system shall classify activity using local rules and metadata, including:
 - Real-time communication: meetings, voice, and chat clients.
 - Remote access sessions.
 - Media streaming: music and video playback clients.
+- Antivirus and endpoint security definition updates.
 - Foreground application downloads.
 - Unknown or unclassified activity.
 

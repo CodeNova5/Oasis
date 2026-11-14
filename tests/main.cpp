@@ -2105,7 +2105,7 @@ void testEndpointCatalog()
     checkEqual(catalogCategoryDisplayName(CatalogCategory::WindowsUpdate),
                QStringLiteral("Windows Update"),
                QStringLiteral("the category has a printable name"));
-    checkEqual(QString::number(catalogCategoryTokens().size()), QStringLiteral("13"),
+    checkEqual(QString::number(catalogCategoryTokens().size()), QStringLiteral("14"),
                QStringLiteral("all categories have tokens"));
     check(catalogCategoryFromToken(QStringLiteral("remote-access"), &parsedCategory) &&
                parsedCategory == CatalogCategory::RemoteAccess,
@@ -2118,6 +2118,12 @@ void testEndpointCatalog()
            QStringLiteral("the media category round-trips"));
     checkEqual(catalogCategoryDisplayName(CatalogCategory::Media), QStringLiteral("Media"),
                QStringLiteral("the media category has a printable name"));
+    check(catalogCategoryFromToken(QStringLiteral("security"), &parsedCategory) &&
+               parsedCategory == CatalogCategory::Security,
+           QStringLiteral("the security category round-trips"));
+    checkEqual(catalogCategoryDisplayName(CatalogCategory::Security),
+               QStringLiteral("Security"),
+               QStringLiteral("the security category has a printable name"));
 
     CatalogRuleSource parsedSource = CatalogRuleSource::BuiltIn;
     check(catalogRuleSourceFromToken(QStringLiteral("user"), &parsedSource) &&
@@ -2367,6 +2373,48 @@ void testEndpointCatalog()
         query.domain = cdn;
         check(catalog.bestMatch(query).category == CatalogCategory::Media,
               QStringLiteral("%1 is media traffic").arg(cdn));
+    }
+
+    // Security: Defender by process and service, third-party suites by
+    // executable and by signer.
+    for (const QString &process : { QStringLiteral("MsMpEng.exe"),
+                                    QStringLiteral("MpCmdRun.exe"),
+                                    QStringLiteral("NisSrv.exe"),
+                                    QStringLiteral("avp.exe"),
+                                    QStringLiteral("ekrn.exe"),
+                                    QStringLiteral("mbamservice.exe"),
+                                    QStringLiteral("avastsvc.exe"),
+                                    QStringLiteral("vsserv.exe"),
+                                    QStringLiteral("mcshield.exe"),
+                                    QStringLiteral("NortonSecurity.exe"),
+                                    QStringLiteral("clamd.exe"),
+                                    QStringLiteral("freshclam.exe"),
+                                    QStringLiteral("CSFalconService.exe"),
+                                    QStringLiteral("SentinelAgent.exe") }) {
+        query = CatalogQuery();
+        query.executableName = process;
+        check(catalog.bestMatch(query).category == CatalogCategory::Security,
+              QStringLiteral("%1 is security traffic").arg(process));
+    }
+
+    query = CatalogQuery();
+    query.serviceName = QStringLiteral("WinDefend");
+    check(catalog.bestMatch(query).category == CatalogCategory::Security,
+          QStringLiteral("the Defender service is security traffic"));
+
+    for (const QString &publisher : { QStringLiteral("Kaspersky Lab"),
+                                      QStringLiteral("ESET, spol. s r.o."),
+                                      QStringLiteral("Malwarebytes Inc."),
+                                      QStringLiteral("Avast Software s.r.o."),
+                                      QStringLiteral("AVG Technologies USA, Inc."),
+                                      QStringLiteral("Bitdefender SRL"),
+                                      QStringLiteral("McAfee, LLC"),
+                                      QStringLiteral("NortonLifeLock Inc."),
+                                      QStringLiteral("Sophos Limited") }) {
+        query = CatalogQuery();
+        query.publisher = publisher;
+        check(catalog.bestMatch(query).category == CatalogCategory::Security,
+              QStringLiteral("%1 is security traffic").arg(publisher));
     }
 
     for (const QString &client : { QStringLiteral("mstsc.exe"),
@@ -3451,6 +3499,12 @@ void testRecommendationEngine()
     stream.activity = classifier.classify(stream.observation);
     check(engine.recommend(stream).action == RecommendationAction::NoAction,
           QStringLiteral("a stream is never throttled"));
+
+    RecommendationContext defender;
+    defender.observation.executableName = QStringLiteral("MsMpEng.exe");
+    defender.activity = classifier.classify(defender.observation);
+    check(engine.recommend(defender).action == RecommendationAction::Throttle,
+          QStringLiteral("a virus definition update is throttled"));
 
     // Foreground transfers are left alone (or reviewed on a metered link).
     RecommendationContext download = contextFor(QStringLiteral("browser.exe"));

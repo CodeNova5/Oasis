@@ -546,6 +546,7 @@ QString catalogCategoryToken(CatalogCategory category)
     case CatalogCategory::Communication:      return QStringLiteral("communication");
     case CatalogCategory::RemoteAccess:       return QStringLiteral("remote-access");
     case CatalogCategory::Media:              return QStringLiteral("media");
+    case CatalogCategory::Security:           return QStringLiteral("security");
     case CatalogCategory::ForegroundDownload: return QStringLiteral("foreground-download");
     case CatalogCategory::Unknown:            break;
     }
@@ -566,6 +567,7 @@ QString catalogCategoryDisplayName(CatalogCategory category)
     case CatalogCategory::Communication:      return QStringLiteral("Communication");
     case CatalogCategory::RemoteAccess:       return QStringLiteral("Remote access");
     case CatalogCategory::Media:              return QStringLiteral("Media");
+    case CatalogCategory::Security:           return QStringLiteral("Security");
     case CatalogCategory::ForegroundDownload: return QStringLiteral("Foreground download");
     case CatalogCategory::Unknown:            break;
     }
@@ -598,6 +600,8 @@ bool catalogCategoryFromToken(const QString &token, CatalogCategory *category)
         *category = CatalogCategory::RemoteAccess;
     } else if (value == QStringLiteral("media")) {
         *category = CatalogCategory::Media;
+    } else if (value == QStringLiteral("security")) {
+        *category = CatalogCategory::Security;
     } else if (value == QStringLiteral("foreground-download")) {
         *category = CatalogCategory::ForegroundDownload;
     } else if (value == QStringLiteral("unknown")) {
@@ -622,6 +626,7 @@ QStringList catalogCategoryTokens()
         QStringLiteral("communication"),
         QStringLiteral("remote-access"),
         QStringLiteral("media"),
+        QStringLiteral("security"),
         QStringLiteral("foreground-download"),
         QStringLiteral("unknown")
     };
@@ -1134,6 +1139,79 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
                                        CatalogCategory::Media,
                                        QString::fromLatin1(cdn.explanation));
         rule.domainPatterns = { QString::fromLatin1(cdn.domain) };
+        rules.append(rule);
+    }
+
+    // Security. Definition and engine updates are background downloads, so the
+    // engine treats them like other updaters. Defender is matched by its
+    // service and processes; third-party suites are matched by publisher, since
+    // each vendor signs its whole product line.
+    CatalogRule defenderService = builtinRule(
+        QStringLiteral("builtin-windows-defender-service"),
+        CatalogCategory::Security,
+        QStringLiteral("Microsoft Defender service traffic"));
+    defenderService.serviceName = QStringLiteral("WinDefend");
+    rules.append(defenderService);
+
+    const struct {
+        const char *id;
+        const char *executable;
+        const char *explanation;
+    } securityExecutables[] = {
+        { "builtin-windows-defender-engine", "msmpeng.exe",
+          "Microsoft Defender antivirus engine" },
+        { "builtin-windows-defender-update", "mpcmdrun.exe",
+          "Microsoft Defender definition update" },
+        { "builtin-windows-defender-network", "nissrv.exe",
+          "Microsoft Defender network inspection" },
+        { "builtin-kaspersky", "avp.exe", "Kaspersky antivirus" },
+        { "builtin-eset-service", "ekrn.exe", "ESET antivirus service" },
+        { "builtin-malwarebytes-service", "mbamservice.exe", "Malwarebytes service" },
+        { "builtin-avast-service", "avastsvc.exe", "Avast antivirus service" },
+        { "builtin-avg-service", "avgwdsvc.exe", "AVG antivirus service" },
+        { "builtin-avira-service", "avguard.exe", "Avira antivirus service" },
+        { "builtin-bitdefender-service", "vsserv.exe", "Bitdefender antivirus service" },
+        { "builtin-mcafee-service", "mcshield.exe", "McAfee antivirus service" },
+        { "builtin-norton", "nortonsecurity.exe", "Norton security" },
+        { "builtin-trend-micro-service", "ntrtscan.exe", "Trend Micro antivirus service" },
+        { "builtin-sophos-service", "savservice.exe", "Sophos antivirus service" },
+        { "builtin-clamav-service", "clamd.exe", "ClamAV antivirus service" },
+        { "builtin-clamav-update", "freshclam.exe", "ClamAV definition update" },
+        { "builtin-crowdstrike-agent", "csfalconservice.exe", "CrowdStrike endpoint agent" },
+        { "builtin-sentinelone-agent", "sentinelagent.exe", "SentinelOne endpoint agent" },
+    };
+    for (const auto &client : securityExecutables) {
+        CatalogRule rule = builtinRule(QString::fromLatin1(client.id),
+                                       CatalogCategory::Security,
+                                       QString::fromLatin1(client.explanation));
+        rule.executableName = QString::fromLatin1(client.executable);
+        rules.append(rule);
+    }
+
+    const struct {
+        const char *id;
+        const char *publisher;
+        const char *explanation;
+    } securityPublishers[] = {
+        { "builtin-kaspersky-lab", "kaspersky", "Kaspersky Lab security software" },
+        { "builtin-eset-publisher", "eset", "ESET security software" },
+        { "builtin-malwarebytes-publisher", "malwarebytes", "Malwarebytes security software" },
+        { "builtin-avast-publisher", "avast software", "Avast security software" },
+        { "builtin-avg-publisher", "avg technologies", "AVG security software" },
+        { "builtin-avira-publisher", "avira", "Avira security software" },
+        { "builtin-bitdefender-publisher", "bitdefender", "Bitdefender security software" },
+        { "builtin-mcafee-publisher", "mcafee", "McAfee security software" },
+        { "builtin-norton-publisher", "norton", "Norton security software" },
+        { "builtin-trend-micro-publisher", "trend micro", "Trend Micro security software" },
+        { "builtin-sophos-publisher", "sophos", "Sophos security software" },
+        { "builtin-crowdstrike-publisher", "crowdstrike", "CrowdStrike endpoint agent" },
+        { "builtin-sentinelone-publisher", "sentinelone", "SentinelOne endpoint agent" },
+    };
+    for (const auto &vendor : securityPublishers) {
+        CatalogRule rule = builtinRule(QString::fromLatin1(vendor.id),
+                                       CatalogCategory::Security,
+                                       QString::fromLatin1(vendor.explanation));
+        rule.publisherContains = QString::fromLatin1(vendor.publisher);
         rules.append(rule);
     }
 

@@ -32,6 +32,7 @@ enum class CatalogCategory
     Communication,
     RemoteAccess,
     Media,
+    Security,
     ForegroundDownload,
     Unknown
 };
@@ -159,5 +160,5 @@ constexpr int kSchemaVersion = 1;
 constexpr int kMaxRules = 500;
 constexpr int kMaxRulesPerJson = 2000;
 const char *const kFormat = "oasis.endpoint-catalog";
-const char *const kBuiltinVersion = "2026.11.8";
+const char *const kBuiltinVersion = "2026.11.9";
 }
