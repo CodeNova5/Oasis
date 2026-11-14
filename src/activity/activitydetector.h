@@ -8,7 +8,10 @@
  *              times its own recent average for a few seconds. A one-second
  *              burst is not an event.
  *   Unresolved traffic accumulates in a bounded window and only becomes an
- *              event once a meaningful amount moved with no resolvable owner.
+ *              event once a meaningful amount moved with no resolvable owner,
+ *              and only when that traffic stood clear of its own recent
+ *              baseline. Constant unattributable background traffic (kernel
+ *              counters, System) therefore stays quiet.
  *
  * One event per application per cooldown, so a sustained transfer does not
  * produce a card every second. Nothing here enforces anything; the page turns
@@ -39,6 +42,9 @@ struct DetectorSettings
     quint64 unresolvedBytesThreshold = 8 * 1024 * 1024;
     int     unresolvedWindowSeconds = 300;
     int     unresolvedCooldownSeconds = 180;
+    /// How far unresolved traffic has to rise above its own recent median rate
+    /// before it can count as an anomaly rather than background noise.
+    quint64 unresolvedFloorBytesPerSecond = 512 * 1024;
 };
 
 struct ProcessRate
@@ -90,6 +96,12 @@ private:
     quint64 m_unresolvedWindowBytes = 0;
     QDateTime m_unresolvedWindowStart;
     qint64  m_unresolvedLastEventMs = 0;
+    // Recent unresolved rate per beat, used as the traffic's own baseline so a
+    // steady trickle cannot keep crossing the volume threshold.
+    QVector<quint64> m_unresolvedRates;
+    int     m_unresolvedAboveSeconds = 0;
+    bool    m_unresolvedWindowQualified = false;
+    qint64  m_unresolvedLastBeatMs = 0;
 };
 
 } // namespace Activity

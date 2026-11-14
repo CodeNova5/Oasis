@@ -290,10 +290,10 @@ let EVENTS = [
     icon: 'alert',
     bucket: 44,
     time: '14:46:05',
-    app: 'Unknown Process',
+    app: 'Unrecognized traffic',
     title: 'Unattributed external data transfer detected',
-    desc: 'Direct IP connection transferred 48.2 MB without a DNS query, TLS SNI header, or confirmed local PID mapping.',
-    meta: { Volume: '48.2 MB', 'Remote IP': '203.0.113.42:443 (UDP)', Attribution: 'Unknown', 'Local Match': 'None' },
+    desc: 'Data moved without a confirmed owning process or destination name. Oasis lists the busiest applications it could not match rather than guessing an owner.',
+    meta: { Volume: '48.2 MB', 'Remote IP': '203.0.113.42:443 (UDP)', Attribution: 'Unknown', 'Local Match': 'None', 'Most Active Without a Match': 'svchost.exe (2.4 MiB/s), System (410 KiB/s)' },
     actions: [
       { label: 'Block IP', style: 'p', act: 'block' },
       { label: 'Inspect Connection', style: '', act: 'inspect' },
@@ -341,8 +341,8 @@ let EVENTS = [
     time: '14:11:03',
     app: 'Chrome',
     title: 'Unusual upstream burst in foreground browser',
-    desc: 'Google Chrome uploaded 185 MB in 90 seconds to cloud storage endpoints.',
-    meta: { Volume: '185 MB', 'Peak Upload': '16.4 Mbps', Destination: 'upload.drive.google.com', Attribution: 'Confirmed (Google LLC)' },
+    desc: 'Google Chrome uploaded 185 MB in 90 seconds to cloud storage endpoints. Browser traffic is labelled as browsing, so it is no longer reported as unattributed and carries no automatic limit.',
+    meta: { Volume: '185 MB', 'Peak Upload': '16.4 Mbps', Destination: 'upload.drive.google.com', Attribution: 'Browser (Likely)' },
     actions: [
       { label: 'Throttle Upload', style: '', act: 'throttle' },
       { label: 'Dismiss', style: 'ghost', act: 'dismiss' }

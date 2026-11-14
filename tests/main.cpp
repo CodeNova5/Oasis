@@ -5696,6 +5696,9 @@ void testActivityDetector()
     settings.unresolvedBytesThreshold = 100;
     settings.unresolvedWindowSeconds = 300;
     settings.unresolvedCooldownSeconds = 60;
+    // The rate gate is tested through the baseline, so keep the absolute floor
+    // out of the way of these small byte counts.
+    settings.unresolvedFloorBytesPerSecond = 0;
 
     Activity::Detector detector(settings);
     const QDateTime start = QDateTime::currentDateTime();
@@ -5744,15 +5747,34 @@ void testActivityDetector()
     checkEqual(int(brief.observe(start.addSecs(4), { calm }, 0).size()), 0,
                QStringLiteral("a one-second burst is not a spike"));
 
-    // Unresolved traffic: 60 + 60 bytes crosses the 100-byte window.
+    // Unresolved traffic that never lifts above its own baseline is background
+    // noise: it crosses the 100-byte window but must not produce a card.
+    Activity::Detector trickle(settings);
+    trickle.observe(start, {}, 0);
+    int trickleEvents = 0;
+    for (int i = 1; i <= 10; ++i)
+        trickleEvents += int(trickle.observe(start.addSecs(i), {},
+                                             quint64(60 * i)).size());
+    checkEqual(trickleEvents, 0,
+               QStringLiteral("constant unresolved background traffic stays quiet"));
+
+    // A transfer that keeps climbing clears its baseline and the volume window,
+    // so it still produces an event and names what it could not attribute.
+    Activity::ProcessRate unresolvedRow;
+    unresolvedRow.name = QStringLiteral("svchost.exe");
+    unresolvedRow.pid = 4;
+    unresolvedRow.rxBytesPerSecond = 2 * 1024 * 1024;
+
     Activity::Detector unresolved(settings);
-    unresolved.observe(start, {}, 0);
-    checkEqual(int(unresolved.observe(start.addSecs(1), {}, 60).size()), 0,
+    unresolved.observe(start, { unresolvedRow }, 0);
+    checkEqual(int(unresolved.observe(start.addSecs(1), { unresolvedRow }, 60).size()), 0,
                QStringLiteral("a small unresolved sample stays quiet"));
+    checkEqual(int(unresolved.observe(start.addSecs(2), { unresolvedRow }, 660).size()), 0,
+               QStringLiteral("a rising unresolved sample waits for the window"));
     const QList<Activity::Event> unresolvedEvents =
-        unresolved.observe(start.addSecs(2), {}, 120);
+        unresolved.observe(start.addSecs(3), { unresolvedRow }, 6660);
     checkEqual(int(unresolvedEvents.size()), 1,
-               QStringLiteral("accumulated unresolved bytes produce an event"));
+               QStringLiteral("a rising unresolved transfer produces an event"));
     if (!unresolvedEvents.isEmpty()) {
         check(unresolvedEvents.first().category == Activity::Category::Unresolved,
               QStringLiteral("the event is classified unresolved"));
@@ -5760,6 +5782,16 @@ void testActivityDetector()
                    QStringLiteral("unresolved attribution stays explicitly unknown"));
         check(unresolvedEvents.first().appPath.isEmpty(),
               QStringLiteral("unresolved traffic claims no executable"));
+
+        QString named;
+        for (const Activity::MetaItem &item : unresolvedEvents.first().extra) {
+            if (item.key == QStringLiteral("Most active without a match"))
+                named = item.value;
+        }
+        check(named.contains(QStringLiteral("svchost.exe")),
+              QStringLiteral("the event names the busiest unattributed process"));
+        check(named.contains(QStringLiteral("2.0 MiB/s")),
+              QStringLiteral("the named process carries its current rate"));
     }
 }
 

@@ -64,6 +64,10 @@ void Detector::clear()
     m_unresolvedWindowBytes = 0;
     m_unresolvedWindowStart = QDateTime();
     m_unresolvedLastEventMs = 0;
+    m_unresolvedRates.clear();
+    m_unresolvedAboveSeconds = 0;
+    m_unresolvedWindowQualified = false;
+    m_unresolvedLastBeatMs = 0;
 }
 
 QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &rates,
@@ -131,27 +135,66 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
     }
 
     // ── Unresolved traffic ────────────────────────────────────────────────
+    // Some traffic is unattributable by nature: kernel counters, System, a
+    // service running without an image path. Steady background bytes like that
+    // used to cross the volume threshold every cooldown and produce a card with
+    // no possible action. So a window only becomes reportable once the unresolved
+    // rate has risen clear of its own recent baseline for several beats; a
+    // constant trickle never does, and a transfer that stands out still does.
+    int elapsedSeconds = 1;
+    if (m_unresolvedLastBeatMs > 0)
+        elapsedSeconds = int(qBound<qint64>(
+            1, (nowMs - m_unresolvedLastBeatMs) / 1000, 60));
+    m_unresolvedLastBeatMs = nowMs;
+
     if (unresolvedBytes < m_unresolvedLastBytes) {
         // The unresolved set shrank (a process exited or was identified), so a
         // negative delta is not traffic; start a fresh window.
         m_unresolvedLastBytes = unresolvedBytes;
         m_unresolvedWindowBytes = 0;
         m_unresolvedWindowStart = at;
+        m_unresolvedWindowQualified = false;
+        m_unresolvedAboveSeconds = 0;
     } else {
         const quint64 delta = unresolvedBytes - m_unresolvedLastBytes;
         m_unresolvedLastBytes = unresolvedBytes;
+        const quint64 rate = delta / quint64(elapsedSeconds);
+
         if (!m_unresolvedWindowStart.isValid()
             || m_unresolvedWindowStart.secsTo(at) > m_settings.unresolvedWindowSeconds) {
             m_unresolvedWindowStart = at;
             m_unresolvedWindowBytes = 0;
+            m_unresolvedWindowQualified = false;
+            m_unresolvedAboveSeconds = 0;
         }
+
+        // The measure is how far this beat rises above the median of the recent
+        // beats, not the rate itself: a stream that simply continues what was
+        // already there contributes nothing, while a new or growing one clears
+        // the floor immediately. That is what keeps steady background traffic
+        // from producing a card every cooldown period.
+        const quint64 beatBaseline = typicalRate(m_unresolvedRates);
+        const quint64 excess = rate > beatBaseline ? rate - beatBaseline : 0;
+        if (excess > 0 && excess >= m_settings.unresolvedFloorBytesPerSecond) {
+            ++m_unresolvedAboveSeconds;
+            if (m_unresolvedAboveSeconds >= m_settings.sustainSeconds)
+                m_unresolvedWindowQualified = true;
+        } else {
+            m_unresolvedAboveSeconds = 0;
+        }
+
+        m_unresolvedRates.append(rate);
+        while (m_unresolvedRates.size() > m_settings.baselineSeconds)
+            m_unresolvedRates.removeFirst();
+
         m_unresolvedWindowBytes += delta;
     }
 
     const bool unresolvedCooledDown = m_unresolvedLastEventMs == 0
         || nowMs - m_unresolvedLastEventMs
                >= static_cast<qint64>(m_settings.unresolvedCooldownSeconds) * 1000;
-    if (m_unresolvedWindowBytes >= m_settings.unresolvedBytesThreshold
+    if (m_unresolvedWindowQualified
+        && m_unresolvedWindowBytes >= m_settings.unresolvedBytesThreshold
         && unresolvedCooledDown) {
         // Name the busiest rows that landed in the unresolved bucket instead of
         // reporting a bare "Unknown": the same condition that makes a row
@@ -184,6 +227,8 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
         m_unresolvedLastEventMs = nowMs;
         m_unresolvedWindowBytes = 0;
         m_unresolvedWindowStart = at;
+        m_unresolvedWindowQualified = false;
+        m_unresolvedAboveSeconds = 0;
     }
 
     return events;
