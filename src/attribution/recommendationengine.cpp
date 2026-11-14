@@ -199,6 +199,12 @@ RecommendationAction RecommendationEngine::recommendedActionFor(CatalogCategory 
         return RecommendationAction::ReviewSettings;
     case CatalogCategory::ForegroundDownload:
     case CatalogCategory::Browser:
+    // A call, a live stream, and an interactive remote session are real time:
+    // limiting them breaks the experience rather than saving background
+    // bandwidth, so the engine never suggests an intervention.
+    case CatalogCategory::Communication:
+    case CatalogCategory::RemoteAccess:
+    case CatalogCategory::Media:
         return RecommendationAction::NoAction;
     case CatalogCategory::Unknown:
         break;

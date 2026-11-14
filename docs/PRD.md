@@ -192,6 +192,9 @@ The system shall classify activity using local rules and metadata, including:
 - Game launchers and game updates.
 - IDE and developer-tool updates.
 - Package managers and container image downloads.
+- Real-time communication: meetings, voice, and chat clients.
+- Remote access sessions.
+- Media streaming: music and video playback clients.
 - Foreground application downloads.
 - Unknown or unclassified activity.
 

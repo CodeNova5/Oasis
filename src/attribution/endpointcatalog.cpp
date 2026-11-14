@@ -543,6 +543,9 @@ QString catalogCategoryToken(CatalogCategory category)
     case CatalogCategory::GameLauncher:       return QStringLiteral("game-launcher");
     case CatalogCategory::DeveloperTool:      return QStringLiteral("developer-tool");
     case CatalogCategory::PackageManager:     return QStringLiteral("package-manager");
+    case CatalogCategory::Communication:      return QStringLiteral("communication");
+    case CatalogCategory::RemoteAccess:       return QStringLiteral("remote-access");
+    case CatalogCategory::Media:              return QStringLiteral("media");
     case CatalogCategory::ForegroundDownload: return QStringLiteral("foreground-download");
     case CatalogCategory::Unknown:            break;
     }
@@ -560,6 +563,9 @@ QString catalogCategoryDisplayName(CatalogCategory category)
     case CatalogCategory::GameLauncher:       return QStringLiteral("Game launcher");
     case CatalogCategory::DeveloperTool:      return QStringLiteral("Developer tool");
     case CatalogCategory::PackageManager:     return QStringLiteral("Package manager");
+    case CatalogCategory::Communication:      return QStringLiteral("Communication");
+    case CatalogCategory::RemoteAccess:       return QStringLiteral("Remote access");
+    case CatalogCategory::Media:              return QStringLiteral("Media");
     case CatalogCategory::ForegroundDownload: return QStringLiteral("Foreground download");
     case CatalogCategory::Unknown:            break;
     }
@@ -586,6 +592,12 @@ bool catalogCategoryFromToken(const QString &token, CatalogCategory *category)
         *category = CatalogCategory::DeveloperTool;
     } else if (value == QStringLiteral("package-manager")) {
         *category = CatalogCategory::PackageManager;
+    } else if (value == QStringLiteral("communication")) {
+        *category = CatalogCategory::Communication;
+    } else if (value == QStringLiteral("remote-access")) {
+        *category = CatalogCategory::RemoteAccess;
+    } else if (value == QStringLiteral("media")) {
+        *category = CatalogCategory::Media;
     } else if (value == QStringLiteral("foreground-download")) {
         *category = CatalogCategory::ForegroundDownload;
     } else if (value == QStringLiteral("unknown")) {
@@ -607,6 +619,9 @@ QStringList catalogCategoryTokens()
         QStringLiteral("game-launcher"),
         QStringLiteral("developer-tool"),
         QStringLiteral("package-manager"),
+        QStringLiteral("communication"),
+        QStringLiteral("remote-access"),
+        QStringLiteral("media"),
         QStringLiteral("foreground-download"),
         QStringLiteral("unknown")
     };
@@ -973,6 +988,143 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
         rule.executableName = QString::fromLatin1(component.executable);
         rules.append(rule);
     }
+
+    // Communication. Teams ships as classic Teams.exe and as the newer
+    // ms-teams.exe, so the signed product covers both instead of two rules.
+    CatalogRule teams = builtinRule(
+        QStringLiteral("builtin-microsoft-teams"),
+        CatalogCategory::Communication,
+        QStringLiteral("Microsoft Teams"));
+    teams.publisherContains = QStringLiteral("microsoft");
+    teams.productContains = QStringLiteral("teams");
+    rules.append(teams);
+
+    CatalogRule zoom = builtinRule(
+        QStringLiteral("builtin-zoom"),
+        CatalogCategory::Communication,
+        QStringLiteral("Zoom meetings"));
+    zoom.executableName = QStringLiteral("zoom.exe");
+    rules.append(zoom);
+
+    // Discord installs one client per release channel, each with its own
+    // executable, so all three names share the same classification.
+    const struct {
+        const char *id;
+        const char *executable;
+        const char *explanation;
+    } discordClients[] = {
+        { "builtin-discord", "discord.exe", "Discord voice and chat" },
+        { "builtin-discord-ptb", "discordptb.exe", "Discord PTB voice and chat" },
+        { "builtin-discord-canary", "discordcanary.exe", "Discord Canary voice and chat" },
+    };
+    for (const auto &client : discordClients) {
+        CatalogRule rule = builtinRule(QString::fromLatin1(client.id),
+                                       CatalogCategory::Communication,
+                                       QString::fromLatin1(client.explanation));
+        rule.executableName = QString::fromLatin1(client.executable);
+        rules.append(rule);
+    }
+
+    CatalogRule slack = builtinRule(
+        QStringLiteral("builtin-slack"),
+        CatalogCategory::Communication,
+        QStringLiteral("Slack"));
+    slack.executableName = QStringLiteral("slack.exe");
+    rules.append(slack);
+
+    // Desktop messengers. WhatsApp's standalone and Store builds both run as
+    // WhatsApp.exe, and the other two ship the same name from either site.
+    const struct {
+        const char *id;
+        const char *executable;
+        const char *explanation;
+    } messengerClients[] = {
+        { "builtin-whatsapp", "whatsapp.exe", "WhatsApp desktop" },
+        { "builtin-telegram", "telegram.exe", "Telegram desktop" },
+        { "builtin-signal", "signal.exe", "Signal desktop" },
+    };
+    for (const auto &client : messengerClients) {
+        CatalogRule rule = builtinRule(QString::fromLatin1(client.id),
+                                       CatalogCategory::Communication,
+                                       QString::fromLatin1(client.explanation));
+        rule.executableName = QString::fromLatin1(client.executable);
+        rules.append(rule);
+    }
+
+    // Media streaming. Playback is real time, so these are never throttled.
+    // Netflix's Windows client is packaged, and its video is served from the
+    // nflxvideo CDN, so either handle can classify the session.
+    CatalogRule spotify = builtinRule(
+        QStringLiteral("builtin-spotify"),
+        CatalogCategory::Media,
+        QStringLiteral("Spotify streaming"));
+    spotify.executableName = QStringLiteral("spotify.exe");
+    rules.append(spotify);
+
+    CatalogRule netflix = builtinRule(
+        QStringLiteral("builtin-netflix"),
+        CatalogCategory::Media,
+        QStringLiteral("Netflix streaming"));
+    netflix.executableName = QStringLiteral("netflix.exe");
+    rules.append(netflix);
+
+    // Streaming video CDNs. Destination-only evidence ranks below an executable
+    // match, so watching these services in a browser still reports Browser.
+    const struct {
+        const char *id;
+        const char *domain;
+        const char *explanation;
+    } streamingCdns[] = {
+        { "builtin-netflix-cdn", "*.nflxvideo.net", "Netflix video streaming" },
+        { "builtin-twitch-cdn", "*.ttvnw.net", "Twitch video streaming" },
+        { "builtin-prime-video-cdn", "*.aiv-cdn.net", "Prime Video streaming" },
+        { "builtin-prime-video-delivery", "*.aiv-delivery.net", "Prime Video delivery" },
+    };
+    for (const auto &cdn : streamingCdns) {
+        CatalogRule rule = builtinRule(QString::fromLatin1(cdn.id),
+                                       CatalogCategory::Media,
+                                       QString::fromLatin1(cdn.explanation));
+        rule.domainPatterns = { QString::fromLatin1(cdn.domain) };
+        rules.append(rule);
+    }
+
+    // Remote access. The client side is mstsc.exe; a session hosted by this
+    // machine moves its bytes through the TermService stack, which is the only
+    // handle available for server-side RDP traffic.
+    CatalogRule remoteDesktopClient = builtinRule(
+        QStringLiteral("builtin-remote-desktop-client"),
+        CatalogCategory::RemoteAccess,
+        QStringLiteral("Remote Desktop client"));
+    remoteDesktopClient.executableName = QStringLiteral("mstsc.exe");
+    rules.append(remoteDesktopClient);
+
+    CatalogRule remoteDesktopService = builtinRule(
+        QStringLiteral("builtin-remote-desktop-service"),
+        CatalogCategory::RemoteAccess,
+        QStringLiteral("Remote Desktop service traffic"));
+    remoteDesktopService.serviceName = QStringLiteral("TermService");
+    rules.append(remoteDesktopService);
+
+    CatalogRule teamViewer = builtinRule(
+        QStringLiteral("builtin-teamviewer"),
+        CatalogCategory::RemoteAccess,
+        QStringLiteral("TeamViewer"));
+    teamViewer.executableName = QStringLiteral("teamviewer.exe");
+    rules.append(teamViewer);
+
+    CatalogRule teamViewerService = builtinRule(
+        QStringLiteral("builtin-teamviewer-service"),
+        CatalogCategory::RemoteAccess,
+        QStringLiteral("TeamViewer service"));
+    teamViewerService.executableName = QStringLiteral("teamviewer_service.exe");
+    rules.append(teamViewerService);
+
+    CatalogRule anydesk = builtinRule(
+        QStringLiteral("builtin-anydesk"),
+        CatalogCategory::RemoteAccess,
+        QStringLiteral("AnyDesk"));
+    anydesk.executableName = QStringLiteral("anydesk.exe");
+    rules.append(anydesk);
 
     return rules;
 }

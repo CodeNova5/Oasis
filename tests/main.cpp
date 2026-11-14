@@ -2105,8 +2105,19 @@ void testEndpointCatalog()
     checkEqual(catalogCategoryDisplayName(CatalogCategory::WindowsUpdate),
                QStringLiteral("Windows Update"),
                QStringLiteral("the category has a printable name"));
-    checkEqual(QString::number(catalogCategoryTokens().size()), QStringLiteral("10"),
+    checkEqual(QString::number(catalogCategoryTokens().size()), QStringLiteral("13"),
                QStringLiteral("all categories have tokens"));
+    check(catalogCategoryFromToken(QStringLiteral("remote-access"), &parsedCategory) &&
+               parsedCategory == CatalogCategory::RemoteAccess,
+           QStringLiteral("the remote access category round-trips"));
+    checkEqual(catalogCategoryDisplayName(CatalogCategory::Communication),
+               QStringLiteral("Communication"),
+               QStringLiteral("the communication category has a printable name"));
+    check(catalogCategoryFromToken(QStringLiteral("media"), &parsedCategory) &&
+               parsedCategory == CatalogCategory::Media,
+           QStringLiteral("the media category round-trips"));
+    checkEqual(catalogCategoryDisplayName(CatalogCategory::Media), QStringLiteral("Media"),
+               QStringLiteral("the media category has a printable name"));
 
     CatalogRuleSource parsedSource = CatalogRuleSource::BuiltIn;
     check(catalogRuleSourceFromToken(QStringLiteral("user"), &parsedSource) &&
@@ -2277,6 +2288,62 @@ void testEndpointCatalog()
         check(catalog.bestMatch(query).category == CatalogCategory::CloudSync,
               QStringLiteral("%1 is cloud sync traffic").arg(component));
     }
+
+    // Communication, matched by signed product for Teams (two client builds)
+    // and by executable for the rest.
+    query = CatalogQuery();
+    query.publisher = QStringLiteral("Microsoft Corporation");
+    query.product = QStringLiteral("Microsoft Teams");
+    check(catalog.bestMatch(query).category == CatalogCategory::Communication,
+          QStringLiteral("Teams is communication traffic"));
+
+    for (const QString &client : { QStringLiteral("Zoom.exe"),
+                                   QStringLiteral("Discord.exe"),
+                                   QStringLiteral("DiscordPTB.exe"),
+                                   QStringLiteral("DiscordCanary.exe"),
+                                   QStringLiteral("Slack.exe"),
+                                   QStringLiteral("WhatsApp.exe"),
+                                   QStringLiteral("Telegram.exe"),
+                                   QStringLiteral("Signal.exe") }) {
+        query = CatalogQuery();
+        query.executableName = client;
+        check(catalog.bestMatch(query).category == CatalogCategory::Communication,
+              QStringLiteral("%1 is communication traffic").arg(client));
+    }
+
+    // Media playback is matched by client or, when the client is packaged and
+    // its traffic arrives from a CDN, by the streaming endpoint.
+    for (const QString &client : { QStringLiteral("Spotify.exe"),
+                                   QStringLiteral("Netflix.exe") }) {
+        query = CatalogQuery();
+        query.executableName = client;
+        check(catalog.bestMatch(query).category == CatalogCategory::Media,
+              QStringLiteral("%1 is media traffic").arg(client));
+    }
+
+    for (const QString &cdn : { QStringLiteral("ipv4-c001-ams1.nflxvideo.net"),
+                                QStringLiteral("video-edge-abc.ttvnw.net"),
+                                QStringLiteral("d25xi40x97liuc.aiv-cdn.net") }) {
+        query = CatalogQuery();
+        query.domain = cdn;
+        check(catalog.bestMatch(query).category == CatalogCategory::Media,
+              QStringLiteral("%1 is media traffic").arg(cdn));
+    }
+
+    for (const QString &client : { QStringLiteral("mstsc.exe"),
+                                   QStringLiteral("TeamViewer.exe"),
+                                   QStringLiteral("teamviewer_service.exe"),
+                                   QStringLiteral("AnyDesk.exe") }) {
+        query = CatalogQuery();
+        query.executableName = client;
+        check(catalog.bestMatch(query).category == CatalogCategory::RemoteAccess,
+              QStringLiteral("%1 is remote access traffic").arg(client));
+    }
+
+    query = CatalogQuery();
+    query.serviceName = QStringLiteral("TermService");
+    check(catalog.bestMatch(query).category == CatalogCategory::RemoteAccess,
+          QStringLiteral("a hosted RDP session is remote access traffic"));
 
     // Local rules can use address prefixes and identity evidence.
     CatalogRule rangeRule;
@@ -3333,6 +3400,18 @@ void testRecommendationEngine()
     npm.activity = classifier.classify(npm.observation);
     check(engine.recommend(npm).action == RecommendationAction::Throttle,
           QStringLiteral("a package registry download is throttled"));
+
+    RecommendationContext call;
+    call.observation.executableName = QStringLiteral("zoom.exe");
+    call.activity = classifier.classify(call.observation);
+    check(engine.recommend(call).action == RecommendationAction::NoAction,
+          QStringLiteral("a call is never throttled"));
+
+    RecommendationContext stream;
+    stream.observation.executableName = QStringLiteral("spotify.exe");
+    stream.activity = classifier.classify(stream.observation);
+    check(engine.recommend(stream).action == RecommendationAction::NoAction,
+          QStringLiteral("a stream is never throttled"));
 
     // Foreground transfers are left alone (or reviewed on a metered link).
     RecommendationContext download = contextFor(QStringLiteral("browser.exe"));
