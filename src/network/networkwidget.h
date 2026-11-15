@@ -130,6 +130,10 @@ public:
     // state and policy state the first-view summary does not carry. Read from
     // the last beat, so the Applications page adds no capture work of its own.
     QList<Applications::Snapshot> applicationSnapshots() const;
+    // Screen 03 details drawer: read on open, so static executable metadata is
+    // not resolved for every row on every beat.
+    Applications::Details applicationDetails(quint32 pid, const QString &executablePath,
+                                             const QString &processName = QString());
     bool isCapturing() const { return m_capturing; }
     // NG-050: the persisted audit log behind the audit view and its export.
     AuditEventStore *auditStore() { return &m_auditStore; }
@@ -150,6 +154,10 @@ public:
     // the executable, offering removal when a limit is already in force.
     void showTrafficControlsFor(quint32 pid, const QString &executablePath,
                                 const QString &processName = QString());
+    // Screen 03 rule control: Allow and Block drive the firewall directly;
+    // Ask stores an advisory per-path policy so the choice survives a restart.
+    void applyApplicationRule(quint32 pid, const QString &executablePath,
+                              const QString &processName, const QString &rule);
     // Activity actions route through the existing policy editor and list, so the
     // feed never becomes a second enforcement path.
     void showPolicyEditorFor(quint32 pid, const QString &executablePath,

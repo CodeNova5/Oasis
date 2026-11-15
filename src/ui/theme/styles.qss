@@ -512,6 +512,17 @@ QToolButton[uiRole="filterPill"]:checked {
     color: @text-primary;
 }
 
+/* Applications details drawer */
+QFrame#applicationDrawer {
+    background-color: @surface-sidebar;
+    border-left: 1px solid @border-default;
+}
+QLabel#drawerAppName {
+    font-size: @font-size-card;
+    font-weight: 600;
+    color: @text-primary;
+}
+
 /* ── Tables & trees ─────────────────────────────────────────────────────── */
 QTableView, QTreeView, QListView {
     background-color: @surface-primary;

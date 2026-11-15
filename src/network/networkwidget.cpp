@@ -19,6 +19,7 @@
 #include "attribution/aiapproval.h"
 #include "attribution/attributionconfidence.h"
 #include "attribution/openaiadapter.h"
+#include "identity/applicationidentity.h"
 
 // ── Theme Manager ──
 #include "ui/theme/thememanager.h"
@@ -26,6 +27,7 @@
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QMetaObject>
+#include <QSet>
 #include <QStyle>
 #include <QApplication>
 #include <QMenu>
@@ -40,6 +42,7 @@
 #include <QDir>
 #include <QProcess>
 #include <QFileInfo>
+#include <QUuid>
 #include <QFrame>
 #include <QLineEdit>
 #include <QPalette>
@@ -458,6 +461,115 @@ void NetworkWidget::showTrafficControlsFor(quint32 pid, const QString &executabl
     if (path.isEmpty())
         path = getExactProcessPath(pid, name);
     requestThrottlePath(path);
+}
+
+void NetworkWidget::applyApplicationRule(quint32 pid, const QString &executablePath,
+                                         const QString &processName, const QString &rule)
+{
+    const QString wanted = rule.trimmed().toLower();
+    if (wanted != QLatin1String("allow") && wanted != QLatin1String("ask")
+        && wanted != QLatin1String("block")) {
+        return;
+    }
+
+    QString name = processName.trimmed();
+    QString path = executablePath.trimmed();
+    const int modelRow = (m_model && pid != 0) ? m_model->rowForPid(pid) : -1;
+    if (name.isEmpty() && modelRow >= 0)
+        name = m_model->snapshotForRow(modelRow).name;
+    if (path.isEmpty())
+        path = getExactProcessPath(pid, name);
+    if (path.isEmpty() || !m_firewall)
+        return;
+
+    // Allow and Ask both lift a direct firewall block; Block applies one. A
+    // wider stored Block policy is left alone: the per-row control reflects
+    // it but does not silently delete the user's broader decision.
+    const bool blocked = m_firewall && m_firewall->isBlocked(path);
+    if (wanted == QLatin1String("block") && !blocked && m_firewall) {
+        const QString prompt = QStringLiteral(
+            "Block all internet access for this executable?\n\n%1\n\n"
+            "This is path-wide and affects every running and future instance.").arg(path);
+        if (QMessageBox::question(this, QStringLiteral("Block internet access"), prompt,
+                                  QMessageBox::Yes | QMessageBox::No,
+                                  QMessageBox::No) != QMessageBox::Yes) {
+            return;
+        }
+        if (!m_firewall->blockApp(path)) {
+            QMessageBox::warning(this, QStringLiteral("Firewall rule not applied"),
+                                 m_firewall->lastError().isEmpty()
+                                     ? QStringLiteral("The firewall rule could not be created.")
+                                     : m_firewall->lastError());
+            return;
+        }
+    } else if (wanted != QLatin1String("block") && blocked && m_firewall) {
+        const QString prompt = QStringLiteral(
+            "Allow internet access again for this executable?\n\n%1").arg(path);
+        if (QMessageBox::question(this, QStringLiteral("Restore internet access"), prompt,
+                                  QMessageBox::Yes | QMessageBox::No,
+                                  QMessageBox::No) != QMessageBox::Yes) {
+            return;
+        }
+        m_firewall->removeAppRules(path);
+    }
+
+    // Ask is advisory, so it is represented by a stored policy. One per-app
+    // rule owns every path-scoped Ask policy for the executable: switching to
+    // Allow or Block removes them rather than leaving a stale Ask behind.
+    const QString absolute = QFileInfo(path).absoluteFilePath();
+    QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    QList<NetworkPolicy> kept;
+    kept.reserve(policies.size() + 1);
+    bool hasAsk = false;
+    for (const NetworkPolicy &policy : policies) {
+        const QString scope = policy.scope.trimmed().toLower();
+        const bool pathScoped = scope == QLatin1String("path")
+                                || scope == QLatin1String("executable");
+        const bool targetsPath = pathScoped && !policy.targetId.trimmed().isEmpty()
+                                 && QFileInfo(policy.targetId).absoluteFilePath().compare(
+                                        absolute, Qt::CaseInsensitive) == 0;
+        if (targetsPath && policy.action == NetworkPolicy::Action::Ask) {
+            if (wanted == QLatin1String("ask")) {
+                hasAsk = true;
+                kept.append(policy);
+            }
+            continue;
+        }
+        kept.append(policy);
+    }
+    if (wanted == QLatin1String("ask") && !hasAsk) {
+        NetworkPolicy policy;
+        policy.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        policy.scope = QStringLiteral("path");
+        policy.targetId = absolute;
+        policy.direction = NetworkDirection::Both;
+        policy.action = NetworkPolicy::Action::Ask;
+        policy.source = QStringLiteral("user");
+        policy.enabled = true;
+        policy.description = name.isEmpty()
+            ? QStringLiteral("Ask before allowing network access")
+            : QStringLiteral("Ask before allowing network access for %1").arg(name);
+        kept.append(policy);
+    }
+    if (kept.size() != policies.size()
+        || (wanted == QLatin1String("ask") && !hasAsk)) {
+        PolicyStore::savePolicies(kept);
+        if (m_policyScheduler)
+            m_policyScheduler->evaluateNow();
+    }
+
+    AuditEvent audit;
+    audit.type = AuditEvent::EventType::PolicyChange;
+    audit.scope = absolute;
+    audit.reason = QStringLiteral("application rule set to %1").arg(wanted);
+    audit.result = wanted;
+    audit.details = name;
+    m_auditStore.append(audit);
+
+    if (ui && ui->lblStatus)
+        ui->lblStatus->setText(QStringLiteral("Rule set to %1 for %2")
+                                   .arg(wanted, name.isEmpty() ? absolute : name));
+    refreshDashboard();
 }
 
 void NetworkWidget::showPolicyEditorFor(quint32 pid, const QString &executablePath,
@@ -1790,6 +1902,10 @@ QList<Applications::Snapshot> NetworkWidget::applicationSnapshots() const
     // (comparatively expensive) firewall/throttle lookups. Only the evidence
     // that is unique to this screen is resolved again, by pid, from the model.
     rows.reserve(m_dashboardSummary.consumers.size());
+    // Read once per beat, not once per row: the Rule column only needs to
+    // know whether an advisory Ask policy covers the application.
+    const QList<NetworkPolicy> storedPolicies = PolicyStore::loadPolicies();
+    const QDateTime now = QDateTime::currentDateTimeUtc();
     for (const TopConsumers::Consumer &consumer : m_dashboardSummary.consumers) {
         if (consumer.name.trimmed().isEmpty() && consumer.pid == 0)
             continue;
@@ -1826,12 +1942,112 @@ QList<Applications::Snapshot> NetworkWidget::applicationSnapshots() const
         row.policy = Applications::policyLabel(consumer.blocked, consumer.throttled);
         row.policyToken = Applications::policyTokenFor(consumer.blocked,
                                                        consumer.throttled);
+        row.rule = QStringLiteral("allow");
+        if (consumer.blocked) {
+            row.rule = QStringLiteral("block");
+        } else if (snap.isValid()) {
+            // The model's activity query carries the name but not the image
+            // path, and the Ask rule the user creates is path-scoped.
+            ActivityQuery policyQuery = snap.query;
+            if (policyQuery.executablePath.trimmed().isEmpty())
+                policyQuery.executablePath = consumer.path;
+            for (const NetworkPolicy &policy : storedPolicies) {
+                if (!policy.enabled || policy.action != NetworkPolicy::Action::Ask)
+                    continue;
+                if (policy.expiration.isValid() && policy.expiration <= now)
+                    continue;
+                if (ApplicationDetail::policyTargets(policy, policyQuery, consumer.pid)) {
+                    row.rule = QStringLiteral("ask");
+                    break;
+                }
+            }
+        }
         if (row.icon.isNull())
             row.icon = genericExecutableIcon();
         rows.append(row);
     }
     return rows;
 }
+
+Applications::Details NetworkWidget::applicationDetails(quint32 pid, const QString &executablePath,
+                                                       const QString &processName)
+{
+    Applications::Details details;
+    details.pid = pid;
+    details.name = processName.trimmed();
+    details.path = executablePath.trimmed();
+
+    const int modelRow = (m_model && pid != 0) ? m_model->rowForPid(pid) : -1;
+    const ProcessRowSnapshot snap =
+        modelRow >= 0 ? m_model->snapshotForRow(modelRow) : ProcessRowSnapshot();
+    if (snap.isValid()) {
+        if (!snap.name.trimmed().isEmpty())
+            details.name = snap.name;
+        details.displayName = snap.identityName;
+        details.publisher = snap.publisher;
+        details.icon = snap.icon;
+        details.uploadedBytes = snap.txBytes;
+        details.downloadedBytes = snap.rxBytes;
+        if (details.path.isEmpty())
+            details.path = getExactProcessPath(snap.pid, snap.name);
+
+        QSet<QString> addresses;
+        for (const ConnectionStat &connection : snap.connections) {
+            if (!connection.remoteAddress.trimmed().isEmpty())
+                addresses.insert(connection.remoteAddress);
+            const QString endpoint = connection.domain.trimmed().isEmpty()
+                ? connection.remoteAddress
+                : connection.domain.trimmed() + QStringLiteral(" · ")
+                      + connection.remoteAddress;
+            if (!endpoint.trimmed().isEmpty()
+                && !details.endpoints.contains(endpoint, Qt::CaseInsensitive)
+                && details.endpoints.size() < 40) {
+                details.endpoints.append(endpoint);
+            }
+        }
+        details.connectionCount = snap.connections.size();
+        details.remoteAddressCount = addresses.size();
+    }
+    if (details.name.isEmpty() && !details.path.isEmpty())
+        details.name = QFileInfo(details.path).fileName();
+    if (details.icon.isNull())
+        details.icon = genericExecutableIcon();
+
+    if (!details.path.isEmpty()) {
+        const QFileInfo file(details.path);
+        const QDateTime born = file.birthTime().isValid() ? file.birthTime()
+                                                          : file.created();
+        if (born.isValid())
+            details.installedAt = born;
+        details.version =
+            Oasis::ApplicationIdentityResolver::readVersionMetadata(details.path).fileVersion;
+    }
+
+    ActivityQuery query = snap.isValid() ? snap.query : ActivityQuery();
+    if (query.executablePath.trimmed().isEmpty())
+        query.executablePath = details.path;
+    if (query.executableName.trimmed().isEmpty())
+        query.executableName = details.name;
+
+    details.rule = QStringLiteral("allow");
+    if (m_firewall && !details.path.isEmpty() && m_firewall->isBlocked(details.path)) {
+        details.rule = QStringLiteral("block");
+    } else {
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        for (const NetworkPolicy &policy : PolicyStore::loadPolicies()) {
+            if (!policy.enabled || policy.action != NetworkPolicy::Action::Ask)
+                continue;
+            if (policy.expiration.isValid() && policy.expiration <= now)
+                continue;
+            if (ApplicationDetail::policyTargets(policy, query, pid)) {
+                details.rule = QStringLiteral("ask");
+                break;
+            }
+        }
+    }
+    return details;
+}
+
 // void NetworkWidget::onCaptureError(const QString &msg) { ui->lblStatus->setText("⚠ " + msg); QMessageBox::critical(this, "Capture Error", msg); onCaptureStopped(); }
 
 void NetworkWidget::onCaptureError(const QString &msg) {

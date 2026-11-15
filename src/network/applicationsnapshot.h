@@ -13,6 +13,7 @@
  */
 #pragma once
 
+#include <QDateTime>
 #include <QIcon>
 #include <QString>
 #include <QStringList>
@@ -33,6 +34,7 @@ struct Snapshot
     QString activity;          // "Foreground", "Background" or "System"
     QString policy;            // "None", "Throttle (Active)", "Block (Active)"
     QString policyToken;       // "none", "restricted" or "blocked"
+    QString rule;              // per-app rule: "allow", "ask" or "block"
     QString identity;          // "Confirmed", "Likely", "Possible", "Unknown"
 
     quint64 rxBytesPerSecond = 0;
@@ -45,6 +47,34 @@ struct Snapshot
     {
         return displayName.trimmed().isEmpty() ? name : displayName;
     }
+};
+
+/// Everything the right-side details drawer shows for one application. The
+/// snapshot is read when the drawer opens, not once per beat: version metadata
+/// and file dates cost a file open and are static for the life of the image.
+struct Details
+{
+    quint32 pid = 0;
+    QIcon icon;
+    QString name;
+    QString displayName;
+    QString publisher;
+    QString version;
+    QString path;
+    QDateTime installedAt;
+    QString rule;              // "allow", "ask" or "block"
+
+    // Session usage; the drawer labels it "This session".
+    quint64 uploadedBytes = 0;
+    quint64 downloadedBytes = 0;
+
+    // Seven-day history, filled by the host that owns the daily store.
+    quint64 weeklyUploadedBytes = 0;
+    quint64 weeklyDownloadedBytes = 0;
+
+    int connectionCount = 0;
+    int remoteAddressCount = 0;
+    QStringList endpoints;     // "domain · address" or the direct address
 };
 
 /// A process that hosts Windows services is presented as a system service,

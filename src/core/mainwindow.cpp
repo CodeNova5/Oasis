@@ -1284,7 +1284,7 @@ void MainWindow::buildShell()
     m_applications = new ApplicationsPage;
     addScreen(QStringLiteral("Applications"), m_applications,
               QStringLiteral("Applications"),
-              QStringLiteral("Bandwidth consumers and their identity"));
+              QStringLiteral("Manage network access for each application."));
     m_applicationsIndex = m_screenTitles.size() - 1;
     addScreen(QStringLiteral("Connections"),
               makePlaceholderPage(QStringLiteral("Connections"),
@@ -1702,8 +1702,28 @@ void MainWindow::setupApplications()
 
     connect(m_applications, &ApplicationsPage::detailsRequested,
             this, [this](quint32 pid, const QString &path, const QString &name) {
-        if (m_netWidget)
-            m_netWidget->showApplicationDetails(pid, path, name);
+        if (!m_netWidget)
+            return;
+        Applications::Details details =
+            m_netWidget->applicationDetails(pid, path, name);
+        if (details.name.trimmed().isEmpty())
+            details.name = name;
+
+        // Seven-day totals come from the daily store this screen already
+        // maintains; the drawer's session figures come from the process model.
+        const QDate today = QDate::currentDate();
+        for (int offset = 0; offset < 7; ++offset) {
+            const auto day = m_historyData.constFind(
+                today.addDays(-offset).toString(QStringLiteral("yyyy-MM-dd")));
+            if (day == m_historyData.constEnd())
+                continue;
+            const auto app = day.value().constFind(details.name);
+            if (app == day.value().constEnd())
+                continue;
+            details.weeklyUploadedBytes += app.value().txBytes;
+            details.weeklyDownloadedBytes += app.value().rxBytes;
+        }
+        m_applications->showDetails(details);
     });
     connect(m_applications, &ApplicationsPage::trafficRequested,
             this, [this](quint32 pid, const QString &path, const QString &name) {
@@ -1721,6 +1741,17 @@ void MainWindow::setupApplications()
             return;
         navigateTo(m_activityIndex);
         m_activity->setApplications(m_activityApplications, name);
+    });
+    connect(m_applications, &ApplicationsPage::ruleChangeRequested,
+            this, [this](quint32 pid, const QString &path, const QString &name,
+                         const QString &rule) {
+        if (m_netWidget)
+            m_netWidget->applyApplicationRule(pid, path, name, rule);
+    });
+    connect(m_applications, &ApplicationsPage::policiesRequested,
+            this, [this]() {
+        if (m_netWidget)
+            m_netWidget->showPolicies();
     });
 
     refreshApplications();
@@ -1751,6 +1782,7 @@ void MainWindow::refreshApplications()
         row.policy = snapshot.policy;
         row.policyToken = snapshot.policyToken;
         row.identity = snapshot.identity;
+        row.rule = snapshot.rule;
         rows.append(row);
     }
 
