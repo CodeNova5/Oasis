@@ -14,6 +14,7 @@
 #include "ui/shell/systemstatusbar.h"
 #include "ui/pages/overview/overviewpage.h"
 #include "ui/pages/activity/activitypage.h"
+#include "ui/pages/applications/applicationspage.h"
 #include "ui/pages/settings/settingspage.h"
 #include "activity/detectionprofile.h"
 #include "ui/components/trafficchart.h"
@@ -155,6 +156,7 @@ MainWindow::MainWindow(QWidget *parent)
     loadSettings();
     initHistoryManager();
     setupActivity();
+    setupApplications();
 
     ui->cmbOverlayRamFormat->setCurrentIndex(0);
     m_header->setDarkMode(ThemeManager::instance().isDark());
@@ -1279,10 +1281,8 @@ void MainWindow::buildShell()
               QStringLiteral("Activity"),
               QStringLiteral("Bandwidth spikes, unrecognized traffic and policy actions"));
     m_activityIndex = m_screenTitles.size() - 1;
-    addScreen(QStringLiteral("Applications"),
-              makePlaceholderPage(QStringLiteral("Applications"),
-                  QStringLiteral("The application table is being rebuilt as a dedicated "
-                                 "screen. Current process activity is available on Overview.")),
+    m_applications = new ApplicationsPage;
+    addScreen(QStringLiteral("Applications"), m_applications,
               QStringLiteral("Applications"),
               QStringLiteral("Bandwidth consumers and their identity"));
     m_applicationsIndex = m_screenTitles.size() - 1;
@@ -1686,6 +1686,50 @@ void MainWindow::setupActivity()
     m_activitySaveTimer->setInterval(30 * 1000);
     connect(m_activitySaveTimer, &QTimer::timeout, this, &MainWindow::saveActivitySeries);
     m_activitySaveTimer->start();
+}
+
+// ============================================================================
+// Applications (Screen 03)
+// ============================================================================
+
+void MainWindow::setupApplications()
+{
+    if (!m_applications || !m_netWidget)
+        return;
+
+    connect(m_netWidget, &NetworkWidget::dashboardUpdated,
+            this, &MainWindow::refreshApplications);
+    refreshApplications();
+}
+
+void MainWindow::refreshApplications()
+{
+    if (!m_applications || !m_netWidget)
+        return;
+
+    const QList<Applications::Snapshot> snapshots =
+        m_netWidget->applicationSnapshots();
+    QList<Applications::Row> rows;
+    rows.reserve(snapshots.size());
+
+    for (const Applications::Snapshot &snapshot : snapshots) {
+        Applications::Row row;
+        row.pid = snapshot.pid;
+        row.name = snapshot.name;
+        row.displayName = snapshot.displayName;
+        row.publisher = snapshot.publisher;
+        row.path = snapshot.path;
+        row.rxBytesPerSecond = snapshot.rxBytesPerSecond;
+        row.txBytesPerSecond = snapshot.txBytesPerSecond;
+        row.totalBytes = snapshot.totalBytes;
+        row.activity = snapshot.activity;
+        row.policy = snapshot.policy;
+        row.policyToken = snapshot.policyToken;
+        row.identity = snapshot.identity;
+        rows.append(row);
+    }
+
+    m_applications->setRows(rows);
 }
 
 void MainWindow::onActivityTelemetry(const TopConsumers::Summary &summary)

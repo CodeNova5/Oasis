@@ -37,6 +37,7 @@ SOURCES += \
     src/ui/components/trafficchart.cpp \
     src/ui/pages/overview/overviewpage.cpp \
     src/ui/pages/activity/activitypage.cpp \
+    src/ui/pages/applications/applicationspage.cpp \
     src/ui/pages/activity/activitytimeline.cpp \
     src/ui/pages/settings/settingspage.cpp \
     src/activity/activityevent.cpp \
@@ -122,6 +123,7 @@ HEADERS += \
     src/ui/components/trafficchart.h \
     src/ui/pages/overview/overviewpage.h \
     src/ui/pages/activity/activitypage.h \
+    src/ui/pages/applications/applicationspage.h \
     src/ui/pages/activity/activitytimeline.h \
     src/ui/pages/settings/settingspage.h \
     src/activity/activityevent.h \
@@ -140,6 +142,7 @@ HEADERS += \
     src/network/throttlepolicymanager.h \
     src/network/networkmodel.h \
     src/network/networkwidget.h \
+    src/network/applicationsnapshot.h \
     src/network/packetparser.h \
     src/network/testfixtures.h \
     src/network/policy.h \

@@ -20,6 +20,7 @@
 #include "policyreconcile.h"
 #include "auditeventstore.h"
 #include "applicationdetail.h"
+#include "applicationsnapshot.h"
 #include "policyeditordialog.h"
 #include "topconsumers.h"
 #include "attribution/recommendationengine.h"
@@ -125,6 +126,10 @@ public:
     // The first-view summary as of the last one-second beat. The Overview page
     // renders this snapshot; it never queries the process model itself.
     TopConsumers::Summary dashboardSummary() const { return m_dashboardSummary; }
+    // Screen 03: one plain row per process, including the publisher, activity
+    // state and policy state the first-view summary does not carry. Read from
+    // the last beat, so the Applications page adds no capture work of its own.
+    QList<Applications::Snapshot> applicationSnapshots() const;
     bool isCapturing() const { return m_capturing; }
     // NG-050: the persisted audit log behind the audit view and its export.
     AuditEventStore *auditStore() { return &m_auditStore; }

@@ -1766,6 +1766,56 @@ void NetworkWidget::refreshDashboard()
     m_dashboardSummary = summary;
     emit dashboardUpdated(summary);
 }
+
+QList<Applications::Snapshot> NetworkWidget::applicationSnapshots() const
+{
+    QList<Applications::Snapshot> rows;
+    if (!m_model)
+        return rows;
+
+    // Reuse the beat's consumers, which already carry rates, totals and the
+    // (comparatively expensive) firewall/throttle lookups. Only the evidence
+    // that is unique to this screen is resolved again, by pid, from the model.
+    rows.reserve(m_dashboardSummary.consumers.size());
+    for (const TopConsumers::Consumer &consumer : m_dashboardSummary.consumers) {
+        if (consumer.name.trimmed().isEmpty() && consumer.pid == 0)
+            continue;
+
+        Applications::Snapshot row;
+        row.pid = consumer.pid;
+        row.name = consumer.name;
+        row.path = consumer.path;
+        row.rxBytesPerSecond = consumer.rxBytesPerSecond;
+        row.txBytesPerSecond = consumer.txBytesPerSecond;
+        row.totalBytes = consumer.totalBytes();
+
+        const int modelRow = consumer.pid != 0 ? m_model->rowForPid(consumer.pid) : -1;
+        const ProcessRowSnapshot snap =
+            modelRow >= 0 ? m_model->snapshotForRow(modelRow) : ProcessRowSnapshot();
+
+        AttributionConfidenceModel::Confidence confidence =
+            AttributionConfidenceModel::Confidence::Unknown;
+        if (snap.isValid()) {
+            if (!snap.name.isEmpty())
+                row.name = snap.name;
+            if (!snap.identityName.trimmed().isEmpty())
+                row.displayName = snap.identityName;
+            row.publisher = snap.publisher;
+            row.services = snap.services;
+            confidence = snap.activity.assessment.confidence;
+        }
+        row.identity = AttributionConfidenceModel::displayName(confidence);
+
+        const bool system = !row.services.isEmpty() || consumer.pid == 0
+                            || consumer.pid == 4;
+        row.activity = Applications::activityState(system, consumer.foreground);
+        row.policy = Applications::policyLabel(consumer.blocked, consumer.throttled);
+        row.policyToken = Applications::policyTokenFor(consumer.blocked,
+                                                       consumer.throttled);
+        rows.append(row);
+    }
+    return rows;
+}
 // void NetworkWidget::onCaptureError(const QString &msg) { ui->lblStatus->setText("⚠ " + msg); QMessageBox::critical(this, "Capture Error", msg); onCaptureStopped(); }
 
 void NetworkWidget::onCaptureError(const QString &msg) {
