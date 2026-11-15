@@ -1699,6 +1699,30 @@ void MainWindow::setupApplications()
 
     connect(m_netWidget, &NetworkWidget::dashboardUpdated,
             this, &MainWindow::refreshApplications);
+
+    connect(m_applications, &ApplicationsPage::detailsRequested,
+            this, [this](quint32 pid, const QString &path, const QString &name) {
+        if (m_netWidget)
+            m_netWidget->showApplicationDetails(pid, path, name);
+    });
+    connect(m_applications, &ApplicationsPage::trafficRequested,
+            this, [this](quint32 pid, const QString &path, const QString &name) {
+        if (m_netWidget)
+            m_netWidget->showTrafficControlsFor(pid, path, name);
+    });
+    connect(m_applications, &ApplicationsPage::policyRequested,
+            this, [this](quint32 pid, const QString &path, const QString &name) {
+        if (m_netWidget)
+            m_netWidget->showPolicyEditorFor(pid, path, name);
+    });
+    connect(m_applications, &ApplicationsPage::activityRequested,
+            this, [this](quint32, const QString &, const QString &name) {
+        if (!m_activity || m_activityIndex < 0)
+            return;
+        navigateTo(m_activityIndex);
+        m_activity->setApplications(m_activityApplications, name);
+    });
+
     refreshApplications();
 }
 

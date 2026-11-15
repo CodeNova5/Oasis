@@ -20,6 +20,7 @@
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPainter>
 #include <QRegularExpression>
 #include <QScrollBar>
@@ -693,6 +694,17 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
          column < ApplicationsPageTableModel::ColumnCount; ++column) {
         header->setSectionResizeMode(column, QHeaderView::ResizeToContents);
     }
+    // Row actions live on the row, not in the row: a right-click menu and the
+    // spec's double-click shortcut, both routed through the shell's existing
+    // detail, throttle and policy entry points.
+    m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_table, &QTableView::customContextMenuRequested,
+            this, &ApplicationsPage::showContextMenu);
+    connect(m_table, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
+        Applications::Row row;
+        if (rowForIndex(index, &row))
+            emit detailsRequested(row.pid, row.path, row.name);
+    });
     layout->addWidget(m_table, 1);
 
     // ── Empty state ─────────────────────────────────────────────────────────
@@ -849,4 +861,47 @@ void ApplicationsPage::refreshFooter()
             .arg(total)
             .arg(total == 1 ? QStringLiteral("application")
                             : QStringLiteral("applications")));
+}
+
+bool ApplicationsPage::rowForIndex(const QModelIndex &index, Applications::Row *row) const
+{
+    if (!row || !index.isValid())
+        return false;
+
+    const QModelIndex source = m_proxy->mapToSource(index);
+    if (!source.isValid() || source.row() < 0 || source.row() >= m_model->rowCount())
+        return false;
+
+    *row = m_model->rowAt(source.row());
+    return true;
+}
+
+void ApplicationsPage::showContextMenu(const QPoint &pos)
+{
+    const QModelIndex index = m_table->indexAt(pos);
+    Applications::Row row;
+    if (!rowForIndex(index, &row))
+        return;
+
+    m_table->selectRow(index.row());
+
+    QMenu menu(this);
+    QAction *details = menu.addAction(QStringLiteral("Details"));
+    QAction *traffic = menu.addAction(QStringLiteral("Manage traffic"));
+    QAction *policy = menu.addAction(QStringLiteral("Create policy"));
+    menu.addSeparator();
+    QAction *activity = menu.addAction(QStringLiteral("Inspect activity"));
+
+    QAction *chosen = menu.exec(m_table->viewport()->mapToGlobal(pos));
+    if (!chosen)
+        return;
+
+    if (chosen == details)
+        emit detailsRequested(row.pid, row.path, row.name);
+    else if (chosen == traffic)
+        emit trafficRequested(row.pid, row.path, row.name);
+    else if (chosen == policy)
+        emit policyRequested(row.pid, row.path, row.name);
+    else if (chosen == activity)
+        emit activityRequested(row.pid, row.path, row.name);
 }

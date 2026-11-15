@@ -13,6 +13,8 @@
 #pragma once
 
 #include <QList>
+#include <QModelIndex>
+#include <QPoint>
 #include <QString>
 #include <QWidget>
 
@@ -84,12 +86,23 @@ public:
     int applicationCount() const;
     int visibleApplicationCount() const;
 
+signals:
+    /// Every action is performed by the shell through an existing entry point;
+    /// the page only says which application the action targets.
+    void detailsRequested(quint32 pid, const QString &path, const QString &name);
+    void trafficRequested(quint32 pid, const QString &path, const QString &name);
+    void policyRequested(quint32 pid, const QString &path, const QString &name);
+    void activityRequested(quint32 pid, const QString &path, const QString &name);
+
 private:
     void applyFilter(Applications::Filter filter);
     void applyQuery(const QString &query);
     void refreshCounts();
     void refreshEmptyState();
     void refreshFooter();
+    void showContextMenu(const QPoint &pos);
+    /// Copies the row behind a proxy index. False when the index is not a row.
+    bool rowForIndex(const QModelIndex &index, Applications::Row *row) const;
 
     QLineEdit *m_search = nullptr;
     QList<QToolButton *> m_filterButtons;

@@ -447,6 +447,19 @@ void NetworkWidget::showApplicationDetails(quint32 pid, const QString &executabl
     dlg.exec();
 }
 
+void NetworkWidget::showTrafficControlsFor(quint32 pid, const QString &executablePath,
+                                           const QString &processName)
+{
+    QString name = processName.trimmed();
+    QString path = executablePath.trimmed();
+    const int row = (m_model && pid != 0) ? m_model->rowForPid(pid) : -1;
+    if (name.isEmpty() && row >= 0)
+        name = m_model->snapshotForRow(row).name;
+    if (path.isEmpty())
+        path = getExactProcessPath(pid, name);
+    requestThrottlePath(path);
+}
+
 void NetworkWidget::showPolicyEditorFor(quint32 pid, const QString &executablePath,
                                         const QString &processName)
 {

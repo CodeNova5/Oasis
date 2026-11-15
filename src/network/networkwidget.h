@@ -146,6 +146,10 @@ public:
     // notification uses, so a warning can be followed by its evidence.
     void showApplicationDetails(quint32 pid, const QString &executablePath,
                                 const QString &processName = QString());
+    // Screen 03: "Manage traffic" opens the existing bandwidth-limit flow for
+    // the executable, offering removal when a limit is already in force.
+    void showTrafficControlsFor(quint32 pid, const QString &executablePath,
+                                const QString &processName = QString());
     // Activity actions route through the existing policy editor and list, so the
     // feed never becomes a second enforcement path.
     void showPolicyEditorFor(quint32 pid, const QString &executablePath,
