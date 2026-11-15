@@ -19,14 +19,16 @@
 
 namespace Activity {
 
-/// The streams the Activity feed groups events into. Spike, HighBandwidth and
-/// Background are deliberately separate: unusual-for-this-app traffic, steady
-/// heavy traffic and data moved while the user was elsewhere call for different
-/// user actions, and none of them is evidence of anything suspicious.
+/// The streams the Activity feed groups events into. Spike, HighBandwidth,
+/// Background and Consumption are deliberately separate: unusual-for-this-app
+/// traffic, steady heavy traffic, data moved while the user was elsewhere and
+/// data used up in a short window call for different user actions, and none of
+/// them is evidence of anything suspicious.
 enum class Category {
     Spike,
     HighBandwidth,
     Background,
+    Consumption,
     Unresolved,
     Policy,
     Respawn
@@ -60,6 +62,10 @@ struct Event
     QString  id;
     QDateTime at;
     Category category = Category::Spike;
+    /// Optional escalation level: "warning" or "critical" (empty = the
+    /// category has no ladder). Data-consumption events use it so one transfer
+    /// does not have to publish two unrelated cards.
+    QString  severity;
     QString  badge;          // "Bandwidth Spike", "Background Usage", ...
     QString  title;
     QString  description;
@@ -75,6 +81,12 @@ struct Event
 
     bool isValid() const { return !id.isEmpty() && at.isValid(); }
 };
+
+/// Tone for one event: a Consumption event is warning or danger depending on
+/// the level it reached, every other category uses its category tone. Kept
+/// separate from categoryTone because severity belongs to the event, not to
+/// the stream it was grouped into.
+QString eventTone(const Event &event);
 
 /// A stable id for a derived event. Callers add their own suffix when several
 /// events can share a category and timestamp.

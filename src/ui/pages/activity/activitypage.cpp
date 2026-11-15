@@ -339,6 +339,8 @@ void ActivityPage::buildFeed()
           static_cast<int>(Activity::Category::HighBandwidth) },
         { QStringLiteral("Background usage"),
           static_cast<int>(Activity::Category::Background) },
+        { QStringLiteral("Data consumption"),
+          static_cast<int>(Activity::Category::Consumption) },
         { QStringLiteral("Unrecognized"), static_cast<int>(Activity::Category::Unresolved) },
         { QStringLiteral("Policy actions"), static_cast<int>(Activity::Category::Policy) },
         { QStringLiteral("Respawns"), static_cast<int>(Activity::Category::Respawn) }
@@ -578,7 +580,7 @@ void ActivityPage::refreshMarkers()
             continue;
         ActivityMarker marker;
         marker.at = event.at;
-        marker.tone = Activity::categoryTone(event.category);
+        marker.tone = Activity::eventTone(event);
         marker.label = event.badge;
         markers.append(marker);
     }
@@ -640,6 +642,8 @@ void ActivityPage::refreshCategoryCounts()
             label = QStringLiteral("High bandwidth"); break;
         case static_cast<int>(Activity::Category::Background):
             label = QStringLiteral("Background usage"); break;
+        case static_cast<int>(Activity::Category::Consumption):
+            label = QStringLiteral("Data consumption"); break;
         case static_cast<int>(Activity::Category::Unresolved):
             label = QStringLiteral("Unrecognized"); break;
         case static_cast<int>(Activity::Category::Policy):
@@ -693,15 +697,16 @@ void ActivityPage::rebuildFeed()
         empty->setTitle(QStringLiteral("No activity events here yet"));
         empty->setDetail(m_monitoringActive
             ? QStringLiteral("Oasis reports bandwidth spikes, sustained high bandwidth, "
-                             "background transfers, unrecognized traffic, policy "
-                             "changes and respawns as they are observed. "
+                             "background transfers, large data consumption, "
+                             "unrecognized traffic, policy changes and respawns as "
+                             "they are observed. "
                              "Nothing is inferred when evidence is missing.")
             : QStringLiteral("Monitoring is stopped, so no new events are being "
                              "recorded. Events already stored in this range remain."));
         m_feedLayout->addWidget(empty, 0, Qt::AlignHCenter);
     } else {
         for (const Activity::Event &event : visible) {
-            const QString tone = Activity::categoryTone(event.category);
+            const QString tone = Activity::eventTone(event);
 
             auto *card = new QFrame(m_feedHost);
             card->setProperty("uiRole", QStringLiteral("activityCard"));
@@ -810,9 +815,17 @@ void ActivityPage::rebuildFeed()
             // ── Actions ───────────────────────────────────────────────────
             auto *footer = new QHBoxLayout;
             footer->setSpacing(Theme::Dim::SpaceSm);
-            if (event.category == Activity::Category::Spike
+            // Consumption reports both an application and, when nobody crossed
+            // their own level, the machine as a whole. Only the application
+            // case has a PID to build a policy around; the system-wide card
+            // sends the user to the policy list instead of inventing an owner.
+            const bool applicationUsage =
+                event.category == Activity::Category::Spike
                 || event.category == Activity::Category::HighBandwidth
-                || event.category == Activity::Category::Background) {
+                || event.category == Activity::Category::Background
+                || (event.category == Activity::Category::Consumption
+                    && event.pid > 0);
+            if (applicationUsage) {
                 auto *policy = makeAction(QStringLiteral("Create policy"),
                                           QStringLiteral("secondary"), inner);
                 connect(policy, &QPushButton::clicked, this, [this, event]() {
@@ -828,7 +841,8 @@ void ActivityPage::rebuildFeed()
                     });
                     footer->addWidget(inspect);
                 }
-            } else if (event.category == Activity::Category::Unresolved) {
+            } else if (event.category == Activity::Category::Unresolved
+                       || event.category == Activity::Category::Consumption) {
                 // No per-IP rule exists in the backend, so the honest action is
                 // reviewing the policy list rather than offering a block that
                 // would be stored-only or fail.

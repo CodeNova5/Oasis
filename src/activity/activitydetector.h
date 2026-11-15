@@ -1,6 +1,6 @@
 /**
  * @file    activitydetector.h
- * @brief   Turns one-second telemetry into Spike and Unresolved events.
+ * @brief   Turns one-second telemetry into Spike, usage and Unresolved events.
  *
  * The detector is deliberately conservative:
  *
@@ -18,6 +18,13 @@
  *              foreground application. Volume, not rate: a slow sync and a
  *              fast one both cost the same data allowance. A transfer that was
  *              mostly in the foreground is not reported here.
+ *   Data consumption
+ *              an application, or the machine as a whole, uses up a meaningful
+ *              volume inside a rolling window no matter how slowly it does it.
+ *              This is the only stream that can fire for traffic that never
+ *              spikes and never sustains a high rate, and the only one with a
+ *              warning/critical ladder. Deliberately independent of the rate
+ *              detectors, so neither can hide the other.
  *   Unresolved traffic accumulates in a bounded window and only becomes an
  *              event once a meaningful amount moved with no resolvable owner,
  *              and only when that traffic stood clear of its own recent
@@ -37,6 +44,7 @@
 #include <QDateTime>
 #include <QHash>
 #include <QList>
+#include <QPair>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -93,6 +101,19 @@ struct DetectorSettings
     quint64 backgroundVolumeThreshold = 32 * 1024 * 1024; // 32 MiB
     int     backgroundWindowSeconds = 300;
     int     backgroundCooldownSeconds = 10 * 60;
+
+    // ── Data consumption surge ─────────────────────────────────────────
+    /// Volume inside a rolling window, regardless of rate. 100 MiB in 90 s is
+    /// 9.3 Mbit/s on average, which neither the spike floor nor the high-
+    /// bandwidth floor asks about on its own, yet it is a real share of a data
+    /// allowance. The warning level is the same measurement reported earlier,
+    /// not a second stream.
+    quint64 consumptionWarningBytes = 50 * 1024 * 1024;   // 50 MiB
+    quint64 consumptionCriticalBytes = 100 * 1024 * 1024; // 100 MiB
+    int     consumptionWindowSeconds = 90;
+    /// Minimum gap between consumption cards for the same subject. Reaching a
+    /// higher level is never delayed by it: an escalation is not a repeat.
+    int     consumptionSuppressionSeconds = 180;
 
     /// One continuous transfer should tell one story: once an application has
     /// produced a spike, high-bandwidth or background card, the other two stay
@@ -159,6 +180,12 @@ private:
         /// Last event of any category for this application (see
         /// crossCategoryCooldownSeconds).
         qint64  lastAnyEventMs = 0;
+        // Consumption is measured as bytes inside a rolling window: rate is
+        // irrelevant to a data allowance. One level per episode, so a longer
+        // transfer does not produce a card every beat.
+        QList<QPair<qint64, quint64>> consumptionWindow; // (ms, bytes this beat)
+        int     consumptionLevel = 0; // 0 none, 1 warning, 2 critical
+        qint64  lastConsumptionEventMs = 0;
     };
 
     Event makeSpikeEvent(const QDateTime &at, const ProcessRate &rate,
@@ -167,6 +194,11 @@ private:
                                  const Track &track) const;
     Event makeBackgroundEvent(const QDateTime &at, const ProcessRate &rate,
                               const Track &track) const;
+    Event makeConsumptionEvent(const QDateTime &at, const ProcessRate &rate,
+                               quint64 consumed, quint64 peak, int level) const;
+    Event makeSystemConsumptionEvent(const QDateTime &at, quint64 consumed,
+                                     const QString &busiest, quint64 busiestBytes,
+                                     int activeApplications, int level) const;
     Event makeUnresolvedEvent(const QDateTime &at, quint64 bytes,
                               const QDateTime &windowStart,
                               const QStringList &contributors) const;
@@ -174,6 +206,12 @@ private:
     DetectorSettings m_settings;
     QHash<QString, Track> m_tracks; // application name -> rolling evidence
     quint64 m_unresolvedLastBytes = 0;
+    // Machine-wide consumption is tracked alongside the per-application one:
+    // several applications can each stay under every threshold and still add up
+    // to a transfer the user would notice on a metered connection.
+    QList<QPair<qint64, quint64>> m_consumptionSystemWindow; // (ms, bytes)
+    int     m_consumptionSystemLevel = 0;
+    qint64  m_consumptionSystemLastEventMs = 0;
     quint64 m_unresolvedWindowBytes = 0;
     QDateTime m_unresolvedWindowStart;
     qint64  m_unresolvedLastEventMs = 0;

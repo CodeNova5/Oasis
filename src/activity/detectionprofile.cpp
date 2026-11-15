@@ -35,7 +35,8 @@ QList<DetectionProfileOption> detectionProfiles()
     balanced.detail = QStringLiteral(
         "Spikes at 1 MiB/s or 3x an application's recent rate, sustained for 3 "
         "seconds. Steady heavy use from 5 MiB/s. Background transfers from 32 "
-        "MiB. Unrecognized traffic from 16 MiB.");
+        "MiB. Data use warning at 50 MiB and critical at 100 MiB within 90 "
+        "seconds. Unrecognized traffic from 16 MiB.");
 
     DetectionProfileOption metered;
     metered.profile = DetectionProfile::Metered;
@@ -47,7 +48,8 @@ QList<DetectionProfileOption> detectionProfiles()
     metered.detail = QStringLiteral(
         "Spikes at 512 KiB/s or 3x an application's recent rate, sustained for 3 "
         "seconds. Steady heavy use from 2 MiB/s. Background transfers from 16 "
-        "MiB. Unrecognized traffic from 8 MiB.");
+        "MiB. Data use warning at 25 MiB and critical at 50 MiB within 90 "
+        "seconds. Unrecognized traffic from 8 MiB.");
 
     return { balanced, metered };
 }
@@ -95,6 +97,8 @@ DetectorSettings detectionSettings(DetectionProfile profile)
         settings.absoluteFloorBytesPerSecond = 512 * 1024;
         settings.highBandwidthFloorBytesPerSecond = 2 * 1024 * 1024;
         settings.backgroundVolumeThreshold = 16 * 1024 * 1024;
+        settings.consumptionWarningBytes = 25 * 1024 * 1024;
+        settings.consumptionCriticalBytes = 50 * 1024 * 1024;
         settings.unresolvedBytesThreshold = 8 * 1024 * 1024;
         settings.unresolvedFloorBytesPerSecond = 128 * 1024;
     }

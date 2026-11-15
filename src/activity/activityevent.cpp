@@ -32,6 +32,7 @@ QJsonObject eventObject(const Event &event, bool redactDestinations)
     object.insert(QStringLiteral("timestamp"),
                   event.at.toUTC().toString(Qt::ISODateWithMs));
     object.insert(QStringLiteral("category"), categoryKey(event.category));
+    object.insert(QStringLiteral("severity"), event.severity);
     object.insert(QStringLiteral("badge"), event.badge);
     object.insert(QStringLiteral("title"), event.title);
     object.insert(QStringLiteral("description"), event.description);
@@ -68,11 +69,23 @@ QString categoryTone(Category category)
     case Category::Spike:      return QStringLiteral("warning");
     case Category::HighBandwidth: return QStringLiteral("accent");
     case Category::Background:  return QStringLiteral("muted");
+    case Category::Consumption: return QStringLiteral("warning");
     case Category::Unresolved: return QStringLiteral("danger");
     case Category::Policy:     return QStringLiteral("success");
     case Category::Respawn:    return QStringLiteral("info");
     }
     return QStringLiteral("info");
+}
+
+QString eventTone(const Event &event)
+{
+    if (event.category == Category::Consumption) {
+        if (event.severity == QLatin1String("critical"))
+            return QStringLiteral("danger");
+        if (event.severity == QLatin1String("warning"))
+            return QStringLiteral("warning");
+    }
+    return categoryTone(event.category);
 }
 
 QString categoryKey(Category category)
@@ -81,6 +94,7 @@ QString categoryKey(Category category)
     case Category::Spike:      return QStringLiteral("spike");
     case Category::HighBandwidth: return QStringLiteral("high-bandwidth");
     case Category::Background:  return QStringLiteral("background");
+    case Category::Consumption: return QStringLiteral("consumption");
     case Category::Unresolved: return QStringLiteral("unresolved");
     case Category::Policy:     return QStringLiteral("policy");
     case Category::Respawn:    return QStringLiteral("respawn");
@@ -94,6 +108,7 @@ QString categoryLabel(Category category)
     case Category::Spike:      return QStringLiteral("Spikes & Surges");
     case Category::HighBandwidth: return QStringLiteral("High Bandwidth");
     case Category::Background:  return QStringLiteral("Background Usage");
+    case Category::Consumption: return QStringLiteral("Data Consumption");
     case Category::Unresolved: return QStringLiteral("Unrecognized");
     case Category::Policy:     return QStringLiteral("Policy Actions");
     case Category::Respawn:    return QStringLiteral("Respawns");
@@ -107,6 +122,7 @@ QString categoryBadge(Category category)
     case Category::Spike:      return QStringLiteral("Spike");
     case Category::HighBandwidth: return QStringLiteral("High Bandwidth");
     case Category::Background:  return QStringLiteral("Background");
+    case Category::Consumption: return QStringLiteral("Data Consumption");
     case Category::Unresolved: return QStringLiteral("Unresolved");
     case Category::Policy:     return QStringLiteral("Policy");
     case Category::Respawn:    return QStringLiteral("Respawn");
@@ -132,6 +148,11 @@ bool categoryFromKey(const QString &key, Category *category)
         *category = Category::Background;
         return true;
     }
+    if (normalized == QLatin1String("consumption")
+        || normalized == QLatin1String("data-consumption")) {
+        *category = Category::Consumption;
+        return true;
+    }
     if (normalized == QLatin1String("unresolved")) {
         *category = Category::Unresolved;
         return true;
@@ -150,7 +171,8 @@ bool categoryFromKey(const QString &key, Category *category)
 QList<Category> allCategories()
 {
     return { Category::Spike, Category::HighBandwidth, Category::Background,
-             Category::Unresolved, Category::Policy, Category::Respawn };
+             Category::Consumption, Category::Unresolved, Category::Policy,
+             Category::Respawn };
 }
 
 QString makeEventId(Category category, const QDateTime &at, const QString &subject,
@@ -259,7 +281,7 @@ QString exportCsv(const QList<Event> &events, bool redactDestinations,
         QStringLiteral("pid"), QStringLiteral("destination"),
         QStringLiteral("attribution"), QStringLiteral("volume_bytes"),
         QStringLiteral("peak_bytes_per_second"), QStringLiteral("description"),
-        QStringLiteral("simulated")
+        QStringLiteral("severity"), QStringLiteral("simulated")
     });
 
     for (const Event &event : events) {
@@ -276,6 +298,7 @@ QString exportCsv(const QList<Event> &events, bool redactDestinations,
             QString::number(event.volumeBytes),
             QString::number(event.peakBytesPerSecond),
             event.description,
+            event.severity,
             event.simulated ? QStringLiteral("true") : QStringLiteral("false")
         });
     }

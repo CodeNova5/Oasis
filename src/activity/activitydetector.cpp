@@ -21,6 +21,14 @@ QString rateLabel(quint64 bytesPerSecond)
         .arg(static_cast<double>(bytesPerSecond) / 1024.0, 0, 'f', 0);
 }
 
+QString volumeLabel(quint64 bytes)
+{
+    const double mib = static_cast<double>(bytes) / (1024.0 * 1024.0);
+    if (mib >= 1.0)
+        return QStringLiteral("%1 MiB").arg(mib, 0, 'f', 1);
+    return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 0);
+}
+
 /// Median rather than mean: a spike must not raise the baseline it is being
 /// compared with. Five high seconds inside a sixty-second window cannot move
 /// the median, so a sustained transfer keeps qualifying through its run.
@@ -76,6 +84,15 @@ void Detector::setSettings(const DetectorSettings &settings)
         std::max(0, m_settings.crossCategoryCooldownSeconds);
     if (m_settings.backgroundVolumeThreshold == 0)
         m_settings.backgroundVolumeThreshold = 1;
+    m_settings.consumptionWindowSeconds =
+        std::max(1, m_settings.consumptionWindowSeconds);
+    m_settings.consumptionSuppressionSeconds =
+        std::max(0, m_settings.consumptionSuppressionSeconds);
+    if (m_settings.consumptionWarningBytes == 0)
+        m_settings.consumptionWarningBytes = 1;
+    // A critical level below the warning would make the ladder meaningless.
+    m_settings.consumptionCriticalBytes = std::max(
+        m_settings.consumptionWarningBytes, m_settings.consumptionCriticalBytes);
 }
 
 void Detector::clear()
@@ -89,6 +106,9 @@ void Detector::clear()
     m_unresolvedEvidence.clear();
     m_unresolvedWindowQualified = false;
     m_unresolvedLastBeatMs = 0;
+    m_consumptionSystemWindow.clear();
+    m_consumptionSystemLevel = 0;
+    m_consumptionSystemLastEventMs = 0;
 }
 
 QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &rates,
@@ -102,6 +122,8 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
     const quint64 floor = m_settings.absoluteFloorBytesPerSecond;
     const double multiplier = m_settings.baselineMultiplier > 0.0
                                   ? m_settings.baselineMultiplier : 3.0;
+    const qint64 consumptionWindowMs =
+        static_cast<qint64>(m_settings.consumptionWindowSeconds) * 1000;
 
     for (const ProcessRate &rate : rates) {
         if (rate.name.trimmed().isEmpty())
@@ -241,9 +263,70 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
             track.backgroundWindowStartMs = nowMs;
         }
 
+        // ── Data consumption surge ────────────────────────────────────────
+        // Volume inside a rolling window, independent of every rate detector:
+        // an application can stay under all of them and still use up a
+        // noticeable share of an allowance. Unlike the rate categories this one
+        // deliberately ignores the cross-category cooldown, because the bytes
+        // are the story even when a spike or high-bandwidth card also fired.
+        track.consumptionWindow.append({ nowMs, current });
+        while (!track.consumptionWindow.isEmpty()
+               && nowMs - track.consumptionWindow.first().first > consumptionWindowMs)
+            track.consumptionWindow.removeFirst();
+
+        quint64 consumed = 0;
+        quint64 consumptionPeak = 0;
+        for (const QPair<qint64, quint64> &sample : track.consumptionWindow) {
+            consumed += sample.second;
+            consumptionPeak = std::max(consumptionPeak, sample.second);
+        }
+
+        // The window drained below the warning level: whatever was running has
+        // stopped, so the next transfer is a new episode with its own levels.
+        if (consumed < m_settings.consumptionWarningBytes)
+            track.consumptionLevel = 0;
+
+        const bool consumptionSuppressed = track.lastConsumptionEventMs != 0
+            && nowMs - track.lastConsumptionEventMs
+                   < static_cast<qint64>(m_settings.consumptionSuppressionSeconds)
+                          * 1000;
+        if (consumed >= m_settings.consumptionCriticalBytes
+            && track.consumptionLevel < 2) {
+            // Escalation is not a repeat: the higher level is never held back
+            // by the suppression window that a warning just opened.
+            events.append(makeConsumptionEvent(at, rate, consumed,
+                                               consumptionPeak, 2));
+            track.consumptionLevel = 2;
+            track.lastConsumptionEventMs = nowMs;
+        } else if (consumed >= m_settings.consumptionWarningBytes
+                   && track.consumptionLevel < 1
+                   && !consumptionSuppressed) {
+            events.append(makeConsumptionEvent(at, rate, consumed,
+                                               consumptionPeak, 1));
+            track.consumptionLevel = 1;
+            track.lastConsumptionEventMs = nowMs;
+        }
+
         track.history.append(current);
         while (track.history.size() > m_settings.baselineSeconds)
             track.history.removeFirst();
+    }
+
+    // Applications that stopped sending still have bytes inside the rolling
+    // window. Prune them here so an idle application cannot keep its level (and
+    // keep the machine-wide card suppressed) after its transfer ended.
+    for (auto trackIt = m_tracks.begin(); trackIt != m_tracks.end(); ++trackIt) {
+        Track &track = trackIt.value();
+        if (track.lastSeenMs == nowMs)
+            continue;
+        while (!track.consumptionWindow.isEmpty()
+               && nowMs - track.consumptionWindow.first().first > consumptionWindowMs)
+            track.consumptionWindow.removeFirst();
+        quint64 remaining = 0;
+        for (const QPair<qint64, quint64> &sample : track.consumptionWindow)
+            remaining += sample.second;
+        if (remaining < m_settings.consumptionWarningBytes)
+            track.consumptionLevel = 0;
     }
 
     // Forget applications that sent nothing for ten minutes: memory stays
@@ -253,6 +336,70 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
         it.next();
         if (nowMs - it.value().lastSeenMs > 10 * 60 * 1000)
             it.remove();
+    }
+
+    // ── Machine-wide data consumption ─────────────────────────────────────
+    // Two or three applications can each stay under every per-application
+    // threshold and still add up to a transfer worth reporting. The counter is
+    // only reported when no single application already frames those bytes, so
+    // one busy download does not produce an application card and a system card
+    // for the same transfer.
+    quint64 attributed = 0;
+    quint64 busiestBytes = 0;
+    QString busiestName;
+    int activeApplications = 0;
+    for (const ProcessRate &rate : rates) {
+        const quint64 current = rate.rxBytesPerSecond + rate.txBytesPerSecond;
+        if (current == 0)
+            continue;
+        attributed += current;
+        ++activeApplications;
+        if (current > busiestBytes) {
+            busiestBytes = current;
+            busiestName = rate.name;
+        }
+    }
+
+    m_consumptionSystemWindow.append({ nowMs, attributed });
+    const qint64 systemWindowMs =
+        static_cast<qint64>(m_settings.consumptionWindowSeconds) * 1000;
+    while (!m_consumptionSystemWindow.isEmpty()
+           && nowMs - m_consumptionSystemWindow.first().first > systemWindowMs)
+        m_consumptionSystemWindow.removeFirst();
+    quint64 systemConsumed = 0;
+    for (const QPair<qint64, quint64> &sample : m_consumptionSystemWindow)
+        systemConsumed += sample.second;
+
+    if (systemConsumed < m_settings.consumptionWarningBytes)
+        m_consumptionSystemLevel = 0;
+
+    bool applicationExplains = false;
+    for (auto trackIt = m_tracks.constBegin(); trackIt != m_tracks.constEnd();
+         ++trackIt) {
+        if (trackIt.value().consumptionLevel >= 1) {
+            applicationExplains = true;
+            break;
+        }
+    }
+
+    const bool systemSuppressed = m_consumptionSystemLastEventMs != 0
+        && nowMs - m_consumptionSystemLastEventMs
+               < static_cast<qint64>(m_settings.consumptionSuppressionSeconds) * 1000;
+    if (!applicationExplains
+        && systemConsumed >= m_settings.consumptionCriticalBytes
+        && m_consumptionSystemLevel < 2) {
+        events.append(makeSystemConsumptionEvent(at, systemConsumed, busiestName,
+                                                 busiestBytes, activeApplications, 2));
+        m_consumptionSystemLevel = 2;
+        m_consumptionSystemLastEventMs = nowMs;
+    } else if (!applicationExplains
+               && systemConsumed >= m_settings.consumptionWarningBytes
+               && m_consumptionSystemLevel < 1
+               && !systemSuppressed) {
+        events.append(makeSystemConsumptionEvent(at, systemConsumed, busiestName,
+                                                 busiestBytes, activeApplications, 1));
+        m_consumptionSystemLevel = 1;
+        m_consumptionSystemLastEventMs = nowMs;
     }
 
     // ── Unresolved traffic ────────────────────────────────────────────────
@@ -457,6 +604,91 @@ Event Detector::makeBackgroundEvent(const QDateTime &at, const ProcessRate &rate
     }
     event.id = makeEventId(event.category, at, rate.name,
                            QString::number(rate.pid));
+    return event;
+}
+
+Event Detector::makeConsumptionEvent(const QDateTime &at, const ProcessRate &rate,
+                                     quint64 consumed, quint64 peak, int level) const
+{
+    const bool critical = level >= 2;
+    Event event;
+    event.at = at;
+    event.category = Category::Consumption;
+    event.severity = critical ? QStringLiteral("critical")
+                              : QStringLiteral("warning");
+    event.badge = QStringLiteral("Data Consumption");
+    event.title = critical
+        ? QStringLiteral("%1 consumed %2 in a short window")
+              .arg(rate.name, volumeLabel(consumed))
+        : QStringLiteral("%1 is using up data steadily").arg(rate.name);
+    event.description = QStringLiteral(
+        "This is volume, not speed: the application stayed under the rate "
+        "thresholds and still used %1 within %2 seconds. Worth knowing on a "
+        "limited connection; no policy was changed.")
+        .arg(volumeLabel(consumed))
+        .arg(m_settings.consumptionWindowSeconds);
+    event.appName = rate.name;
+    event.appPath = rate.path;
+    event.pid = rate.pid;
+    event.destination = rate.destination;
+    event.attribution = rate.attribution;
+    event.volumeBytes = consumed;
+    event.peakBytesPerSecond = peak;
+    event.extra.append({ QStringLiteral("Level"),
+                         critical ? QStringLiteral("Critical")
+                                  : QStringLiteral("Warning") });
+    event.extra.append({ QStringLiteral("Consumed"), volumeLabel(consumed) });
+    event.extra.append({ QStringLiteral("Window"),
+                         QStringLiteral("%1 s").arg(m_settings.consumptionWindowSeconds) });
+    event.extra.append({ QStringLiteral("Peak rate"), rateLabel(peak) });
+    if (rate.foreground)
+        event.extra.append({ QStringLiteral("Foreground"), QStringLiteral("Yes") });
+    event.id = makeEventId(event.category, at, rate.name,
+                           QStringLiteral("%1-%2").arg(rate.pid).arg(level));
+    return event;
+}
+
+Event Detector::makeSystemConsumptionEvent(const QDateTime &at, quint64 consumed,
+                                           const QString &busiest, quint64 busiestBytes,
+                                           int activeApplications, int level) const
+{
+    const bool critical = level >= 2;
+    Event event;
+    event.at = at;
+    event.category = Category::Consumption;
+    event.severity = critical ? QStringLiteral("critical")
+                              : QStringLiteral("warning");
+    event.badge = QStringLiteral("Data Consumption");
+    event.title = critical
+        ? QStringLiteral("All applications consumed %1 in a short window")
+              .arg(volumeLabel(consumed))
+        : QStringLiteral("Machine-wide data use is adding up");
+    event.description = QStringLiteral(
+        "No single application crossed its own consumption level, but together "
+        "they used %1 within %2 seconds across %3 active applications. "
+        "Reported once per episode; no policy was changed.")
+        .arg(volumeLabel(consumed))
+        .arg(m_settings.consumptionWindowSeconds)
+        .arg(activeApplications);
+    event.appName = QStringLiteral("All applications");
+    event.attribution = QStringLiteral("System-wide");
+    event.volumeBytes = consumed;
+    event.peakBytesPerSecond = busiestBytes;
+    event.extra.append({ QStringLiteral("Level"),
+                         critical ? QStringLiteral("Critical")
+                                  : QStringLiteral("Warning") });
+    event.extra.append({ QStringLiteral("Consumed"), volumeLabel(consumed) });
+    event.extra.append({ QStringLiteral("Window"),
+                         QStringLiteral("%1 s").arg(m_settings.consumptionWindowSeconds) });
+    if (!busiest.isEmpty()) {
+        event.extra.append({ QStringLiteral("Busiest application"),
+                             QStringLiteral("%1 (%2)")
+                                 .arg(busiest, rateLabel(busiestBytes)) });
+    }
+    event.extra.append({ QStringLiteral("Active applications"),
+                         QString::number(activeApplications) });
+    event.id = makeEventId(event.category, at, QStringLiteral("all-applications"),
+                           QString::number(level));
     return event;
 }
 
