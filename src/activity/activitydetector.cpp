@@ -56,6 +56,9 @@ void Detector::setSettings(const DetectorSettings &settings)
     m_settings.cooldownSeconds = std::max(0, m_settings.cooldownSeconds);
     m_settings.unresolvedWindowSeconds = std::max(1, m_settings.unresolvedWindowSeconds);
     m_settings.unresolvedCooldownSeconds = std::max(0, m_settings.unresolvedCooldownSeconds);
+    m_settings.unresolvedSustainSeconds =
+        std::max(1, std::min(m_settings.unresolvedSustainSeconds,
+                             m_settings.samplingWindow));
     if (m_settings.absoluteFloorBytesPerSecond == 0)
         m_settings.absoluteFloorBytesPerSecond = 1;
     if (m_settings.unresolvedBytesThreshold == 0)
@@ -83,7 +86,7 @@ void Detector::clear()
     m_unresolvedWindowStart = QDateTime();
     m_unresolvedLastEventMs = 0;
     m_unresolvedRates.clear();
-    m_unresolvedAboveSeconds = 0;
+    m_unresolvedEvidence.clear();
     m_unresolvedWindowQualified = false;
     m_unresolvedLastBeatMs = 0;
 }
@@ -275,7 +278,7 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
         m_unresolvedWindowBytes = 0;
         m_unresolvedWindowStart = at;
         m_unresolvedWindowQualified = false;
-        m_unresolvedAboveSeconds = 0;
+        m_unresolvedEvidence.clear();
     } else {
         const quint64 delta = unresolvedBytes - m_unresolvedLastBytes;
         m_unresolvedLastBytes = unresolvedBytes;
@@ -286,7 +289,7 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
             m_unresolvedWindowStart = at;
             m_unresolvedWindowBytes = 0;
             m_unresolvedWindowQualified = false;
-            m_unresolvedAboveSeconds = 0;
+            m_unresolvedEvidence.clear();
         }
 
         // The measure is how far this beat rises above the median of the recent
@@ -296,13 +299,18 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
         // from producing a card every cooldown period.
         const quint64 beatBaseline = typicalRate(m_unresolvedRates);
         const quint64 excess = rate > beatBaseline ? rate - beatBaseline : 0;
-        if (excess > 0 && excess >= m_settings.unresolvedFloorBytesPerSecond) {
-            ++m_unresolvedAboveSeconds;
-            if (m_unresolvedAboveSeconds >= m_settings.sustainSeconds)
-                m_unresolvedWindowQualified = true;
-        } else {
-            m_unresolvedAboveSeconds = 0;
-        }
+        const bool notable =
+            excess > 0 && excess >= m_settings.unresolvedFloorBytesPerSecond;
+
+        // Same rolling-window idea as the spike detector: a single flat beat in
+        // the middle of a rising transfer should not discard the evidence.
+        m_unresolvedEvidence.append(notable);
+        while (m_unresolvedEvidence.size() > m_settings.samplingWindow)
+            m_unresolvedEvidence.removeFirst();
+        const int notableBeats = int(std::count(m_unresolvedEvidence.cbegin(),
+                                                m_unresolvedEvidence.cend(), true));
+        if (notableBeats >= m_settings.unresolvedSustainSeconds)
+            m_unresolvedWindowQualified = true;
 
         m_unresolvedRates.append(rate);
         while (m_unresolvedRates.size() > m_settings.baselineSeconds)
@@ -349,7 +357,7 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
         m_unresolvedWindowBytes = 0;
         m_unresolvedWindowStart = at;
         m_unresolvedWindowQualified = false;
-        m_unresolvedAboveSeconds = 0;
+        m_unresolvedEvidence.clear();
     }
 
     return events;

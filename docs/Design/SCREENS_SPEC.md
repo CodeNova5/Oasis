@@ -46,7 +46,7 @@ Every screen must explicitly implement these states rather than only designing f
 ---
 ## Screen 02 — Activity (`ActivityPage`) — **P1**
 
-**Purpose:** Surface intelligent, event-driven anomalies, bandwidth spikes, and policy actions rather than an endless raw telemetry log. *(Transforms time-oriented tracking into a high-signal, zero-friction action stream).*
+**Purpose:** Surface intelligent, event-driven anomalies, bandwidth spikes, sustained high bandwidth, background transfers, and policy actions rather than an endless raw telemetry log. *(Transforms time-oriented tracking into a high-signal, zero-friction action stream).*
 
 ### Layout Structure
 1. **Control Toolbar:**
@@ -56,10 +56,11 @@ Every screen must explicitly implement these states rather than only designing f
 2. **Bandwidth Timeline Card:**
    * Interactive `TrafficChart` supporting brush/range selection with **embedded anomaly marker dots** plotted directly on the time series.
    * Summary KPI strip: **Downloaded volume**, **Uploaded volume**, and **Peak Rate** for the selected timeframe.
-3. **Anomaly & Spike Stream Feed:**
-   * Category filter pills: `All Events`, `Spikes & Surges`, `Unrecognized`, `Policy Actions`, `Respawns` (each displaying live event counts).
-   * Event Cards (`36 px` icon, left-border severity accent):
-     * Header: Event title, category badge (`Spike`, `Unresolved`, `Policy`, `Respawn`), and tabular timestamp.
+3. **Activity Event Feed:**
+   * Category filter pills, in this order: `All Events`, `Spikes & Surges`, `High Bandwidth`, `Background Usage`, `Unrecognized`, `Policy Actions`, `Respawns` (each displaying live event counts). Counts respect every other active filter, and a pill's count is what selecting it would reveal.
+   * Event Cards (`36 px` icon, left-border category accent):
+     * Header: Event title, category badge (`Spike`, `High Bandwidth`, `Background`, `Unresolved`, `Policy`, `Respawn`), and tabular timestamp.
+     * Accent tones: Spike `warning`, High Bandwidth `accent`, Background Usage `muted`, Unresolved `danger`, Policy `success`, Respawn `info`. Timeline marker dots use the same tones.
      * Description: Plain-language summary explaining the anomaly or background event.
      * Metadata Box (`#242A35` surface): Structured technical details (Volume, Peak Rate, Attribution confidence, Destination domain/IP, or PID info).
      * Action Footer: Contextual one-click remediation buttons (e.g., `Throttle to 5 Mbps`, `Block IP`, `View Policy Rule`, `Dismiss`).
@@ -69,6 +70,42 @@ Every screen must explicitly implement these states rather than only designing f
 * **Marker Correlation:** Anomaly dots on the timeline visually link spikes to their respective stream entries.
 * **Category Filtering:** Clicking category pills instantly filters the stream feed by event classification.
 * **Action Execution:** Clicking action buttons on feed cards triggers immediate policy adjustments or dismisses the item with toast feedback[cite: 2].
+
+### Detection Streams (implemented in `Activity::Detector`)
+
+Three separate detectors produce usage events. They are deliberately distinct so steady heavy use is never presented as suspicious, and an application is never labeled with the wrong explanation. Each has its own cooldown, and once an application produces a card of any of these three kinds the other two stay quiet for `crossCategoryCooldownSeconds` (15 min) so one continuous transfer never stacks multiple cards.
+
+| Stream | Question it answers | Evidence required |
+| :--- | :--- | :--- |
+| **Spike** | Is this unusual *for this application*? | Combined RX+TX above both an absolute floor and 3× the application's own 60 s median rate, for 3 of the last 5 one-second samples. One event per spike episode; cooldown 90 s. |
+| **High Bandwidth** | What is steadily consuming the allowance, even if normal? | Combined rate at or above a high absolute floor, sustained for 10 s. Not relative to the application's history. Cooldown 15 min. |
+| **Background Usage** | What moved data while the user was elsewhere? | At least the background volume threshold accumulated inside a rolling 5 min window while the application is not foreground, and more bytes in background than in foreground in that window. Cooldown 10 min. |
+
+Unrecognized (unresolved) traffic is a separate stream: it reports a bounded window only when a meaningful volume moved with no resolvable owner **and** the rate rose clear of its own recent median. Constant unattributable background traffic stays quiet.
+
+#### Thresholds: Balanced (default) vs. Metered
+
+Thresholds come from a **detection profile** chosen in Settings (see Screen 09). Both profiles use the same relative rule, sustain, sampling tolerance and cooldowns; Metered lowers only the absolute floors and volumes.
+
+| Parameter | Balanced | Metered |
+| :--- | :--- | :--- |
+| Spike absolute floor (combined RX+TX) | 1 MiB/s | 512 KiB/s |
+| Spike relative multiplier | 3× application median | 3× application median |
+| Spike baseline window | 60 s | 60 s |
+| Spike sustain | 3 of the last 5 samples | 3 of the last 5 samples |
+| Spike cooldown | 90 s | 90 s |
+| High bandwidth floor | 5 MiB/s | 2 MiB/s |
+| High bandwidth sustain | 10 s | 10 s |
+| High bandwidth cooldown | 15 min | 15 min |
+| Background volume threshold | 32 MiB / 5 min | 16 MiB / 5 min |
+| Background cooldown | 10 min | 10 min |
+| Unresolved volume threshold | 16 MiB / 5 min | 8 MiB / 5 min |
+| Unresolved rise above own median | 256 KiB/s | 128 KiB/s |
+| Unresolved sustain | 3 of the last 5 beats | 3 of the last 5 beats |
+| Unresolved cooldown | 5 min | 5 min |
+| Cross-category cooldown | 15 min | 15 min |
+
+Values are defined in `src/activity/activitydetector.h` (`DetectorSettings`) and overridden per profile in `src/activity/detectionprofile.cpp`.
 ```[cite: 2]
 
 ## Screen 03 — Applications (`ApplicationsPage`) — **P0**
@@ -227,7 +264,8 @@ Displayed before enabling any rule:
 **Purpose:** Organize configuration, privacy disclosures, and system diagnostics into clear categories.
 
 ### Layout Structure
-* **Left Sub-Navigation (`200 px` width):**
+* **Current build:** a single `Detection` section (see below). The remaining categories are still being rebuilt; saved values from the previous build keep working, and the page states this rather than hiding it.
+* **Target Left Sub-Navigation (`200 px` width):**
   1. `General` — Startup behavior, language, default landing page.
   2. `Monitoring` — Active network adapters, refresh interval, capture mode.
   3. `Enforcement` — Live capability matrix for **Windows Firewall**, **QoS**, and **WinDivert** (showing `Available`, `Elevation Required`, or `Not Installed`).
@@ -236,6 +274,13 @@ Displayed before enabling any rule:
   6. `Appearance` — Dark mode theme settings, table density (`Standard 48px` vs. `Compact 40px`).
   7. `Diagnostics` — Service health checks, log viewer, and support bundle export.
   8. `About` — Version, build info, open-source licenses.
+
+### `Settings > Detection` (implemented section)
+* A radio choice between **`Balanced`** (default) and **`Metered connection`**, with the active profile named below the options.
+* Each option states the thresholds it applies in plain language, so the choice is never a black box: the spike floor and relative rule, the high-bandwidth floor, the background volume threshold, and the unresolved volume threshold.
+* Changes apply immediately to new events; events already in the feed keep their original classification. Detection evidence gathered under the previous profile is discarded rather than evaluated under the new numbers.
+* Stored in `QSettings` under `Oasis/Detection` as versioned JSON; an unreadable or newer-schema value falls back to `Balanced` instead of partially applying.
+* The selected profile changes detection only. Capture, attribution, retention, exports and enforcement are identical under both.
 
 ### Special Requirements for `Settings > Privacy`
 * Plain-English breakdown of **what metadata is collected locally** vs. what is never collected (**explicitly confirms packet payloads are never stored**).

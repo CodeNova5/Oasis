@@ -22,7 +22,8 @@
  *              event once a meaningful amount moved with no resolvable owner,
  *              and only when that traffic stood clear of its own recent
  *              baseline. Constant unattributable background traffic (kernel
- *              counters, System) therefore stays quiet.
+ *              counters, System) therefore stays quiet. This gate has its own
+ *              sustain so tuning the spike detector cannot loosen it.
  *
  * One event per application per episode, so a sustained transfer does not
  * produce a card every few seconds while it is still running; a later, separate
@@ -58,12 +59,24 @@ struct DetectorSettings
     int     samplingWindow = 5;
     int     baselineSeconds = 60;
     int     cooldownSeconds = 90;
-    quint64 unresolvedBytesThreshold = 8 * 1024 * 1024;
+    /// A card about traffic nobody can name is only worth showing when enough
+    /// data moved to act on. 8 MiB used to qualify, which is ordinary Windows
+    /// background chatter; 16 MiB is a transfer the user would notice on a
+    /// metered connection.
+    quint64 unresolvedBytesThreshold = 16 * 1024 * 1024;
     int     unresolvedWindowSeconds = 300;
-    int     unresolvedCooldownSeconds = 180;
+    int     unresolvedCooldownSeconds = 300;
     /// How far unresolved traffic has to rise above its own recent median rate
-    /// before it can count as an anomaly rather than background noise.
-    quint64 unresolvedFloorBytesPerSecond = 512 * 1024;
+    /// before it can count as an anomaly rather than background noise. Lower
+    /// than the per-application floor because unresolved traffic has no owner
+    /// to compare itself against; the volume threshold above does the heavy
+    /// lifting against false positives.
+    quint64 unresolvedFloorBytesPerSecond = 256 * 1024;
+    /// Notable beats required inside the sampling window. Separate from
+    /// sustainSeconds on purpose: this evidence is weaker (no owner, no
+    /// baseline of its own beyond a few beats), so it must not get quieter just
+    /// because the spike detector is tuned.
+    int     unresolvedSustainSeconds = 3;
 
     // ── High bandwidth usage ─────────────────────────────────────────────
     /// Steady, substantial consumption. Not relative to the app's own history:
@@ -167,7 +180,9 @@ private:
     // Recent unresolved rate per beat, used as the traffic's own baseline so a
     // steady trickle cannot keep crossing the volume threshold.
     QVector<quint64> m_unresolvedRates;
-    int     m_unresolvedAboveSeconds = 0;
+    /// Qualification of the most recent beats, newest last, so one flat beat
+    /// does not throw away an otherwise standing-out transfer.
+    QVector<bool> m_unresolvedEvidence;
     bool    m_unresolvedWindowQualified = false;
     qint64  m_unresolvedLastBeatMs = 0;
 };

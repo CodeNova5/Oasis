@@ -38,9 +38,11 @@ SOURCES += \
     src/ui/pages/overview/overviewpage.cpp \
     src/ui/pages/activity/activitypage.cpp \
     src/ui/pages/activity/activitytimeline.cpp \
+    src/ui/pages/settings/settingspage.cpp \
     src/activity/activityevent.cpp \
     src/activity/activityseries.cpp \
     src/activity/activitydetector.cpp \
+    src/activity/detectionprofile.cpp \
     src/core/updatechecker.cpp \
     src/core/appinstaller.cpp \
     src/core/windowsicon.cpp \
@@ -121,9 +123,11 @@ HEADERS += \
     src/ui/pages/overview/overviewpage.h \
     src/ui/pages/activity/activitypage.h \
     src/ui/pages/activity/activitytimeline.h \
+    src/ui/pages/settings/settingspage.h \
     src/activity/activityevent.h \
     src/activity/activityseries.h \
     src/activity/activitydetector.h \
+    src/activity/detectionprofile.h \
     src/core/updatechecker.h \
     src/core/appinstaller.h \
     src/core/windowsicon.h \

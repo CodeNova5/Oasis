@@ -38,6 +38,7 @@ class AppHeader;
 class SystemStatusBar;
 class OverviewPage;
 class ActivityPage;
+class SettingsPage;
 class QStackedWidget;
 struct BandwidthEvent;
 namespace TopConsumers { struct Summary; }
@@ -178,6 +179,7 @@ private:
     bool               m_overviewHasData = false;
 
     ActivityPage      *m_activity = nullptr;
+    SettingsPage      *m_settingsPage = nullptr;
     Activity::SeriesStore m_activitySeries;
     Activity::Detector    m_activityDetector;
     QList<Activity::Event> m_activityEvents;

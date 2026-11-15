@@ -14,6 +14,8 @@
 #include "ui/shell/systemstatusbar.h"
 #include "ui/pages/overview/overviewpage.h"
 #include "ui/pages/activity/activitypage.h"
+#include "ui/pages/settings/settingspage.h"
+#include "activity/detectionprofile.h"
 #include "ui/components/trafficchart.h"
 #include "updatechecker.h"
 #include "appinstaller.h"
@@ -1336,13 +1338,27 @@ void MainWindow::buildShell()
                                  "dedicated screen. Live figures remain in the status bar.")),
               QStringLiteral("Hardware"),
               QStringLiteral("CPU, memory, GPU and temperatures"));
-    addScreen(QStringLiteral("Settings"),
-              makePlaceholderPage(QStringLiteral("Settings"),
-                  QStringLiteral("Privacy, diagnostics and preferences are being rebuilt as a "
-                                 "dedicated screen. Saved settings and monitoring keep working.")),
+    // Settings is now a real screen: its first section is the detection
+    // profile, which the host applies to the live detector below.
+    const Activity::DetectionProfile storedProfile =
+        Activity::DetectionProfileStore().load();
+    m_activityDetector.setSettings(Activity::detectionSettings(storedProfile));
+    m_settingsPage = new SettingsPage;
+    m_settingsPage->setDetectionProfile(storedProfile);
+    addScreen(QStringLiteral("Settings"), m_settingsPage,
               QStringLiteral("Settings"),
-              QStringLiteral("Privacy, diagnostics and preferences"));
+              QStringLiteral("Detection, privacy, diagnostics and preferences"));
     m_settingsIndex = m_screenTitles.size() - 1;
+
+    connect(m_settingsPage, &SettingsPage::detectionProfileChanged, this,
+            [this](Activity::DetectionProfile profile) {
+        Activity::DetectionProfileStore().save(profile);
+        // Apply immediately. Evidence gathered under the previous profile is
+        // dropped so a half-finished window cannot fire under new numbers;
+        // events already in the feed keep their original classification.
+        m_activityDetector.setSettings(Activity::detectionSettings(profile));
+        m_activityDetector.clear();
+    });
 
     connect(m_sidebar, &AppSidebar::itemActivated, this, &MainWindow::navigateTo);
     connect(m_header, &AppHeader::themeToggleRequested,
