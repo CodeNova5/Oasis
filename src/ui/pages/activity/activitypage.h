@@ -110,6 +110,7 @@ private:
     // ── Feed ───────────────────────────────────────────────────────────────
     QLabel      *m_feedCount = nullptr;
     QList<QToolButton *> m_categoryButtons;
+    QList<int>  m_categoryIds; // group id per pill, -1 = all events
     QVBoxLayout *m_feedLayout = nullptr;
     QWidget     *m_feedHost = nullptr;
 

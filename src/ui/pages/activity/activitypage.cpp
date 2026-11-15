@@ -59,7 +59,7 @@ QString badgeToken(const QString &tone)
         return QStringLiteral("failed");
     if (tone == QLatin1String("success"))
         return QStringLiteral("active");
-    if (tone == QLatin1String("info"))
+    if (tone == QLatin1String("info") || tone == QLatin1String("accent"))
         return QStringLiteral("pending");
     return QStringLiteral("degraded");
 }
@@ -72,6 +72,8 @@ QString glyphForTone(const QString &tone)
         return QStringLiteral("✓");
     if (tone == QLatin1String("info"))
         return QStringLiteral("i");
+    if (tone == QLatin1String("accent"))
+        return QStringLiteral("↑");
     return QStringLiteral("⚠");
 }
 
@@ -329,6 +331,8 @@ void ActivityPage::buildFeed()
     const QList<QPair<QString, int>> categories = {
         { QStringLiteral("All events"), -1 },
         { QStringLiteral("Spikes & surges"), static_cast<int>(Activity::Category::Spike) },
+        { QStringLiteral("High bandwidth"),
+          static_cast<int>(Activity::Category::HighBandwidth) },
         { QStringLiteral("Unrecognized"), static_cast<int>(Activity::Category::Unresolved) },
         { QStringLiteral("Policy actions"), static_cast<int>(Activity::Category::Policy) },
         { QStringLiteral("Respawns"), static_cast<int>(Activity::Category::Respawn) }
@@ -342,6 +346,7 @@ void ActivityPage::buildFeed()
         group->addButton(button, entry.second);
         pills->addWidget(button);
         m_categoryButtons.append(button);
+        m_categoryIds.append(entry.second);
         connect(button, &QToolButton::clicked, this, [this, id = entry.second]() {
             m_category = id;
             rebuildFeed();
@@ -616,15 +621,17 @@ void ActivityPage::refreshCategoryCounts()
     for (auto it = counts.constBegin(); it != counts.constEnd(); ++it)
         all += it.value();
 
-    for (int i = 0; i < m_categoryButtons.size(); ++i) {
+    for (int i = 0; i < m_categoryButtons.size() && i < m_categoryIds.size(); ++i) {
         QToolButton *button = m_categoryButtons.at(i);
-        const int id = i == 0 ? -1 : i - 1; // all, spike, unresolved, policy, respawn
+        const int id = m_categoryIds.at(i);
         const int count = id < 0 ? all : counts.value(id);
         QString label;
         switch (id) {
         case -1: label = QStringLiteral("All events"); break;
         case static_cast<int>(Activity::Category::Spike):
             label = QStringLiteral("Spikes & surges"); break;
+        case static_cast<int>(Activity::Category::HighBandwidth):
+            label = QStringLiteral("High bandwidth"); break;
         case static_cast<int>(Activity::Category::Unresolved):
             label = QStringLiteral("Unrecognized"); break;
         case static_cast<int>(Activity::Category::Policy):
@@ -677,8 +684,9 @@ void ActivityPage::rebuildFeed()
         auto *empty = new EmptyStateWidget(m_feedHost);
         empty->setTitle(QStringLiteral("No activity events here yet"));
         empty->setDetail(m_monitoringActive
-            ? QStringLiteral("Oasis reports bandwidth spikes, unrecognized traffic, "
-                             "policy changes and respawns as they are observed. "
+            ? QStringLiteral("Oasis reports bandwidth spikes, sustained high bandwidth, "
+                             "unrecognized traffic, policy changes and respawns as "
+                             "they are observed. "
                              "Nothing is inferred when evidence is missing.")
             : QStringLiteral("Monitoring is stopped, so no new events are being "
                              "recorded. Events already stored in this range remain."));
@@ -794,7 +802,8 @@ void ActivityPage::rebuildFeed()
             // ── Actions ───────────────────────────────────────────────────
             auto *footer = new QHBoxLayout;
             footer->setSpacing(Theme::Dim::SpaceSm);
-            if (event.category == Activity::Category::Spike) {
+            if (event.category == Activity::Category::Spike
+                || event.category == Activity::Category::HighBandwidth) {
                 auto *policy = makeAction(QStringLiteral("Create policy"),
                                           QStringLiteral("secondary"), inner);
                 connect(policy, &QPushButton::clicked, this, [this, event]() {

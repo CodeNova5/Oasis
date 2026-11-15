@@ -66,6 +66,7 @@ QString categoryTone(Category category)
 {
     switch (category) {
     case Category::Spike:      return QStringLiteral("warning");
+    case Category::HighBandwidth: return QStringLiteral("accent");
     case Category::Unresolved: return QStringLiteral("danger");
     case Category::Policy:     return QStringLiteral("success");
     case Category::Respawn:    return QStringLiteral("info");
@@ -77,6 +78,7 @@ QString categoryKey(Category category)
 {
     switch (category) {
     case Category::Spike:      return QStringLiteral("spike");
+    case Category::HighBandwidth: return QStringLiteral("high-bandwidth");
     case Category::Unresolved: return QStringLiteral("unresolved");
     case Category::Policy:     return QStringLiteral("policy");
     case Category::Respawn:    return QStringLiteral("respawn");
@@ -88,6 +90,7 @@ QString categoryLabel(Category category)
 {
     switch (category) {
     case Category::Spike:      return QStringLiteral("Spikes & Surges");
+    case Category::HighBandwidth: return QStringLiteral("High Bandwidth");
     case Category::Unresolved: return QStringLiteral("Unrecognized");
     case Category::Policy:     return QStringLiteral("Policy Actions");
     case Category::Respawn:    return QStringLiteral("Respawns");
@@ -99,6 +102,7 @@ QString categoryBadge(Category category)
 {
     switch (category) {
     case Category::Spike:      return QStringLiteral("Spike");
+    case Category::HighBandwidth: return QStringLiteral("High Bandwidth");
     case Category::Unresolved: return QStringLiteral("Unresolved");
     case Category::Policy:     return QStringLiteral("Policy");
     case Category::Respawn:    return QStringLiteral("Respawn");
@@ -113,6 +117,11 @@ bool categoryFromKey(const QString &key, Category *category)
     const QString normalized = key.trimmed().toLower();
     if (normalized == QLatin1String("spike")) {
         *category = Category::Spike;
+        return true;
+    }
+    if (normalized == QLatin1String("high-bandwidth")
+        || normalized == QLatin1String("highbandwidth")) {
+        *category = Category::HighBandwidth;
         return true;
     }
     if (normalized == QLatin1String("unresolved")) {
@@ -132,7 +141,8 @@ bool categoryFromKey(const QString &key, Category *category)
 
 QList<Category> allCategories()
 {
-    return { Category::Spike, Category::Unresolved, Category::Policy, Category::Respawn };
+    return { Category::Spike, Category::HighBandwidth, Category::Unresolved,
+             Category::Policy, Category::Respawn };
 }
 
 QString makeEventId(Category category, const QDateTime &at, const QString &subject,

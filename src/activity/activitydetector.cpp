@@ -46,7 +46,12 @@ Detector::Detector(const DetectorSettings &settings)
 void Detector::setSettings(const DetectorSettings &settings)
 {
     m_settings = settings;
+    m_settings.samplingWindow = std::max(1, m_settings.samplingWindow);
     m_settings.sustainSeconds = std::max(1, m_settings.sustainSeconds);
+    // A sustain longer than the window can never be satisfied; clamp instead of
+    // silently never firing.
+    m_settings.sustainSeconds = std::min(m_settings.sustainSeconds,
+                                         m_settings.samplingWindow);
     m_settings.baselineSeconds = std::max(3, m_settings.baselineSeconds);
     m_settings.cooldownSeconds = std::max(0, m_settings.cooldownSeconds);
     m_settings.unresolvedWindowSeconds = std::max(1, m_settings.unresolvedWindowSeconds);
@@ -55,6 +60,12 @@ void Detector::setSettings(const DetectorSettings &settings)
         m_settings.absoluteFloorBytesPerSecond = 1;
     if (m_settings.unresolvedBytesThreshold == 0)
         m_settings.unresolvedBytesThreshold = 1;
+    m_settings.highBandwidthSustainSeconds =
+        std::max(1, m_settings.highBandwidthSustainSeconds);
+    m_settings.highBandwidthCooldownSeconds =
+        std::max(0, m_settings.highBandwidthCooldownSeconds);
+    if (m_settings.highBandwidthFloorBytesPerSecond == 0)
+        m_settings.highBandwidthFloorBytesPerSecond = 1;
 }
 
 void Detector::clear()
@@ -95,29 +106,81 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
             floor, static_cast<quint64>(double(baseline) * multiplier));
 
         const bool qualifies = current > 0 && current >= threshold;
+
+        // Evidence is a rolling window rather than a consecutive-run counter: a
+        // sustained transfer keeps its credit through a single dip, so sampling
+        // jitter cannot restart detection. Volume and peak are accumulated over
+        // the same window for the event card.
+        track.evidence.append(qualifies);
+        while (track.evidence.size() > m_settings.samplingWindow)
+            track.evidence.removeFirst();
+
         if (qualifies) {
-            if (track.aboveSeconds == 0) {
-                track.spikeBytes = 0;
-                track.peakBytesPerSecond = 0;
-            }
-            ++track.aboveSeconds;
+            track.quietSamples = 0;
             track.spikeBytes += current;
             track.peakBytesPerSecond = std::max(track.peakBytesPerSecond, current);
-
-            const bool cooledDown = track.lastEventMs == 0
-                || nowMs - track.lastEventMs
-                       >= static_cast<qint64>(m_settings.cooldownSeconds) * 1000;
-            if (track.aboveSeconds >= m_settings.sustainSeconds && cooledDown) {
-                events.append(makeSpikeEvent(at, rate, track));
-                track.lastEventMs = nowMs;
-                track.aboveSeconds = 0;
+        } else {
+            ++track.quietSamples;
+            // Enough quiet samples that the window cannot reach the required
+            // count again: the spike has ended. Any cooldown left over from it
+            // is dropped so the next, genuinely separate episode can report at
+            // once instead of waiting out a timer from the previous one.
+            if (track.quietSamples >= m_settings.samplingWindow) {
+                track.evidence.clear();
+                track.ongoing = false;
+                track.lastEventMs = 0;
                 track.spikeBytes = 0;
                 track.peakBytesPerSecond = 0;
             }
-        } else {
-            track.aboveSeconds = 0;
+        }
+
+        const int qualifying = int(std::count(track.evidence.cbegin(),
+                                              track.evidence.cend(), true));
+        const bool cooledDown = track.lastEventMs == 0
+            || nowMs - track.lastEventMs
+                   >= static_cast<qint64>(m_settings.cooldownSeconds) * 1000;
+        if (!track.ongoing
+            && qualifying >= m_settings.sustainSeconds
+            && cooledDown) {
+            events.append(makeSpikeEvent(at, rate, track));
+            track.lastEventMs = nowMs;
+            track.ongoing = true;
+            track.evidence.clear();
             track.spikeBytes = 0;
             track.peakBytesPerSecond = 0;
+        }
+
+        // ── High bandwidth usage ──────────────────────────────────────────
+        // The same measurement answers a different question: not "is this
+        // surprising?" but "what is steadily eating the allowance?". Kept
+        // independent of the spike state so heavy-but-normal transfers are
+        // visible, and suppressed only while a spike for the same application
+        // is already on screen, so one run never produces two cards.
+        if (current >= m_settings.highBandwidthFloorBytesPerSecond) {
+            ++track.highSeconds;
+            track.highBytes += current;
+            track.highPeakBytesPerSecond =
+                std::max(track.highPeakBytesPerSecond, current);
+        } else {
+            track.highSeconds = 0;
+            track.highBytes = 0;
+            track.highPeakBytesPerSecond = 0;
+            track.highOngoing = false;
+        }
+
+        const bool highCooledDown = track.lastHighEventMs == 0
+            || nowMs - track.lastHighEventMs
+                   >= static_cast<qint64>(m_settings.highBandwidthCooldownSeconds)
+                          * 1000;
+        if (!track.ongoing
+            && !track.highOngoing
+            && track.highSeconds >= m_settings.highBandwidthSustainSeconds
+            && highCooledDown) {
+            events.append(makeHighBandwidthEvent(at, rate, track));
+            track.lastHighEventMs = nowMs;
+            track.highOngoing = true;
+            track.highBytes = 0;
+            track.highPeakBytesPerSecond = 0;
         }
 
         track.history.append(current);
@@ -247,7 +310,7 @@ Event Detector::makeSpikeEvent(const QDateTime &at, const ProcessRate &rate,
                                   : QStringLiteral("Bandwidth Spike");
     event.title = QStringLiteral("%1 sustained a bandwidth spike").arg(rate.name);
     event.description = QStringLiteral(
-        "Traffic stayed well above this application's recent average for several "
+        "Traffic stayed well above this application's recent average for a few "
         "seconds. No policy was changed.");
     event.appName = rate.name;
     event.appPath = rate.path;
@@ -256,6 +319,36 @@ Event Detector::makeSpikeEvent(const QDateTime &at, const ProcessRate &rate,
     event.attribution = rate.attribution;
     event.volumeBytes = track.spikeBytes;
     event.peakBytesPerSecond = track.peakBytesPerSecond;
+    if (rate.foreground)
+        event.extra.append({ QStringLiteral("Foreground"), QStringLiteral("Yes") });
+    event.id = makeEventId(event.category, at, rate.name,
+                           QString::number(rate.pid));
+    return event;
+}
+
+Event Detector::makeHighBandwidthEvent(const QDateTime &at, const ProcessRate &rate,
+                                       const Track &track) const
+{
+    Event event;
+    event.at = at;
+    event.category = Category::HighBandwidth;
+    event.badge = QStringLiteral("High Bandwidth");
+    event.title = QStringLiteral("%1 is sustaining high bandwidth").arg(rate.name);
+    event.description = QStringLiteral(
+        "This application has stayed above the high-bandwidth floor while the "
+        "rate is normal for it. That is usage worth knowing about, not a spike; "
+        "no policy was changed.");
+    event.appName = rate.name;
+    event.appPath = rate.path;
+    event.pid = rate.pid;
+    event.destination = rate.destination;
+    event.attribution = rate.attribution;
+    event.volumeBytes = track.highBytes;
+    event.peakBytesPerSecond = track.highPeakBytesPerSecond;
+    event.extra.append({ QStringLiteral("Above floor"),
+                         rateLabel(m_settings.highBandwidthFloorBytesPerSecond) });
+    event.extra.append({ QStringLiteral("Sustained"),
+                         QStringLiteral("%1 s").arg(track.highSeconds) });
     if (rate.foreground)
         event.extra.append({ QStringLiteral("Foreground"), QStringLiteral("Yes") });
     event.id = makeEventId(event.category, at, rate.name,

@@ -19,9 +19,13 @@
 
 namespace Activity {
 
-/// The four streams the Activity feed groups events into.
+/// The five streams the Activity feed groups events into. Spike and
+/// HighBandwidth are deliberately separate: unusual-for-this-app traffic and
+/// steady heavy traffic call for different user actions, and heavy use is not
+/// evidence of anything suspicious.
 enum class Category {
     Spike,
+    HighBandwidth,
     Unresolved,
     Policy,
     Respawn

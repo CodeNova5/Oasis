@@ -5,17 +5,24 @@
  * The detector is deliberately conservative:
  *
  *   Spike      an application stays above both an absolute floor and several
- *              times its own recent average for a few seconds. A one-second
- *              burst is not an event.
+ *              times its own recent average for a few seconds. A single
+ *              low sample inside an otherwise sustained run is tolerated, and
+ *              a single one-second burst is not an event.
+ *   High bandwidth
+ *              an application stays above a high absolute rate for long enough
+ *              that the consumption itself is the story, even though the rate
+ *              is normal for that application. Kept separate from Spike so
+ *              steady heavy use is never presented as suspicious behavior.
  *   Unresolved traffic accumulates in a bounded window and only becomes an
  *              event once a meaningful amount moved with no resolvable owner,
  *              and only when that traffic stood clear of its own recent
  *              baseline. Constant unattributable background traffic (kernel
  *              counters, System) therefore stays quiet.
  *
- * One event per application per cooldown, so a sustained transfer does not
- * produce a card every second. Nothing here enforces anything; the page turns
- * an event into a user action.
+ * One event per application per episode, so a sustained transfer does not
+ * produce a card every few seconds while it is still running; a later, separate
+ * episode can report again. Nothing here enforces anything; the page turns an
+ * event into a user action.
  *
  * @author  Oasis
  */
@@ -34,17 +41,32 @@ namespace Activity {
 
 struct DetectorSettings
 {
-    quint64 absoluteFloorBytesPerSecond = 2 * 1024 * 1024; // ~16 Mbit/s
+    /// A spike is relative first, absolute second: turning this too far down
+    /// would flag every ordinary page load on a metered connection.
+    quint64 absoluteFloorBytesPerSecond = 1 * 1024 * 1024; // ~8 Mbit/s
     double  baselineMultiplier = 3.0;
-    int     sustainSeconds = 5;
+    /// Qualifying one-second samples required inside the sampling window.
+    int     sustainSeconds = 3;
+    /// Rolling window of recent samples: the difference between this and
+    /// sustainSeconds is how many brief dips a spike may absorb, so one noisy
+    /// beat does not restart the whole detection.
+    int     samplingWindow = 5;
     int     baselineSeconds = 60;
-    int     cooldownSeconds = 180;
+    int     cooldownSeconds = 90;
     quint64 unresolvedBytesThreshold = 8 * 1024 * 1024;
     int     unresolvedWindowSeconds = 300;
     int     unresolvedCooldownSeconds = 180;
     /// How far unresolved traffic has to rise above its own recent median rate
     /// before it can count as an anomaly rather than background noise.
     quint64 unresolvedFloorBytesPerSecond = 512 * 1024;
+
+    // ── High bandwidth usage ─────────────────────────────────────────────
+    /// Steady, substantial consumption. Not relative to the app's own history:
+    /// a launcher that always downloads at 15 MiB/s never spikes, and the user
+    /// still needs to know where the data went.
+    quint64 highBandwidthFloorBytesPerSecond = 5 * 1024 * 1024; // ~40 Mbit/s
+    int     highBandwidthSustainSeconds = 10;
+    int     highBandwidthCooldownSeconds = 15 * 60;
 };
 
 struct ProcessRate
@@ -77,15 +99,29 @@ private:
     struct Track
     {
         QVector<quint64> history;
-        int     aboveSeconds = 0;
+        /// Qualification of the most recent samples, newest last.
+        QVector<bool> evidence;
         quint64 spikeBytes = 0;
         quint64 peakBytesPerSecond = 0;
+        /// Samples below the threshold since the last qualifying one.
+        int     quietSamples = 0;
+        /// True while an emitted spike is still running: suppresses duplicates.
+        bool    ongoing = false;
         qint64  lastEventMs = 0;
         qint64  lastSeenMs = 0;
+        // Steady-high-bandwidth evidence, kept apart from the spike run above so
+        // one can never shorten or reset the other.
+        int     highSeconds = 0;
+        quint64 highBytes = 0;
+        quint64 highPeakBytesPerSecond = 0;
+        bool    highOngoing = false;
+        qint64  lastHighEventMs = 0;
     };
 
     Event makeSpikeEvent(const QDateTime &at, const ProcessRate &rate,
                          const Track &track) const;
+    Event makeHighBandwidthEvent(const QDateTime &at, const ProcessRate &rate,
+                                 const Track &track) const;
     Event makeUnresolvedEvent(const QDateTime &at, quint64 bytes,
                               const QDateTime &windowStart,
                               const QStringList &contributors) const;
