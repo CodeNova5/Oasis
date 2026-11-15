@@ -169,6 +169,9 @@ private:
     // policies, and the recommendations for the current top consumers.
     void refreshDashboard();
     QIcon getIconByPid(quint32 pid, const QString &procName);
+    // The shell's generic application icon, for rows whose executable icon has
+    // not been resolved (or that have no executable of their own).
+    QIcon genericExecutableIcon() const;
     void requestThrottle(quint32 pid, const QString &procName);
     // Evidence snapshot for the recommendation and approval views, taken while
     // the context menu's row is still valid.
@@ -215,6 +218,7 @@ private:
     int                     m_dataSaverMode = 1;
 
     QHash<QString, QIcon>   m_iconCache;
+    mutable QIcon           m_genericExecutableIcon;
     // NG-054: paths resolved once per (pid, start time) for the dashboard, so a
     // refresh does not open a process handle for every row every second.
     QHash<QString, QString> m_dashboardPathCache;

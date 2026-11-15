@@ -1809,7 +1809,7 @@ QList<Applications::Snapshot> NetworkWidget::applicationSnapshots() const
         AttributionConfidenceModel::Confidence confidence =
             AttributionConfidenceModel::Confidence::Unknown;
         if (snap.isValid()) {
-            row.icon = snap.icon;
+            row.icon = snap.icon.isNull() ? genericExecutableIcon() : snap.icon;
             if (!snap.name.isEmpty())
                 row.name = snap.name;
             if (!snap.identityName.trimmed().isEmpty())
@@ -1826,6 +1826,8 @@ QList<Applications::Snapshot> NetworkWidget::applicationSnapshots() const
         row.policy = Applications::policyLabel(consumer.blocked, consumer.throttled);
         row.policyToken = Applications::policyTokenFor(consumer.blocked,
                                                        consumer.throttled);
+        if (row.icon.isNull())
+            row.icon = genericExecutableIcon();
         rows.append(row);
     }
     return rows;
@@ -1909,6 +1911,25 @@ QIcon NetworkWidget::getIconByPid(quint32 pid, const QString &procName)
             if (sfi.hIcon) { icon = iconFromHICON(sfi.hIcon); DestroyIcon(sfi.hIcon); }
     }
     return icon;
+}
+
+QIcon NetworkWidget::genericExecutableIcon() const
+{
+    if (!m_genericExecutableIcon.isNull())
+        return m_genericExecutableIcon;
+
+    // Ask the shell what an application icon looks like without needing a real
+    // file on disk; SHGFI_USEFILEATTRIBUTES makes the extension sufficient.
+    SHFILEINFOW sfi = {};
+    if (SHGetFileInfoW(L"application.exe", FILE_ATTRIBUTE_NORMAL, &sfi, sizeof(sfi),
+                       SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES)
+        && sfi.hIcon) {
+        m_genericExecutableIcon = iconFromHICON(sfi.hIcon);
+        DestroyIcon(sfi.hIcon);
+    }
+    if (m_genericExecutableIcon.isNull())
+        m_genericExecutableIcon = style()->standardIcon(QStyle::SP_FileIcon);
+    return m_genericExecutableIcon;
 }
 
 
