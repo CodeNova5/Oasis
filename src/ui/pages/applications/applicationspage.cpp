@@ -17,6 +17,7 @@
 #include <QFontMetrics>
 #include <QFrame>
 #include <QGridLayout>
+#include <QHash>
 #include <QScrollArea>
 #include <QTabWidget>
 #include <QHBoxLayout>
@@ -39,11 +40,14 @@
 #include <QTableView>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QVector>
 
 namespace {
 
 constexpr int kRowHeight = 64;
 constexpr int kIconSize = 32;
+constexpr int kSparkPoints = 24;
+constexpr int kSparkWidth = 60;
 
 QString applicationLabel(const Applications::Row &row)
 {
@@ -213,6 +217,15 @@ void styleRuleButton(QPushButton *button, const QString &rule)
             .arg(cssColor(border), cssColor(fill), accent.name()));
 }
 
+QString formattedBytes(quint64 bytes);
+
+QString formattedRate(quint64 bytesPerSecond)
+{
+    if (bytesPerSecond == 0)
+        return QStringLiteral("0 B/s");
+    return formattedBytes(bytesPerSecond) + QStringLiteral("/s");
+}
+
 QString formattedBytes(quint64 bytes)
 {
     const char *units[] = { "B", "KB", "MB", "GB", "TB" };
@@ -351,6 +364,7 @@ public:
         Application = 0,
         Status,
         Rule,
+        Activity,
         ColumnCount
     };
 
@@ -363,7 +377,10 @@ public:
         RuleRole,
         StatusRole,
         StatusDetailRole,
-        ToneRole
+        ToneRole,
+        RxRateRole,
+        TxRateRole,
+        SparkRole
     };
 
     explicit ApplicationsPageTableModel(QObject *parent = nullptr)
@@ -373,8 +390,21 @@ public:
 
     void setRows(const QList<Applications::Row> &rows)
     {
+        // One sample per beat, keyed by pid, so the sparkline follows the
+        // application rather than its (sortable) view row.
+        QHash<quint32, QVector<quint64>> history;
+        history.reserve(rows.size());
+        for (const Applications::Row &row : rows) {
+            QVector<quint64> samples = m_history.value(row.pid);
+            samples.append(row.rxBytesPerSecond + row.txBytesPerSecond);
+            while (samples.size() > kSparkPoints)
+                samples.removeFirst();
+            history.insert(row.pid, samples);
+        }
+
         beginResetModel();
         m_rows = rows;
+        m_history = history;
         endResetModel();
     }
 
@@ -407,6 +437,10 @@ public:
                 return statusText(row);
             case Rule:
                 return ruleText(row);
+            case Activity:
+                return QStringLiteral("↓ %1   ↑ %2")
+                    .arg(formattedRate(row.rxBytesPerSecond),
+                         formattedRate(row.txBytesPerSecond));
             default:
                 break;
             }
@@ -420,6 +454,10 @@ public:
             if (column == Rule)
                 return QStringLiteral("Network rule for %1: %2")
                     .arg(applicationLabel(row), ruleText(row));
+            if (column == Activity)
+                return QStringLiteral("Download %1 · Upload %2")
+                    .arg(formattedRate(row.rxBytesPerSecond),
+                         formattedRate(row.txBytesPerSecond));
             break;
 
         case Qt::TextAlignmentRole:
@@ -443,6 +481,9 @@ public:
                 if (ruleToken(row) == QLatin1String("block")) return QStringLiteral("0");
                 if (ruleToken(row) == QLatin1String("ask")) return QStringLiteral("1");
                 return QStringLiteral("2");
+            case Activity:
+                return QVariant::fromValue<qulonglong>(
+                    row.rxBytesPerSecond + row.txBytesPerSecond);
             default:
                 break;
             }
@@ -456,6 +497,18 @@ public:
             return row.pid;
         case IconRole:
             return row.icon;
+        case RxRateRole:
+            return QVariant::fromValue<qulonglong>(row.rxBytesPerSecond);
+        case TxRateRole:
+            return QVariant::fromValue<qulonglong>(row.txBytesPerSecond);
+        case SparkRole: {
+            QVariantList samples;
+            const QVector<quint64> history = m_history.value(row.pid);
+            samples.reserve(history.size());
+            for (quint64 value : history)
+                samples.append(QVariant::fromValue<qulonglong>(value));
+            return samples;
+        }
         case RuleRole:
             return ruleToken(row);
         case StatusRole:
@@ -480,11 +533,14 @@ public:
             case Application: return QStringLiteral("Application");
             case Status:      return QStringLiteral("Status");
             case Rule:        return QStringLiteral("Rule");
+            case Activity:    return QStringLiteral("Activity");
             default:          return {};
             }
         }
         if (role == Qt::ToolTipRole && section == Rule)
             return QStringLiteral("Allow, Ask or Block network access for this application.");
+        if (role == Qt::ToolTipRole && section == Activity)
+            return QStringLiteral("Live download and upload rates, with a 24-second sparkline.");
         if (role == Qt::TextAlignmentRole)
             return int(Qt::AlignLeft | Qt::AlignVCenter);
         return {};
@@ -492,6 +548,7 @@ public:
 
 private:
     QList<Applications::Row> m_rows;
+    QHash<quint32, QVector<quint64>> m_history;
 };
 
 // ============================================================================
@@ -546,6 +603,8 @@ protected:
     {
         const QVariant lhs = left.data(ApplicationsPageTableModel::SortRole);
         const QVariant rhs = right.data(ApplicationsPageTableModel::SortRole);
+        if (lhs.metaType().id() == QMetaType::ULongLong)
+            return lhs.toULongLong() < rhs.toULongLong();
         return lhs.toString().compare(rhs.toString()) < 0;
     }
 
@@ -804,6 +863,157 @@ public:
     }
 };
 
+class ActivityDelegate : public QStyledItemDelegate
+{
+public:
+    explicit ActivityDelegate(QObject *parent = nullptr)
+        : QStyledItemDelegate(parent)
+    {
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt(option);
+        initStyleOption(&opt, index);
+        opt.text.clear();
+        QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
+
+        const quint64 rx = index.data(ApplicationsPageTableModel::RxRateRole).toULongLong();
+        const quint64 tx = index.data(ApplicationsPageTableModel::TxRateRole).toULongLong();
+        const QVariantList samples = index.data(ApplicationsPageTableModel::SparkRole).toList();
+        const Theme::Palette palette = Theme::palette(ThemeManager::instance().isDark());
+
+        const QRect content = opt.rect.adjusted(Theme::Dim::SpaceMd, 0,
+                                                -Theme::Dim::SpaceSm, 0);
+
+        QFont rateFont = opt.font;
+        rateFont.setPixelSize(Theme::Type::Metadata + 1);
+        rateFont.setWeight(QFont::DemiBold);
+        const QFontMetrics metrics(rateFont);
+        const int lineHeight = metrics.height();
+        const int top = content.center().y() - lineHeight;
+
+        // Sparkline and the drawer affordance sit to the right of the rates.
+        const int chevronWidth = 8;
+        const int chevronX = content.right() - chevronWidth;
+        const int sparkLeft = chevronX - Theme::Dim::SpaceSm - kSparkWidth;
+        const QRect spark(sparkLeft, content.center().y() - 13, kSparkWidth, 26);
+
+        const int textLeft = content.left();
+        const int textWidth = qMax(40, sparkLeft - Theme::Dim::SpaceSm - textLeft);
+        const QColor active = Theme::qcolor(palette.semanticSuccess);
+        const QColor idle = Theme::qcolor(palette.textMuted);
+        paintRate(painter, QRect(textLeft, top, textWidth, lineHeight), rx, false,
+                  rx > 0 ? active : idle, rateFont);
+        paintRate(painter, QRect(textLeft, top + lineHeight, textWidth, lineHeight), tx,
+                  true, tx > 0 ? active : idle, rateFont);
+        paintSparkline(painter, spark, samples,
+                       Theme::qcolor(palette.chartDownload), idle);
+
+        QPen chevron(Theme::qcolor(palette.textMuted), 1.4);
+        chevron.setCapStyle(Qt::RoundCap);
+        chevron.setJoinStyle(Qt::RoundJoin);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        painter->setPen(chevron);
+        const int cy = content.center().y();
+        painter->drawLine(QPointF(chevronX + 1, cy - 4), QPointF(chevronX + 5, cy));
+        painter->drawLine(QPointF(chevronX + 5, cy), QPointF(chevronX + 1, cy + 4));
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        Q_UNUSED(option);
+        Q_UNUSED(index);
+        return QSize(220, kRowHeight);
+    }
+
+private:
+    static void paintRate(QPainter *painter, const QRect &row, quint64 rate, bool up,
+                          const QColor &color, const QFont &font)
+    {
+        const int arrow = 9;
+        const QRect arrowRect(row.left(), row.center().y() - arrow / 2, arrow, arrow);
+        QPen pen(color, 1.3);
+        pen.setCapStyle(Qt::RoundCap);
+        pen.setJoinStyle(Qt::RoundJoin);
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        painter->setPen(pen);
+        const qreal cx = arrowRect.center().x();
+        if (up) {
+            painter->drawLine(QPointF(cx, arrowRect.bottom() - 0.5),
+                              QPointF(cx, arrowRect.top() + 0.5));
+            painter->drawLine(QPointF(cx - 2.4, arrowRect.top() + 2.9),
+                              QPointF(cx, arrowRect.top() + 0.5));
+            painter->drawLine(QPointF(cx + 2.4, arrowRect.top() + 2.9),
+                              QPointF(cx, arrowRect.top() + 0.5));
+        } else {
+            painter->drawLine(QPointF(cx, arrowRect.top() + 0.5),
+                              QPointF(cx, arrowRect.bottom() - 0.5));
+            painter->drawLine(QPointF(cx - 2.4, arrowRect.bottom() - 2.9),
+                              QPointF(cx, arrowRect.bottom() - 0.5));
+            painter->drawLine(QPointF(cx + 2.4, arrowRect.bottom() - 2.9),
+                              QPointF(cx, arrowRect.bottom() - 0.5));
+        }
+
+        painter->setFont(font);
+        painter->setPen(color);
+        painter->drawText(QRect(row.left() + arrow + Theme::Dim::SpaceXs, row.top(),
+                                row.width() - arrow - Theme::Dim::SpaceXs, row.height()),
+                          Qt::AlignLeft | Qt::AlignVCenter, formattedRate(rate));
+        painter->restore();
+    }
+
+    static void paintSparkline(QPainter *painter, const QRect &area,
+                               const QVariantList &samples, const QColor &color,
+                               const QColor &emptyColor)
+    {
+        QVector<qreal> values;
+        values.reserve(samples.size());
+        qreal maximum = 0;
+        for (const QVariant &sample : samples) {
+            const qreal value = qreal(sample.toULongLong());
+            values.append(value);
+            maximum = qMax(maximum, value);
+        }
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        if (values.size() < 2 || maximum <= 0) {
+            QPen flat(emptyColor, 1.3);
+            flat.setCapStyle(Qt::RoundCap);
+            painter->setPen(flat);
+            painter->drawLine(QPointF(area.left(), area.center().y()),
+                              QPointF(area.right(), area.center().y()));
+            painter->restore();
+            return;
+        }
+
+        const qreal step = qreal(area.width()) / qreal(values.size() - 1);
+        QPainterPath path;
+        for (int i = 0; i < values.size(); ++i) {
+            const qreal x = area.left() + i * step;
+            const qreal y = area.bottom() - (values.at(i) / maximum) * area.height();
+            if (i == 0)
+                path.moveTo(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        QPen pen(color, 1.5);
+        pen.setCapStyle(Qt::RoundCap);
+        pen.setJoinStyle(Qt::RoundJoin);
+        painter->setPen(pen);
+        painter->drawPath(path);
+        painter->restore();
+    }
+};
+
 // ============================================================================
 // Page
 // ============================================================================
@@ -893,6 +1103,8 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
                                       new StatusDelegate(m_table));
     m_table->setItemDelegateForColumn(ApplicationsPageTableModel::Rule,
                                       new RuleDelegate(m_table));
+    m_table->setItemDelegateForColumn(ApplicationsPageTableModel::Activity,
+                                      new ActivityDelegate(m_table));
 
     QHeaderView *header = m_table->horizontalHeader();
     header->setStretchLastSection(false);
@@ -906,7 +1118,10 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
                                  QHeaderView::ResizeToContents);
     header->setSectionResizeMode(ApplicationsPageTableModel::Rule,
                                  QHeaderView::Fixed);
+    header->setSectionResizeMode(ApplicationsPageTableModel::Activity,
+                                 QHeaderView::Fixed);
     m_table->setColumnWidth(ApplicationsPageTableModel::Rule, 148);
+    m_table->setColumnWidth(ApplicationsPageTableModel::Activity, 220);
 
     // Row actions live on the row: a right-click menu, a click that opens the
     // details drawer, and a click on the rule that opens its menu.
@@ -1473,7 +1688,8 @@ void ApplicationsPage::showSortMenu()
     const QList<QPair<QString, int>> columns = {
         { QStringLiteral("Application"), ApplicationsPageTableModel::Application },
         { QStringLiteral("Status"), ApplicationsPageTableModel::Status },
-        { QStringLiteral("Rule"), ApplicationsPageTableModel::Rule }
+        { QStringLiteral("Rule"), ApplicationsPageTableModel::Rule },
+        { QStringLiteral("Activity"), ApplicationsPageTableModel::Activity }
     };
     for (const auto &column : columns) {
         QAction *action = menu.addAction(column.first);

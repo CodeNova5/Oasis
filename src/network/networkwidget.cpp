@@ -2015,8 +2015,9 @@ Applications::Details NetworkWidget::applicationDetails(quint32 pid, const QStri
 
     if (!details.path.isEmpty()) {
         const QFileInfo file(details.path);
-        const QDateTime born = file.birthTime().isValid() ? file.birthTime()
-                                                          : file.created();
+        // Qt 6 has no QFileInfo::created(); birthTime is the file's creation
+        // date on Windows and is exactly what "Installed" should show.
+        const QDateTime born = file.birthTime();
         if (born.isValid())
             details.installedAt = born;
         details.version =
