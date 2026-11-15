@@ -2402,6 +2402,17 @@ void testEndpointCatalog()
     check(catalog.bestMatch(query).category == CatalogCategory::Security,
           QStringLiteral("the Defender service is security traffic"));
 
+    // Norton's signer covers its backup product too, so the signer alone is
+    // CloudSync; the application process stays Security.
+    query = CatalogQuery();
+    query.publisher = QStringLiteral("NortonLifeLock Inc.");
+    query.product = QStringLiteral("Norton 360");
+    check(catalog.bestMatch(query).category == CatalogCategory::CloudSync,
+          QStringLiteral("Norton cloud backup is sync traffic"));
+    query.executableName = QStringLiteral("NortonSecurity.exe");
+    check(catalog.bestMatch(query).category == CatalogCategory::Security,
+          QStringLiteral("the Norton app stays security traffic"));
+
     for (const QString &publisher : { QStringLiteral("Kaspersky Lab"),
                                       QStringLiteral("ESET, spol. s r.o."),
                                       QStringLiteral("Malwarebytes Inc."),
@@ -2409,7 +2420,6 @@ void testEndpointCatalog()
                                       QStringLiteral("AVG Technologies USA, Inc."),
                                       QStringLiteral("Bitdefender SRL"),
                                       QStringLiteral("McAfee, LLC"),
-                                      QStringLiteral("NortonLifeLock Inc."),
                                       QStringLiteral("Sophos Limited") }) {
         query = CatalogQuery();
         query.publisher = publisher;

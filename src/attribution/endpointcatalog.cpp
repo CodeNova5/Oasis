@@ -1120,11 +1120,7 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
     } streamingCdns[] = {
         { "builtin-netflix-cdn", "*.nflxvideo.net", "Netflix video streaming" },
         { "builtin-twitch-cdn", "*.ttvnw.net", "Twitch video streaming" },
-        { "builtin-prime-video-cdn", "*.aiv-cdn.net", "Prime Video streaming" },
-        { "builtin-prime-video-delivery", "*.aiv-delivery.net", "Prime Video delivery" },
         { "builtin-youtube-cdn", "*.googlevideo.com", "YouTube video streaming" },
-        { "builtin-spotify-cdn", "*.scdn.co", "Spotify audio streaming" },
-        { "builtin-spotify-audio", "*.spotifycdn.com", "Spotify audio streaming" },
         { "builtin-soundcloud-cdn", "*.sndcdn.com", "SoundCloud audio streaming" },
         { "builtin-deezer-cdn", "*.dzcdn.net", "Deezer audio streaming" },
         { "builtin-tidal-cdn", "*.tidal.com", "TIDAL audio streaming" },
@@ -1141,6 +1137,28 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
         rule.domainPatterns = { QString::fromLatin1(cdn.domain) };
         rules.append(rule);
     }
+
+    // Spotify and Prime Video each split their media across two hosts. One rule
+    // with both patterns keeps a single explanation per service.
+    CatalogRule spotifyCdn = builtinRule(
+        QStringLiteral("builtin-spotify-cdn"),
+        CatalogCategory::Media,
+        QStringLiteral("Spotify audio streaming"));
+    spotifyCdn.domainPatterns = {
+        QStringLiteral("*.scdn.co"),
+        QStringLiteral("*.spotifycdn.com")
+    };
+    rules.append(spotifyCdn);
+
+    CatalogRule primeVideoCdn = builtinRule(
+        QStringLiteral("builtin-prime-video-cdn"),
+        CatalogCategory::Media,
+        QStringLiteral("Prime Video streaming"));
+    primeVideoCdn.domainPatterns = {
+        QStringLiteral("*.aiv-cdn.net"),
+        QStringLiteral("*.aiv-delivery.net")
+    };
+    rules.append(primeVideoCdn);
 
     // Security. Definition and engine updates are background downloads, so the
     // engine treats them like other updaters. Defender is matched by its
@@ -1201,7 +1219,6 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
         { "builtin-avira-publisher", "avira", "Avira security software" },
         { "builtin-bitdefender-publisher", "bitdefender", "Bitdefender security software" },
         { "builtin-mcafee-publisher", "mcafee", "McAfee security software" },
-        { "builtin-norton-publisher", "norton", "Norton security software" },
         { "builtin-trend-micro-publisher", "trend micro", "Trend Micro security software" },
         { "builtin-sophos-publisher", "sophos", "Sophos security software" },
         { "builtin-crowdstrike-publisher", "crowdstrike", "CrowdStrike endpoint agent" },
@@ -1214,6 +1231,19 @@ QList<CatalogRule> EndpointCatalog::builtinRules()
         rule.publisherContains = QString::fromLatin1(vendor.publisher);
         rules.append(rule);
     }
+
+    // Norton's signer covers the whole suite, and the bulk traffic that signer
+    // produces is Norton 360 cloud backup. Matching the signer here keeps the
+    // backup upload in CloudSync instead of labelling it antivirus traffic.
+    // This rule sits after the Security block on purpose: nortonsecurity.exe
+    // matches both rules with equal rank, and the earlier rule wins the tie, so
+    // the Norton app itself still classifies as Security.
+    CatalogRule nortonBackup = builtinRule(
+        QStringLiteral("builtin-norton-backup"),
+        CatalogCategory::CloudSync,
+        QStringLiteral("Norton 360 cloud backup"));
+    nortonBackup.publisherContains = QStringLiteral("norton");
+    rules.append(nortonBackup);
 
     // Remote access. The client side is mstsc.exe; a session hosted by this
     // machine moves its bytes through the TermService stack, which is the only

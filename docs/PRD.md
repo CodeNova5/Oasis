@@ -201,6 +201,49 @@ The system shall classify activity using local rules and metadata, including:
 
 Every classification shall include evidence and confidence. Rules shall be versioned and updateable without changing enforcement code.
 
+#### Bundled catalog coverage
+
+The bundled catalog (`src/attribution/endpointcatalog.cpp`) compares publisher and product strings case-insensitively by substring, executable names case-insensitively by base name, and domains either exactly or by a leading `*.` wildcard that does not match the bare suffix. A rule matches only when every criterion it carries matches; the most specific rule wins, and a process, signer, or service match outranks a destination-only match. The recommendation each category feeds is stated with it: Windows Update, background transfer, browser updates, package managers, and security throttle; cloud sync schedules; game launchers pause; developer tools and unknown activity review; browsing, communication, remote access, media, and foreground downloads take no action.
+
+**Windows Update (3 rules).** The `wuauserv` and `dosvc` services plus the known delivery endpoints (`*.windowsupdate.com`, `*.delivery.mp.microsoft.com`, `*.windowsupdate.microsoft.com`). Recommendation: throttle.
+
+**Background transfer (1 rule).** The BITS service. BITS carries downloads for many applications, so a transfer it performs is labelled background transfer whatever queued it. Recommendation: throttle.
+
+**Browser updates (4 rules).** The Google, Microsoft Edge, and Brave updaters by signer and product, plus `update.googleapis.com` as a destination. Recommendation: throttle. A browser update stays an update when its executable is renamed.
+
+**Browser (4 rules).** Chrome, Edge, Brave, and Firefox by executable. Without these rules every page load and download was unattributed, since the earlier browser rules matched only update binaries. Recommendation: no action. The streaming CDN rules rank below this process match, so watching a service in a browser still reads Browser.
+
+**Cloud sync (10 rules).** OneDrive and iCloud by signer and product, with iCloud's four components matched by executable as a fallback for incomplete version metadata; Dropbox and Google Drive by executable; Box by endpoint (`*.box.com`, `*.boxcloud.com`); and Norton's signer, because Norton 360's cloud backup is the bulk transfer that signer produces. Recommendation: schedule overnight. Box is matched by endpoint because a publisher substring of "box" would also match "Dropbox, Inc."
+
+**Game launchers (9 rules).** Steam, Epic Games, Battle.net, Origin, the EA app, Ubisoft Connect, and GOG Galaxy by executable, plus the EA background service and GOG Galaxy service executables that do the downloading. Launchers are matched by executable rather than publisher, since the same publishers sign the games themselves, which are not launcher traffic. Recommendation: pause for an hour.
+
+**Developer tools (6 rules).** Visual Studio Code, Visual Studio (`devenv.exe`), JetBrains IDEs by signer, Docker registries (`*.docker.io`, `*.docker.com`), and git through both `git.exe` and its `git-remote-https.exe` transport. Docker and git are matched by endpoint or transport because the transfer runs in a helper process. Recommendation: review settings.
+
+**Package managers (4 rules).** The npm registry, PyPI (`pypi.org`, `files.pythonhosted.org`), NuGet, and winget package sources. These match the feed rather than a process because the transfer belongs to a generic runtime — pip's `python.exe`, dotnet's MSBuild, winget's `WindowsPackageManagerServer.exe`. Recommendation: throttle.
+
+**Communication (9 rules).** Microsoft Teams by signer and product, which covers both classic `Teams.exe` and the newer `ms-teams.exe`; Zoom, Slack, WhatsApp, Telegram, and Signal by executable; Discord across its stable, PTB, and Canary channels, each of which installs a different executable. Recommendation: no action, because a call is real time — limiting it drops audio instead of freeing background bandwidth.
+
+**Remote access (5 rules).** The Remote Desktop client (`mstsc.exe`) and the `TermService` service, which carries the bytes of a session hosted on this machine; TeamViewer's client and service executables; AnyDesk. Recommendation: no action. Hosted remote-desktop traffic that reaches the kernel's connection tracking without a user-mode owning process can still land in the system bucket rather than `Remote access`.
+
+**Media (45 rules).** Recommendation: no action, because playback is real time — limiting a stream breaks it instead of reclaiming background bandwidth.
+
+- Streaming clients: Spotify, Netflix, Prime Video, Disney+, Hulu, HBO Max, Apple TV, Twitch, Crunchyroll.
+- Music: Amazon Music, TIDAL, Deezer, iTunes, Winamp, foobar2000, MusicBee, Groove Music.
+- Local players that also stream from network shares or home servers: VLC, mpv, Kodi, Media Player Classic (HC and BE), PotPlayer, Windows Media Player (legacy and current), Jellyfin, Plex, Plexamp, Plex Media Server.
+- Streaming CDNs: Netflix, Twitch, Prime Video, YouTube, Spotify, SoundCloud, Deezer, TIDAL, Vimeo, Hulu, HBO Max, Crunchyroll, Plex remote. Spotify and Prime Video each serve media from two hosts, which one rule covers.
+
+CDN rules are destination-only evidence and rank below a process match. Image hosts inside those CDNs (Spotify artwork, Hulu thumbnails) are named by the same rules, so a media client's artwork fetches carry the streaming label too.
+
+**Security (31 rules).** Recommendation: throttle, since definition and engine updates care about completion rather than latency.
+
+- Microsoft Defender: the `WinDefend` service, the antivirus engine, the definition updater, and the network inspection service.
+- Third-party suites by executable: Kaspersky, ESET, Malwarebytes, Avast, AVG, Avira, Bitdefender, McAfee, Norton, Trend Micro, Sophos, ClamAV, CrowdStrike, SentinelOne.
+- The same vendors by signer, so engine and update helpers that ship under other names still classify.
+
+Two limits are deliberate. Defender's definition downloads normally ride the Windows Update stack, so those bytes can keep that category instead of Security. Norton's signer is catalogued as cloud sync rather than security, because the bulk transfer it produces is Norton 360 cloud backup; its application executable stays Security.
+
+**Foreground downloads and unknown activity.** Neither is a catalog rule. A foreground session with a sustained rate becomes `Foreground download` as a weak inference only when no rule matches, and it takes no action. Anything still unmatched stays `Unknown`, recommends reviewing settings, and keeps the manual policy scopes — path, activity group, service, and publisher — so an unclassified application can still be acted on.
+
 ### FR-6: Policy evaluation
 
 The policy engine shall evaluate:
