@@ -89,6 +89,7 @@ struct ProcessNode
 struct ProcessRowSnapshot
 {
     QString name;
+    QIcon   icon;
     QString identityId;
     QString identityName;
     QString publisher;

@@ -12,6 +12,7 @@
  */
 #pragma once
 
+#include <QIcon>
 #include <QList>
 #include <QModelIndex>
 #include <QPoint>
@@ -43,6 +44,7 @@ enum class Filter {
 struct Row
 {
     quint32 pid = 0;
+    QIcon icon;            // executable icon, empty until resolved
     QString name;          // executable, e.g. "chrome.exe"
     QString displayName;   // friendly identity, empty when unresolved
     QString publisher;     // empty when no verified signer is known

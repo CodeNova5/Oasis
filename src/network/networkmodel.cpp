@@ -625,6 +625,7 @@ ProcessRowSnapshot NetworkTreeModel::snapshotForRow(int pRow) const
 
     const ProcessNode &p = m_procs[pRow];
     snapshot.name = p.name;
+    snapshot.icon = p.icon;
     snapshot.identityId = p.identityId;
     snapshot.identityName = p.identityName;
     snapshot.publisher = p.publisher;

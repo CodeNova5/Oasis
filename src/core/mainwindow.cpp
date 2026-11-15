@@ -1739,6 +1739,7 @@ void MainWindow::refreshApplications()
     for (const Applications::Snapshot &snapshot : snapshots) {
         Applications::Row row;
         row.pid = snapshot.pid;
+        row.icon = snapshot.icon;
         row.name = snapshot.name;
         row.displayName = snapshot.displayName;
         row.publisher = snapshot.publisher;

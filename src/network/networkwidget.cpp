@@ -1809,6 +1809,7 @@ QList<Applications::Snapshot> NetworkWidget::applicationSnapshots() const
         AttributionConfidenceModel::Confidence confidence =
             AttributionConfidenceModel::Confidence::Unknown;
         if (snap.isValid()) {
+            row.icon = snap.icon;
             if (!snap.name.isEmpty())
                 row.name = snap.name;
             if (!snap.identityName.trimmed().isEmpty())

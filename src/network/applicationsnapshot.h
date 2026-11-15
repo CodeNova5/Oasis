@@ -13,6 +13,7 @@
  */
 #pragma once
 
+#include <QIcon>
 #include <QString>
 #include <QStringList>
 
@@ -21,6 +22,7 @@ namespace Applications {
 struct Snapshot
 {
     quint32 pid = 0;
+    QIcon icon;                // the executable's own icon, empty until resolved
     QString name;              // executable, e.g. "chrome.exe"
     QString displayName;       // friendly identity, empty when unresolved
     QString path;              // executable path, empty when unresolved

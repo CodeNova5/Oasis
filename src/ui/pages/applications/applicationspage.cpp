@@ -22,6 +22,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPainter>
+#include <QPixmap>
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QSortFilterProxyModel>
@@ -161,7 +162,8 @@ public:
         ToneRole,
         NameRole,
         PublisherRole,
-        PidRole
+        PidRole,
+        IconRole
     };
 
     explicit ApplicationsPageTableModel(QObject *parent = nullptr)
@@ -305,6 +307,8 @@ public:
             return row.publisher;
         case PidRole:
             return row.pid;
+        case IconRole:
+            return row.icon;
         default:
             break;
         }
@@ -431,6 +435,7 @@ public:
             index.data(ApplicationsPageTableModel::PublisherRole).toString();
         const bool dark = ThemeManager::instance().isDark();
         const Theme::Palette palette = Theme::palette(dark);
+        const QIcon icon = index.data(ApplicationsPageTableModel::IconRole).value<QIcon>();
 
         const QRect content = opt.rect.adjusted(Theme::Dim::SpaceMd, 2,
                                                 -Theme::Dim::SpaceMd, -2);
@@ -438,23 +443,35 @@ public:
         const QRect tile(content.left(), content.center().y() - tileSize / 2,
                          tileSize, tileSize);
 
-        const QColor accent = avatarColor(name, dark);
-        QColor tileFill = accent;
-        tileFill.setAlpha(dark ? 38 : 24);
-
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
-        painter->setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 130), 1));
-        painter->setBrush(tileFill);
-        painter->drawRoundedRect(QRectF(tile).adjusted(0.5, 0.5, -0.5, -0.5), 6, 6);
+        if (!icon.isNull()) {
+            // The executable's own icon, at the row's logical size so HiDPI
+            // screens pick the sharper available frame.
+            const qreal dpr = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
+            const QPixmap pixmap = icon.pixmap(QSize(tileSize, tileSize), dpr);
+            if (!pixmap.isNull()) {
+                painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+                painter->drawPixmap(tile, pixmap);
+            }
+        } else {
+            // Fallback for a row whose icon has not been resolved yet.
+            const QColor accent = avatarColor(name, dark);
+            QColor tileFill = accent;
+            tileFill.setAlpha(dark ? 38 : 24);
 
-        QFont initials = opt.font;
-        initials.setPixelSize(Theme::Type::Metadata - 1);
-        initials.setWeight(QFont::DemiBold);
-        painter->setFont(initials);
-        painter->setPen(accent);
-        painter->drawText(tile, Qt::AlignCenter,
-                          initialsFor(label.isEmpty() ? name : label));
+            painter->setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 130), 1));
+            painter->setBrush(tileFill);
+            painter->drawRoundedRect(QRectF(tile).adjusted(0.5, 0.5, -0.5, -0.5), 6, 6);
+
+            QFont initials = opt.font;
+            initials.setPixelSize(Theme::Type::Metadata - 1);
+            initials.setWeight(QFont::DemiBold);
+            painter->setFont(initials);
+            painter->setPen(accent);
+            painter->drawText(tile, Qt::AlignCenter,
+                              initialsFor(label.isEmpty() ? name : label));
+        }
 
         const int textLeft = tile.right() + Theme::Dim::SpaceSm + 2;
         const int textWidth = content.right() - textLeft;
