@@ -883,6 +883,7 @@ QFrame[uiRole="activityAccent"][tone="danger"]  { background-color: @semantic-da
 QFrame[uiRole="activityAccent"][tone="success"] { background-color: @semantic-success; }
 QFrame[uiRole="activityAccent"][tone="info"]    { background-color: @semantic-info; }
 QFrame[uiRole="activityAccent"][tone="accent"]  { background-color: @accent-primary; }
+QFrame[uiRole="activityAccent"][tone="muted"]   { background-color: @text-muted; }
 
 QLabel[uiRole="activityIcon"] {
     border-radius: 18px;
@@ -900,6 +901,10 @@ QLabel[uiRole="activityIcon"][tone="danger"] {
 QLabel[uiRole="activityIcon"][tone="accent"] {
     background-color: @accent-subtle;
     color: @accent-primary;
+}
+QLabel[uiRole="activityIcon"][tone="muted"] {
+    background-color: @surface-elevated;
+    color: @text-muted;
 }
 QLabel[uiRole="activityIcon"][tone="success"] {
     background-color: @success-subtle;

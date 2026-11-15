@@ -21,7 +21,7 @@ class QPainter;
 struct ActivityMarker
 {
     QDateTime at;
-    QString   tone;   // warning, danger, success, info
+    QString   tone;   // warning, danger, success, info, accent, muted
     QString   label;
 };
 

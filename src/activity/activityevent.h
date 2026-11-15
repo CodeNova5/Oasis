@@ -19,13 +19,14 @@
 
 namespace Activity {
 
-/// The five streams the Activity feed groups events into. Spike and
-/// HighBandwidth are deliberately separate: unusual-for-this-app traffic and
-/// steady heavy traffic call for different user actions, and heavy use is not
-/// evidence of anything suspicious.
+/// The streams the Activity feed groups events into. Spike, HighBandwidth and
+/// Background are deliberately separate: unusual-for-this-app traffic, steady
+/// heavy traffic and data moved while the user was elsewhere call for different
+/// user actions, and none of them is evidence of anything suspicious.
 enum class Category {
     Spike,
     HighBandwidth,
+    Background,
     Unresolved,
     Policy,
     Respawn
@@ -59,7 +60,7 @@ struct Event
     QString  id;
     QDateTime at;
     Category category = Category::Spike;
-    QString  badge;          // "Bandwidth Spike", "Auto-Throttled", ...
+    QString  badge;          // "Bandwidth Spike", "Background Usage", ...
     QString  title;
     QString  description;
     QString  appName;        // executable name or "Unrecognized traffic"

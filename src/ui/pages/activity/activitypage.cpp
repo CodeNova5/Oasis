@@ -61,6 +61,8 @@ QString badgeToken(const QString &tone)
         return QStringLiteral("active");
     if (tone == QLatin1String("info") || tone == QLatin1String("accent"))
         return QStringLiteral("pending");
+    if (tone == QLatin1String("muted"))
+        return QStringLiteral("unknown");
     return QStringLiteral("degraded");
 }
 
@@ -74,6 +76,8 @@ QString glyphForTone(const QString &tone)
         return QStringLiteral("i");
     if (tone == QLatin1String("accent"))
         return QStringLiteral("↑");
+    if (tone == QLatin1String("muted"))
+        return QStringLiteral("↓");
     return QStringLiteral("⚠");
 }
 
@@ -333,6 +337,8 @@ void ActivityPage::buildFeed()
         { QStringLiteral("Spikes & surges"), static_cast<int>(Activity::Category::Spike) },
         { QStringLiteral("High bandwidth"),
           static_cast<int>(Activity::Category::HighBandwidth) },
+        { QStringLiteral("Background usage"),
+          static_cast<int>(Activity::Category::Background) },
         { QStringLiteral("Unrecognized"), static_cast<int>(Activity::Category::Unresolved) },
         { QStringLiteral("Policy actions"), static_cast<int>(Activity::Category::Policy) },
         { QStringLiteral("Respawns"), static_cast<int>(Activity::Category::Respawn) }
@@ -632,6 +638,8 @@ void ActivityPage::refreshCategoryCounts()
             label = QStringLiteral("Spikes & surges"); break;
         case static_cast<int>(Activity::Category::HighBandwidth):
             label = QStringLiteral("High bandwidth"); break;
+        case static_cast<int>(Activity::Category::Background):
+            label = QStringLiteral("Background usage"); break;
         case static_cast<int>(Activity::Category::Unresolved):
             label = QStringLiteral("Unrecognized"); break;
         case static_cast<int>(Activity::Category::Policy):
@@ -685,8 +693,8 @@ void ActivityPage::rebuildFeed()
         empty->setTitle(QStringLiteral("No activity events here yet"));
         empty->setDetail(m_monitoringActive
             ? QStringLiteral("Oasis reports bandwidth spikes, sustained high bandwidth, "
-                             "unrecognized traffic, policy changes and respawns as "
-                             "they are observed. "
+                             "background transfers, unrecognized traffic, policy "
+                             "changes and respawns as they are observed. "
                              "Nothing is inferred when evidence is missing.")
             : QStringLiteral("Monitoring is stopped, so no new events are being "
                              "recorded. Events already stored in this range remain."));
@@ -803,7 +811,8 @@ void ActivityPage::rebuildFeed()
             auto *footer = new QHBoxLayout;
             footer->setSpacing(Theme::Dim::SpaceSm);
             if (event.category == Activity::Category::Spike
-                || event.category == Activity::Category::HighBandwidth) {
+                || event.category == Activity::Category::HighBandwidth
+                || event.category == Activity::Category::Background) {
                 auto *policy = makeAction(QStringLiteral("Create policy"),
                                           QStringLiteral("secondary"), inner);
                 connect(policy, &QPushButton::clicked, this, [this, event]() {

@@ -13,6 +13,11 @@
  *              that the consumption itself is the story, even though the rate
  *              is normal for that application. Kept separate from Spike so
  *              steady heavy use is never presented as suspicious behavior.
+ *   Background
+ *              an application moves a meaningful volume while it is not the
+ *              foreground application. Volume, not rate: a slow sync and a
+ *              fast one both cost the same data allowance. A transfer that was
+ *              mostly in the foreground is not reported here.
  *   Unresolved traffic accumulates in a bounded window and only becomes an
  *              event once a meaningful amount moved with no resolvable owner,
  *              and only when that traffic stood clear of its own recent
@@ -67,6 +72,20 @@ struct DetectorSettings
     quint64 highBandwidthFloorBytesPerSecond = 5 * 1024 * 1024; // ~40 Mbit/s
     int     highBandwidthSustainSeconds = 10;
     int     highBandwidthCooldownSeconds = 15 * 60;
+
+    // ── Unusual background consumption ──────────────────────────────────
+    /// Bytes moved while the application was not in front of the user, inside
+    /// one rolling window. Volume rather than rate: what matters for a data
+    /// allowance is how much moved, not how quickly it moved.
+    quint64 backgroundVolumeThreshold = 32 * 1024 * 1024; // 32 MiB
+    int     backgroundWindowSeconds = 300;
+    int     backgroundCooldownSeconds = 10 * 60;
+
+    /// One continuous transfer should tell one story: once an application has
+    /// produced a spike, high-bandwidth or background card, the other two stay
+    /// quiet for this long so the feed does not stack three cards about the
+    /// same bytes.
+    int     crossCategoryCooldownSeconds = 15 * 60;
 };
 
 struct ProcessRate
@@ -116,12 +135,25 @@ private:
         quint64 highPeakBytesPerSecond = 0;
         bool    highOngoing = false;
         qint64  lastHighEventMs = 0;
+        // Background traffic is accumulated per window and only counted when
+        // the application is not the foreground one; foreground bytes are kept
+        // so a mostly-foreground transfer cannot be reported as background use.
+        quint64 backgroundBytes = 0;
+        quint64 backgroundForegroundBytes = 0;
+        quint64 backgroundPeakBytesPerSecond = 0;
+        qint64  backgroundWindowStartMs = 0;
+        qint64  lastBackgroundEventMs = 0;
+        /// Last event of any category for this application (see
+        /// crossCategoryCooldownSeconds).
+        qint64  lastAnyEventMs = 0;
     };
 
     Event makeSpikeEvent(const QDateTime &at, const ProcessRate &rate,
                          const Track &track) const;
     Event makeHighBandwidthEvent(const QDateTime &at, const ProcessRate &rate,
                                  const Track &track) const;
+    Event makeBackgroundEvent(const QDateTime &at, const ProcessRate &rate,
+                              const Track &track) const;
     Event makeUnresolvedEvent(const QDateTime &at, quint64 bytes,
                               const QDateTime &windowStart,
                               const QStringList &contributors) const;

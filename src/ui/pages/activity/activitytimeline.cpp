@@ -56,6 +56,10 @@ QColor toneColor(const QString &tone, const Theme::Palette &p)
         return Theme::qcolor(p.semanticSuccess);
     if (tone == QLatin1String("info"))
         return Theme::qcolor(p.semanticInfo);
+    if (tone == QLatin1String("accent"))
+        return Theme::qcolor(p.accentPrimary);
+    if (tone == QLatin1String("muted"))
+        return Theme::qcolor(p.textMuted);
     return Theme::qcolor(p.semanticWarning);
 }
 

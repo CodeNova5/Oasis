@@ -66,6 +66,13 @@ void Detector::setSettings(const DetectorSettings &settings)
         std::max(0, m_settings.highBandwidthCooldownSeconds);
     if (m_settings.highBandwidthFloorBytesPerSecond == 0)
         m_settings.highBandwidthFloorBytesPerSecond = 1;
+    m_settings.backgroundWindowSeconds = std::max(1, m_settings.backgroundWindowSeconds);
+    m_settings.backgroundCooldownSeconds =
+        std::max(0, m_settings.backgroundCooldownSeconds);
+    m_settings.crossCategoryCooldownSeconds =
+        std::max(0, m_settings.crossCategoryCooldownSeconds);
+    if (m_settings.backgroundVolumeThreshold == 0)
+        m_settings.backgroundVolumeThreshold = 1;
 }
 
 void Detector::clear()
@@ -144,6 +151,7 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
             && cooledDown) {
             events.append(makeSpikeEvent(at, rate, track));
             track.lastEventMs = nowMs;
+            track.lastAnyEventMs = nowMs;
             track.ongoing = true;
             track.evidence.clear();
             track.spikeBytes = 0;
@@ -172,15 +180,62 @@ QList<Event> Detector::observe(const QDateTime &at, const QList<ProcessRate> &ra
             || nowMs - track.lastHighEventMs
                    >= static_cast<qint64>(m_settings.highBandwidthCooldownSeconds)
                           * 1000;
+        const bool crossCooledDown = track.lastAnyEventMs == 0
+            || nowMs - track.lastAnyEventMs
+                   >= static_cast<qint64>(m_settings.crossCategoryCooldownSeconds)
+                          * 1000;
         if (!track.ongoing
             && !track.highOngoing
+            && crossCooledDown
             && track.highSeconds >= m_settings.highBandwidthSustainSeconds
             && highCooledDown) {
             events.append(makeHighBandwidthEvent(at, rate, track));
             track.lastHighEventMs = nowMs;
+            track.lastAnyEventMs = nowMs;
             track.highOngoing = true;
             track.highBytes = 0;
             track.highPeakBytesPerSecond = 0;
+        }
+
+        // ── Unusual background consumption ────────────────────────────────
+        // Accumulated per rolling window instead of per beat: the question is
+        // how much data left or arrived while the user was doing something
+        // else, which is a volume question. Foreground bytes are accumulated
+        // too, so an application the user was actively using is never reported
+        // as background usage.
+        if (track.backgroundWindowStartMs == 0
+            || nowMs - track.backgroundWindowStartMs
+                   > static_cast<qint64>(m_settings.backgroundWindowSeconds) * 1000) {
+            track.backgroundBytes = 0;
+            track.backgroundForegroundBytes = 0;
+            track.backgroundPeakBytesPerSecond = 0;
+            track.backgroundWindowStartMs = nowMs;
+        }
+
+        if (rate.foreground) {
+            track.backgroundForegroundBytes += current;
+        } else {
+            track.backgroundBytes += current;
+            track.backgroundPeakBytesPerSecond =
+                std::max(track.backgroundPeakBytesPerSecond, current);
+        }
+
+        const bool backgroundCooledDown = track.lastBackgroundEventMs == 0
+            || nowMs - track.lastBackgroundEventMs
+                   >= static_cast<qint64>(m_settings.backgroundCooldownSeconds) * 1000;
+        if (crossCooledDown
+            && track.lastAnyEventMs != nowMs // a high-bandwidth card already claimed this beat
+            && backgroundCooledDown
+            && !track.ongoing
+            && track.backgroundBytes >= m_settings.backgroundVolumeThreshold
+            && track.backgroundBytes > track.backgroundForegroundBytes) {
+            events.append(makeBackgroundEvent(at, rate, track));
+            track.lastBackgroundEventMs = nowMs;
+            track.lastAnyEventMs = nowMs;
+            track.backgroundBytes = 0;
+            track.backgroundForegroundBytes = 0;
+            track.backgroundPeakBytesPerSecond = 0;
+            track.backgroundWindowStartMs = nowMs;
         }
 
         track.history.append(current);
@@ -351,6 +406,47 @@ Event Detector::makeHighBandwidthEvent(const QDateTime &at, const ProcessRate &r
                          QStringLiteral("%1 s").arg(track.highSeconds) });
     if (rate.foreground)
         event.extra.append({ QStringLiteral("Foreground"), QStringLiteral("Yes") });
+    event.id = makeEventId(event.category, at, rate.name,
+                           QString::number(rate.pid));
+    return event;
+}
+
+Event Detector::makeBackgroundEvent(const QDateTime &at, const ProcessRate &rate,
+                                   const Track &track) const
+{
+    Event event;
+    event.at = at;
+    event.category = Category::Background;
+    event.badge = QStringLiteral("Background Usage");
+    event.title = QStringLiteral("%1 moved data while in the background").arg(rate.name);
+    event.description = QStringLiteral(
+        "Most of this transfer happened while the application was not in the "
+        "foreground. Updates and sync can do this legitimately; it is reported "
+        "so data used without the user watching is not invisible.");
+    event.appName = rate.name;
+    event.appPath = rate.path;
+    event.pid = rate.pid;
+    event.destination = rate.destination;
+    event.attribution = rate.attribution;
+    event.volumeBytes = track.backgroundBytes;
+    event.peakBytesPerSecond = track.backgroundPeakBytesPerSecond;
+
+    const quint64 total = track.backgroundBytes + track.backgroundForegroundBytes;
+    if (total > 0) {
+        const int share = int((track.backgroundBytes * 100) / total);
+        event.extra.append({ QStringLiteral("Background share"),
+                             QStringLiteral("%1%").arg(share) });
+    }
+    if (track.backgroundWindowStartMs > 0) {
+        const QDateTime windowStart =
+            QDateTime::fromMSecsSinceEpoch(track.backgroundWindowStartMs);
+        event.extra.append({
+            QStringLiteral("Window"),
+            QStringLiteral("%1–%2").arg(
+                windowStart.toString(QStringLiteral("HH:mm:ss")),
+                at.toString(QStringLiteral("HH:mm:ss")))
+        });
+    }
     event.id = makeEventId(event.category, at, rate.name,
                            QString::number(rate.pid));
     return event;

@@ -67,6 +67,7 @@ QString categoryTone(Category category)
     switch (category) {
     case Category::Spike:      return QStringLiteral("warning");
     case Category::HighBandwidth: return QStringLiteral("accent");
+    case Category::Background:  return QStringLiteral("muted");
     case Category::Unresolved: return QStringLiteral("danger");
     case Category::Policy:     return QStringLiteral("success");
     case Category::Respawn:    return QStringLiteral("info");
@@ -79,6 +80,7 @@ QString categoryKey(Category category)
     switch (category) {
     case Category::Spike:      return QStringLiteral("spike");
     case Category::HighBandwidth: return QStringLiteral("high-bandwidth");
+    case Category::Background:  return QStringLiteral("background");
     case Category::Unresolved: return QStringLiteral("unresolved");
     case Category::Policy:     return QStringLiteral("policy");
     case Category::Respawn:    return QStringLiteral("respawn");
@@ -91,6 +93,7 @@ QString categoryLabel(Category category)
     switch (category) {
     case Category::Spike:      return QStringLiteral("Spikes & Surges");
     case Category::HighBandwidth: return QStringLiteral("High Bandwidth");
+    case Category::Background:  return QStringLiteral("Background Usage");
     case Category::Unresolved: return QStringLiteral("Unrecognized");
     case Category::Policy:     return QStringLiteral("Policy Actions");
     case Category::Respawn:    return QStringLiteral("Respawns");
@@ -103,6 +106,7 @@ QString categoryBadge(Category category)
     switch (category) {
     case Category::Spike:      return QStringLiteral("Spike");
     case Category::HighBandwidth: return QStringLiteral("High Bandwidth");
+    case Category::Background:  return QStringLiteral("Background");
     case Category::Unresolved: return QStringLiteral("Unresolved");
     case Category::Policy:     return QStringLiteral("Policy");
     case Category::Respawn:    return QStringLiteral("Respawn");
@@ -124,6 +128,10 @@ bool categoryFromKey(const QString &key, Category *category)
         *category = Category::HighBandwidth;
         return true;
     }
+    if (normalized == QLatin1String("background")) {
+        *category = Category::Background;
+        return true;
+    }
     if (normalized == QLatin1String("unresolved")) {
         *category = Category::Unresolved;
         return true;
@@ -141,8 +149,8 @@ bool categoryFromKey(const QString &key, Category *category)
 
 QList<Category> allCategories()
 {
-    return { Category::Spike, Category::HighBandwidth, Category::Unresolved,
-             Category::Policy, Category::Respawn };
+    return { Category::Spike, Category::HighBandwidth, Category::Background,
+             Category::Unresolved, Category::Policy, Category::Respawn };
 }
 
 QString makeEventId(Category category, const QDateTime &at, const QString &subject,
