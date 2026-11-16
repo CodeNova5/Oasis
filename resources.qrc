@@ -6,4 +6,12 @@
     <qresource prefix="/theme">
         <file alias="styles.qss">src/ui/theme/styles.qss</file>
     </qresource>
+    <qresource prefix="/fonts">
+        <file alias="Inter-Regular.ttf">resources/fonts/Inter-Regular.ttf</file>
+        <file alias="Inter-Medium.ttf">resources/fonts/Inter-Medium.ttf</file>
+        <file alias="Inter-SemiBold.ttf">resources/fonts/Inter-SemiBold.ttf</file>
+        <file alias="Inter-Bold.ttf">resources/fonts/Inter-Bold.ttf</file>
+        <file alias="JetBrainsMono-Regular.ttf">resources/fonts/JetBrainsMono-Regular.ttf</file>
+        <file alias="JetBrainsMono-Medium.ttf">resources/fonts/JetBrainsMono-Medium.ttf</file>
+    </qresource>
 </RCC>

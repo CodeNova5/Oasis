@@ -75,31 +75,6 @@ QString ruleText(const Applications::Row &row)
     return QStringLiteral("Allow");
 }
 
-QString statusText(const Applications::Row &row)
-{
-    if (blockedRow(row)) return QStringLiteral("Blocked");
-    if (row.rxBytesPerSecond + row.txBytesPerSecond > 0)
-        return QStringLiteral("Active");
-    return QStringLiteral("Idle");
-}
-
-QString statusDetail(const Applications::Row &row)
-{
-    if (blockedRow(row)) return QStringLiteral("—");
-    if (row.rxBytesPerSecond + row.txBytesPerSecond > 0)
-        return QStringLiteral("now");
-    return row.totalBytes > 0 ? QStringLiteral("no recent traffic")
-                              : QStringLiteral("—");
-}
-
-QString statusTone(const Applications::Row &row)
-{
-    if (blockedRow(row)) return QStringLiteral("muted");
-    if (row.rxBytesPerSecond + row.txBytesPerSecond > 0)
-        return QStringLiteral("success");
-    return QStringLiteral("warning");
-}
-
 bool matchesFilter(const Applications::Row &row, Applications::Filter filter)
 {
     switch (filter) {
@@ -362,7 +337,7 @@ class ApplicationsPageTableModel : public QAbstractTableModel
 public:
     enum Column {
         Application = 0,
-        Status,
+        Total,
         Rule,
         Activity,
         ColumnCount
@@ -375,9 +350,7 @@ public:
         PidRole,
         IconRole,
         RuleRole,
-        StatusRole,
-        StatusDetailRole,
-        ToneRole,
+        TotalRole,
         RxRateRole,
         TxRateRole,
         SparkRole
@@ -433,8 +406,8 @@ public:
             switch (column) {
             case Application:
                 return applicationLabel(row);
-            case Status:
-                return statusText(row);
+            case Total:
+                return formattedBytes(row.totalBytes);
             case Rule:
                 return ruleText(row);
             case Activity:
@@ -449,8 +422,9 @@ public:
         case Qt::ToolTipRole:
             if (column == Application)
                 return row.path.trimmed().isEmpty() ? row.name : row.path;
-            if (column == Status)
-                return statusDetail(row);
+            if (column == Total)
+                return QStringLiteral("Total data consumed this session: %1")
+                    .arg(formattedBytes(row.totalBytes));
             if (column == Rule)
                 return QStringLiteral("Network rule for %1: %2")
                     .arg(applicationLabel(row), ruleText(row));
@@ -472,11 +446,8 @@ public:
             switch (column) {
             case Application:
                 return applicationLabel(row).toLower();
-            case Status:
-                if (blockedRow(row)) return QStringLiteral("0");
-                if (row.rxBytesPerSecond + row.txBytesPerSecond > 0)
-                    return QStringLiteral("1");
-                return QStringLiteral("2");
+            case Total:
+                return QVariant::fromValue<qulonglong>(row.totalBytes);
             case Rule:
                 if (ruleToken(row) == QLatin1String("block")) return QStringLiteral("0");
                 if (ruleToken(row) == QLatin1String("ask")) return QStringLiteral("1");
@@ -511,12 +482,8 @@ public:
         }
         case RuleRole:
             return ruleToken(row);
-        case StatusRole:
-            return statusText(row);
-        case StatusDetailRole:
-            return statusDetail(row);
-        case ToneRole:
-            return statusTone(row);
+        case TotalRole:
+            return formattedBytes(row.totalBytes);
         default:
             break;
         }
@@ -531,12 +498,14 @@ public:
         if (role == Qt::DisplayRole) {
             switch (section) {
             case Application: return QStringLiteral("Application");
-            case Status:      return QStringLiteral("Status");
+            case Total:       return QStringLiteral("Total consumed");
             case Rule:        return QStringLiteral("Rule");
             case Activity:    return QStringLiteral("Activity");
             default:          return {};
             }
         }
+        if (role == Qt::ToolTipRole && section == Total)
+            return QStringLiteral("Total data consumed by this application this session.");
         if (role == Qt::ToolTipRole && section == Rule)
             return QStringLiteral("Allow, Ask or Block network access for this application.");
         if (role == Qt::ToolTipRole && section == Activity)
@@ -718,80 +687,6 @@ public:
         Q_UNUSED(option);
         Q_UNUSED(index);
         return QSize(280, kRowHeight);
-    }
-};
-
-class StatusDelegate : public QStyledItemDelegate
-{
-public:
-    explicit StatusDelegate(QObject *parent = nullptr)
-        : QStyledItemDelegate(parent)
-    {
-    }
-
-    void paint(QPainter *painter, const QStyleOptionViewItem &option,
-               const QModelIndex &index) const override
-    {
-        QStyleOptionViewItem opt(option);
-        initStyleOption(&opt, index);
-        opt.text.clear();
-        QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
-        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
-
-        const QString label = index.data(ApplicationsPageTableModel::StatusRole).toString();
-        const QString detail = index.data(ApplicationsPageTableModel::StatusDetailRole).toString();
-        const QString tone = index.data(ApplicationsPageTableModel::ToneRole).toString();
-        const Theme::Palette palette = Theme::palette(ThemeManager::instance().isDark());
-
-        QColor dot = Theme::qcolor(palette.textMuted);
-        if (tone == QLatin1String("success"))
-            dot = Theme::qcolor(palette.semanticSuccess);
-        else if (tone == QLatin1String("warning"))
-            dot = Theme::qcolor(palette.semanticWarning);
-        else if (tone == QLatin1String("danger"))
-            dot = Theme::qcolor(palette.semanticDanger);
-
-        QFont primary = opt.font;
-        primary.setPixelSize(Theme::Type::Metadata + 1);
-        primary.setWeight(QFont::DemiBold);
-        const QFontMetrics primaryMetrics(primary);
-
-        QFont secondary = opt.font;
-        secondary.setPixelSize(Theme::Type::Metadata);
-        const QFontMetrics secondaryMetrics(secondary);
-
-        const int lineOne = primaryMetrics.height();
-        const int lineTwo = secondaryMetrics.height();
-        const int top = opt.rect.center().y() - (lineOne + lineTwo) / 2;
-        const int left = opt.rect.left() + Theme::Dim::SpaceLg;
-        const int dotSize = 7;
-
-        painter->save();
-        painter->setRenderHint(QPainter::Antialiasing, true);
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(dot);
-        painter->drawEllipse(QRect(left, top + (lineOne - dotSize) / 2,
-                                   dotSize, dotSize));
-
-        const int textLeft = left + dotSize + Theme::Dim::SpaceSm;
-        painter->setFont(primary);
-        painter->setPen(Theme::qcolor(palette.textPrimary));
-        painter->drawText(QRect(textLeft, top, opt.rect.right() - textLeft, lineOne),
-                          Qt::AlignLeft | Qt::AlignVCenter, label);
-
-        painter->setFont(secondary);
-        painter->setPen(Theme::qcolor(palette.textMuted));
-        painter->drawText(QRect(textLeft, top + lineOne, opt.rect.right() - textLeft, lineTwo),
-                          Qt::AlignLeft | Qt::AlignVCenter, detail);
-        painter->restore();
-    }
-
-    QSize sizeHint(const QStyleOptionViewItem &option,
-                   const QModelIndex &index) const override
-    {
-        Q_UNUSED(option);
-        Q_UNUSED(index);
-        return QSize(170, kRowHeight);
     }
 };
 
@@ -1097,8 +992,6 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
     m_table->verticalHeader()->setMinimumSectionSize(kRowHeight);
     m_table->setItemDelegateForColumn(ApplicationsPageTableModel::Application,
                                       new ApplicationNameDelegate(m_table));
-    m_table->setItemDelegateForColumn(ApplicationsPageTableModel::Status,
-                                      new StatusDelegate(m_table));
     m_table->setItemDelegateForColumn(ApplicationsPageTableModel::Rule,
                                       new RuleDelegate(m_table));
     m_table->setItemDelegateForColumn(ApplicationsPageTableModel::Activity,
@@ -1112,7 +1005,7 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
     header->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     header->setSectionResizeMode(ApplicationsPageTableModel::Application,
                                  QHeaderView::Stretch);
-    header->setSectionResizeMode(ApplicationsPageTableModel::Status,
+    header->setSectionResizeMode(ApplicationsPageTableModel::Total,
                                  QHeaderView::ResizeToContents);
     header->setSectionResizeMode(ApplicationsPageTableModel::Rule,
                                  QHeaderView::Fixed);
@@ -1685,7 +1578,7 @@ void ApplicationsPage::showSortMenu()
 
     const QList<QPair<QString, int>> columns = {
         { QStringLiteral("Application"), ApplicationsPageTableModel::Application },
-        { QStringLiteral("Status"), ApplicationsPageTableModel::Status },
+        { QStringLiteral("Total consumed"), ApplicationsPageTableModel::Total },
         { QStringLiteral("Rule"), ApplicationsPageTableModel::Rule },
         { QStringLiteral("Activity"), ApplicationsPageTableModel::Activity }
     };

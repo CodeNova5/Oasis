@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QDebug>
 #include <QFile>
+#include <QFontDatabase>
 #include <QHash>
 #include <QRegularExpression>
 
@@ -87,6 +88,17 @@ ThemeManager::ThemeManager(QObject *parent)
     : QObject(parent)
     , m_template(loadTemplate())
 {
+    // Bundled so the policy editor keeps the mockup's type on machines where
+    // Inter and JetBrains Mono are not installed system-wide.
+    static const char *const fonts[] = {
+        "Inter-Regular.ttf",     "Inter-Medium.ttf",  "Inter-SemiBold.ttf",
+        "Inter-Bold.ttf",        "JetBrainsMono-Regular.ttf", "JetBrainsMono-Medium.ttf",
+    };
+    for (const char *name : fonts) {
+        const QString path = QStringLiteral(":/fonts/%1").arg(QLatin1String(name));
+        if (QFontDatabase::addApplicationFont(path) < 0)
+            qWarning() << "ThemeManager: cannot register" << path;
+    }
 }
 
 QString ThemeManager::loadTemplate()
