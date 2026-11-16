@@ -11,6 +11,8 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QStyle>
+#include <QVBoxLayout>
+#include <QWidget>
 
 namespace {
 
@@ -33,12 +35,19 @@ AppHeader::AppHeader(QWidget *parent)
                                Theme::Dim::SpaceXl, 0);
     layout->setSpacing(Theme::Dim::SpaceMd);
 
-    m_title = new QLabel(this);
+    auto *titleBlock = new QWidget(this);
+    auto *titleLayout = new QVBoxLayout(titleBlock);
+    titleLayout->setContentsMargins(0, 0, 0, 0);
+    titleLayout->setSpacing(2);
+
+    m_title = new QLabel(titleBlock);
     m_title->setProperty("uiRole", QStringLiteral("pageTitle"));
 
-    m_subtitle = new QLabel(this);
+    m_subtitle = new QLabel(titleBlock);
     m_subtitle->setProperty("uiRole", QStringLiteral("secondary"));
     m_subtitle->hide();
+    titleLayout->addWidget(m_title);
+    titleLayout->addWidget(m_subtitle);
 
     m_pill = new QLabel(QStringLiteral("● Stopped"), this);
     m_pill->setProperty("uiRole", QStringLiteral("badge"));
@@ -58,9 +67,15 @@ AppHeader::AppHeader(QWidget *parent)
     m_minimizeButton->setCursor(Qt::PointingHandCursor);
     m_minimizeButton->setToolTip(QStringLiteral("Minimize to the system tray."));
 
-    layout->addWidget(m_title);
-    layout->addWidget(m_subtitle, 0, Qt::AlignBottom);
+    m_actionsHost = new QWidget(this);
+    auto *actionsLayout = new QHBoxLayout(m_actionsHost);
+    actionsLayout->setContentsMargins(0, 0, 0, 0);
+    actionsLayout->setSpacing(0);
+    m_actionsHost->hide();
+
+    layout->addWidget(titleBlock);
     layout->addStretch(1);
+    layout->addWidget(m_actionsHost, 0, Qt::AlignVCenter);
     layout->addWidget(m_pill);
     layout->addWidget(m_themeButton);
     layout->addWidget(m_minimizeButton);
@@ -80,6 +95,29 @@ void AppHeader::setPage(const QString &title, const QString &subtitle)
     m_title->setText(title);
     m_subtitle->setText(subtitle);
     m_subtitle->setVisible(!subtitle.isEmpty());
+}
+
+void AppHeader::setPageActions(QWidget *actions)
+{
+    if (!actions || actions == m_actions)
+        return;
+
+    auto *actionsLayout = qobject_cast<QHBoxLayout *>(m_actionsHost->layout());
+    if (m_actions && actionsLayout)
+        actionsLayout->removeWidget(m_actions);
+
+    m_actions = actions;
+    m_actions->setParent(m_actionsHost);
+    if (actionsLayout)
+        actionsLayout->addWidget(m_actions);
+    // Reparenting hides a widget; showing it here lets the host's visibility
+    // govern the toolbar instead of leaving it explicitly hidden.
+    m_actions->show();
+}
+
+void AppHeader::setPageActionsVisible(bool visible)
+{
+    m_actionsHost->setVisible(visible && m_actions);
 }
 
 void AppHeader::setMonitoringState(MonitorState state)

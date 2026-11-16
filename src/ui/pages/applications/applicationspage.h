@@ -84,6 +84,10 @@ public:
     /// Opens (or refreshes) the right-side details drawer for one application.
     void showDetails(const Applications::Details &details);
 
+    /// Search, filter, sort and overflow controls; the shell hosts these in the
+    /// page header so the title and table share the mock's vertical rhythm.
+    QWidget *actionsWidget() const { return m_actionsWidget; }
+
 signals:
     /// Every action is performed by the shell through an existing entry point;
     /// the page only says which application the action targets.
@@ -118,6 +122,7 @@ private:
     /// Copies the row behind a proxy index. False when the index is not a row.
     bool rowForIndex(const QModelIndex &index, Applications::Row *row) const;
 
+    QWidget *m_actionsWidget = nullptr;
     QLineEdit *m_search = nullptr;
     QAction *m_searchAction = nullptr;
     QPushButton *m_filterButton = nullptr;

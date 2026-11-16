@@ -2118,13 +2118,15 @@ QIcon NetworkWidget::getIconByPid(quint32 pid, const QString &procName)
     SHFILEINFOW sfi = {};
     QIcon icon;
 
+    // The Applications table renders 32 px icons, so ask the shell for the
+    // large (32 px) image instead of scaling its 16 px small icon up.
     if (!fullPath.isEmpty()) {
-        if (SHGetFileInfoW(fullPath.toStdWString().c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_SMALLICON)) {
+        if (SHGetFileInfoW(fullPath.toStdWString().c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON)) {
             if (sfi.hIcon) { icon = iconFromHICON(sfi.hIcon); DestroyIcon(sfi.hIcon); return icon; }
         }
     }
 
-    if (SHGetFileInfoW(procName.toStdWString().c_str(), FILE_ATTRIBUTE_NORMAL, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES)) {
+    if (SHGetFileInfoW(procName.toStdWString().c_str(), FILE_ATTRIBUTE_NORMAL, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES)) {
             if (sfi.hIcon) { icon = iconFromHICON(sfi.hIcon); DestroyIcon(sfi.hIcon); }
     }
     return icon;
@@ -2139,7 +2141,7 @@ QIcon NetworkWidget::genericExecutableIcon() const
     // file on disk; SHGFI_USEFILEATTRIBUTES makes the extension sufficient.
     SHFILEINFOW sfi = {};
     if (SHGetFileInfoW(L"application.exe", FILE_ATTRIBUTE_NORMAL, &sfi, sizeof(sfi),
-                       SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES)
+                       SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES)
         && sfi.hIcon) {
         m_genericExecutableIcon = iconFromHICON(sfi.hIcon);
         DestroyIcon(sfi.hIcon);

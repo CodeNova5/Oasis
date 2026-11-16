@@ -1,6 +1,6 @@
 /**
  * @file    appheader.h
- * @brief   Persistent 60 px page header (title, monitoring pill, utilities).
+ * @brief   Persistent page header (stacked title, page actions, utilities).
  * @author  Oasis
  */
 #pragma once
@@ -8,6 +8,7 @@
 
 class QLabel;
 class QPushButton;
+class QWidget;
 
 class AppHeader : public QFrame
 {
@@ -18,6 +19,8 @@ public:
     explicit AppHeader(QWidget *parent = nullptr);
 
     void setPage(const QString &title, const QString &subtitle = QString());
+    void setPageActions(QWidget *actions);
+    void setPageActionsVisible(bool visible);
     void setMonitoringState(MonitorState state);
     void setDarkMode(bool dark);
 
@@ -34,6 +37,8 @@ private:
 
     QLabel      *m_title = nullptr;
     QLabel      *m_subtitle = nullptr;
+    QWidget     *m_actionsHost = nullptr;
+    QWidget     *m_actions = nullptr;
     QLabel      *m_pill = nullptr;
     QPushButton *m_themeButton = nullptr;
     QPushButton *m_minimizeButton = nullptr;

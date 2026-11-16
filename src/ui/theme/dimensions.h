@@ -25,7 +25,7 @@ inline constexpr int Space3Xl = 40;
 // ── Shell ───────────────────────────────────────────────────────────────────
 inline constexpr int SidebarExpanded = 232;
 inline constexpr int SidebarCollapsed = 64;
-inline constexpr int HeaderHeight = 60;
+inline constexpr int HeaderHeight = 84;
 inline constexpr int StatusBarHeight = 28;
 
 // ── Content ─────────────────────────────────────────────────────────────────

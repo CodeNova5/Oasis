@@ -9,7 +9,7 @@
 
 class QVBoxLayout;
 class QButtonGroup;
-class QToolButton;
+class QPushButton;
 
 class AppSidebar : public QFrame
 {
@@ -33,11 +33,11 @@ signals:
     void itemActivated(int index);
 
 private:
-    QToolButton *createItem(const QString &label, int index);
+    QPushButton *createItem(const QString &label, int index);
 
     QVBoxLayout   *m_topLayout = nullptr;
     QVBoxLayout   *m_bottomLayout = nullptr;
     QButtonGroup  *m_group = nullptr;
-    QVector<QToolButton *> m_items;
+    QVector<QPushButton *> m_items;
     int            m_current = -1;
 };

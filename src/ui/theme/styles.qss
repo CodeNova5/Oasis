@@ -41,9 +41,8 @@ QToolTip {
 
 /* ── Application shell ──────────────────────────────────────────────────── */
 QFrame#headerFrame {
-    background-color: @surface-sidebar;
+    background-color: @surface-window;
     border: none;
-    border-bottom: 1px solid @border-default;
     min-height: @header-height;
     max-height: @header-height;
 }
@@ -184,23 +183,25 @@ QLabel#dropHint:hover {
 }
 
 /* ── Sidebar navigation (used from Phase 2 on) ──────────────────────────── */
-QToolButton[uiRole="navItem"] {
+QPushButton[uiRole="navItem"] {
     background: transparent;
     border: none;
+    border-left: 3px solid transparent;
     border-radius: @radius-control;
     color: @text-secondary;
     font-size: @font-size-body;
     font-weight: 400;
-    min-height: @control-height;
-    padding: 0 @space-md;
+    min-height: 40px;
+    padding: 0 9px;
     text-align: left;
 }
-QToolButton[uiRole="navItem"]:hover {
+QPushButton[uiRole="navItem"]:hover {
     background-color: @surface-hover;
     color: @text-primary;
 }
-QToolButton[uiRole="navItem"]:checked {
+QPushButton[uiRole="navItem"]:checked {
     background-color: @accent-subtle;
+    border-left-color: @accent-primary;
     color: @text-primary;
     font-weight: 600;
 }

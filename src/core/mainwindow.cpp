@@ -1286,6 +1286,8 @@ void MainWindow::buildShell()
               QStringLiteral("Applications"),
               QStringLiteral("Manage network access for each application."));
     m_applicationsIndex = m_screenTitles.size() - 1;
+    // Applications is the first screen whose controls belong in the page header.
+    m_header->setPageActions(m_applications->actionsWidget());
     addScreen(QStringLiteral("Connections"),
               makePlaceholderPage(QStringLiteral("Connections"),
                   QStringLiteral("Endpoint attribution is being rebuilt as a dedicated "
@@ -1514,9 +1516,11 @@ void MainWindow::navigateTo(int index)
     m_pages->setCurrentIndex(index);
     if (m_sidebar)
         m_sidebar->setCurrentIndex(index);
-    if (m_header && index < m_screenTitles.size())
+    if (m_header && index < m_screenTitles.size()) {
         m_header->setPage(m_screenTitles.at(index),
                           m_screenSubtitles.value(index));
+        m_header->setPageActionsVisible(index == m_applicationsIndex);
+    }
 }
 
 void MainWindow::setupWidgets()

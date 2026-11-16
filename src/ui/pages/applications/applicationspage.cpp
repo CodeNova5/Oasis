@@ -1029,23 +1029,23 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
 
     auto *content = new QWidget(this);
     auto *layout = new QVBoxLayout(content);
-    layout->setContentsMargins(Theme::Dim::PagePaddingH, Theme::Dim::PagePaddingV,
+    layout->setContentsMargins(Theme::Dim::PagePaddingH, Theme::Dim::SpaceLg,
                                Theme::Dim::PagePaddingH, Theme::Dim::PagePaddingV);
     layout->setSpacing(Theme::Dim::SpaceLg);
     rootLayout->addWidget(content, 1);
 
     // ── Toolbar: search, filters, sort and page actions ─────────────────────
-    auto *toolbar = new QWidget(this);
+    m_actionsWidget = new QWidget(this);
+    auto *toolbar = m_actionsWidget;
     auto *toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(0, 0, 0, 0);
     toolbarLayout->setSpacing(Theme::Dim::SpaceSm);
-    toolbarLayout->addStretch(1);
 
     m_search = new QLineEdit(toolbar);
     m_search->setPlaceholderText(QStringLiteral("Search applications…"));
     m_search->setClearButtonEnabled(true);
-    m_search->setMinimumWidth(280);
-    m_search->setMaximumWidth(380);
+    m_search->setMinimumWidth(260);
+    m_search->setMaximumWidth(340);
     m_search->setFixedHeight(Theme::Dim::InputHeight);
     m_search->setAccessibleName(QStringLiteral("Search applications"));
     m_searchAction = m_search->addAction(QIcon(), QLineEdit::LeadingPosition);
@@ -1073,8 +1073,6 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
     connect(m_filterButton, &QPushButton::clicked, this, &ApplicationsPage::showFilterMenu);
     connect(m_sortButton, &QPushButton::clicked, this, &ApplicationsPage::showSortMenu);
     connect(m_moreButton, &QPushButton::clicked, this, &ApplicationsPage::showMoreMenu);
-
-    layout->addWidget(toolbar);
 
     // ── Table ───────────────────────────────────────────────────────────────
     m_model = new ApplicationsPageTableModel(this);
