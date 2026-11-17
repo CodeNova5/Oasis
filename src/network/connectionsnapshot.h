@@ -1,14 +1,13 @@
 /**
  * @file    connectionsnapshot.h
- * @brief   Screen 05 — Connections: one display-ready row per application and
- *          destination, assembled from the attribution evidence the capture
- *          layer already produces.
+ * @brief   Screen 05 — Connections: one display-ready row per application,
+ *          assembled from the attribution evidence the capture layer already
+ *          produces.
  *
  * The snapshot is deliberately plain: no widget, no policy, no enforcement
  * path. NetworkWidget fills it once per one-second beat, and ConnectionsPage
- * renders it. A row groups every observed socket that shares one application
- * and one destination, so rotating CDN addresses collapse into a single
- * honest entry while the drawer still lists each endpoint.
+ * renders it. A row groups every observed socket that shares one application;
+ * the table's expandable details still list each endpoint and destination.
  *
  * @author  Oasis
  */
@@ -42,7 +41,7 @@ struct Endpoint
     quint32 packets = 0;
 };
 
-/// One table row: an application talking to one destination.
+/// One table row: an application with all observed destinations as endpoints.
 struct Row
 {
     QString id;                      // stable identity across beats
@@ -57,8 +56,8 @@ struct Row
     QString publisher;               // verified signer, empty when unknown
     QString activity;                // activity classification summary, if known
 
-    QString destination;             // hostname, or the raw address
-    bool hasDomain = false;          // true only when a name was observed
+    QString destination;             // representative hostname, or raw address
+    bool hasDomain = false;          // true when any endpoint has a name
     QStringList addresses;           // every remote address in the group
     QStringList domainNames;         // every observed name for the group
     QString ports;                   // "443 / TCP" or "Multiple ports / TCP"

@@ -2003,16 +2003,16 @@ QList<Connections::Row> NetworkWidget::connectionGroups() const
                 domain = connection.domains.first().trimmed();
             const QString destination = domain.isEmpty() ? address : domain;
 
-            // Group by application identity, not by process instance. A browser
-            // runs one process per tab and site isolation, and all of those
-            // instances are the same application; keying on the pid would list
-            // "chrome.exe" once per renderer process.
+            // Group by application identity, not by process instance or
+            // destination. A browser runs one process per tab and site
+            // isolation, so the table must show one application row with all
+            // of its sockets underneath it.
             QString appKey = snapshot.identityId.trimmed();
             if (appKey.isEmpty())
                 appKey = QStringLiteral("name:%1").arg(snapshot.name.trimmed().toLower());
             if (appKey == QLatin1String("name:"))
                 appKey = QStringLiteral("pid:%1").arg(snapshot.pid);
-            const QString id = appKey + QLatin1Char('|') + destination.toLower();
+            const QString id = appKey;
             const quint64 processBytes = snapshot.rxBytes + snapshot.txBytes;
 
             int index = groupIndex.value(id, -1);
@@ -2062,6 +2062,14 @@ QList<Connections::Row> NetworkWidget::connectionGroups() const
             // path, so an empty path can be filled from any of them.
             if (row.path.isEmpty() && consumer)
                 row.path = consumer->path;
+
+            // Prefer a resolved name when the first socket was only identified
+            // by its address. Additional names remain available in the row's
+            // domain list and expanded endpoint details.
+            if (!row.hasDomain && !domain.isEmpty()) {
+                row.destination = destination;
+                row.hasDomain = true;
+            }
 
             Connections::Endpoint endpoint;
             endpoint.address = address;

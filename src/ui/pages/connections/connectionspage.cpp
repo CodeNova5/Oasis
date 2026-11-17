@@ -1123,6 +1123,8 @@ void ConnectionsPage::renderInspector()
 
     m_inspectorSubtitle->setText(inspectorSubtitle(*row));
 
+    const quint16 port = rowPort(*row);
+
     clearLayout(m_inspectorBody);
 
     auto addSection = [this](const QString &title,
