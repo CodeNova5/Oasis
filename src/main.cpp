@@ -76,20 +76,16 @@ static void elevate(const QString &exe)
 // -----------------------------------------------------------------------------
 int main(int argc, char *argv[])
 {
-    // -- CRITICAL DPI AWARENESS SETTINGS --------------------------------------
-    // MUST be set before QApplication initialization to guarantee compatibility
-    // across all Windows versions and scaling factors.
-
-    // Disable High DPI Scaling globally
-    qputenv("QT_ENABLE_HIGHDPI_SCALING", "0");
-    qputenv("QT_AUTO_SCREEN_SCALE_FACTOR", "0");
-
-    // Force Windows to treat the application as DPI Unaware
-    qputenv("QT_QPA_PLATFORM", "windows:dpiawareness=0");
-
-#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
-    QApplication::setAttribute(Qt::AA_DisableHighDpiScaling);
-#endif
+    // -- DPI awareness --------------------------------------------------------
+    // Per-monitor (V2) awareness is declared in app.manifest and embedded into
+    // the executable via appicon.rc, so Windows applies it before main() runs:
+    // the window receives WM_DPICHANGED and each screen reports its own scale
+    // factor. Qt 6 turns high-DPI scaling on by itself; pinning the rounding
+    // policy to PassThrough keeps fractional factors (125%, 150%) at their true
+    // ratio so the window and the policy dialog scale with the monitor instead
+    // of snapping between 100% and 200%.
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
     // -- App Initialization ---------------------------------------------------
     QApplication app(argc, argv);
@@ -150,7 +146,7 @@ int main(int argc, char *argv[])
     // -- Show main window -----------------------------------------------------
     MainWindow w;
     w.setWindowIcon(appIcon);
-    w.show();
+    w.showMaximized();
 
     return app.exec();
 }

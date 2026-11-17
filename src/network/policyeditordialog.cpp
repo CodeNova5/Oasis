@@ -443,6 +443,25 @@ QLabel *makeLabel(const QString &text, const QString &objectName, QWidget *paren
     return label;
 }
 
+// QScrollArea::sizeHint() caps the height it reports to 24 text lines, which
+// made the whole dialog stop at ~496 px. Report the real content height instead
+// and let showEvent() cap it against the screen.
+class PolicyScrollArea : public QScrollArea
+{
+public:
+    using QScrollArea::QScrollArea;
+
+    QSize sizeHint() const override
+    {
+        QSize hint = QScrollArea::sizeHint();
+        if (widget() && widgetResizable())
+            hint.setHeight(widget()->sizeHint().height() + 2 * frameWidth());
+        if (maximumHeight() < QWIDGETSIZE_MAX)
+            hint.setHeight(qMin(hint.height(), maximumHeight()));
+        return hint;
+    }
+};
+
 } // namespace
 
 // ─── Painted controls ───────────────────────────────────────────────────────
@@ -798,7 +817,7 @@ void PolicyEditorDialog::buildUi()
     cardLayout->addWidget(headerLine);
 
     // ── Scrollable body ───────────────────────────────────────────────────
-    m_scroll = new QScrollArea(m_card);
+    m_scroll = new PolicyScrollArea(m_card);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -1154,23 +1173,31 @@ void PolicyEditorDialog::buildUi()
     bodyLayout->addWidget(m_impactCard);
 
     // ── Footer ────────────────────────────────────────────────────────────
-    auto *footer = new QHBoxLayout();
-    footer->setContentsMargins(0, 0, 0, 0);
-    footer->setSpacing(10);
-    footer->addStretch(1);
+    // Sits outside the scroll area so Cancel / Save stay reachable while the
+    // form above scrolls.
+    auto *footerLine = new QFrame(m_card);
+    footerLine->setObjectName(QStringLiteral("headerLine"));
+    footerLine->setFixedHeight(1);
+    cardLayout->addWidget(footerLine);
 
-    m_cancelButton = new QPushButton(QStringLiteral("Cancel"), body);
+    auto *footer = new QWidget(m_card);
+    auto *footerRow = new QHBoxLayout(footer);
+    footerRow->setContentsMargins(20, 12, 20, 16);
+    footerRow->setSpacing(10);
+    footerRow->addStretch(1);
+
+    m_cancelButton = new QPushButton(QStringLiteral("Cancel"), footer);
     m_cancelButton->setObjectName(QStringLiteral("cancelButton"));
     m_cancelButton->setCursor(Qt::PointingHandCursor);
     m_cancelButton->setAutoDefault(false);
-    footer->addWidget(m_cancelButton);
+    footerRow->addWidget(m_cancelButton);
 
-    m_saveButton = new QPushButton(QStringLiteral("Save Policy"), body);
+    m_saveButton = new QPushButton(QStringLiteral("Save Policy"), footer);
     m_saveButton->setObjectName(QStringLiteral("saveButton"));
     m_saveButton->setCursor(Qt::PointingHandCursor);
     m_saveButton->setDefault(true);
-    footer->addWidget(m_saveButton);
-    bodyLayout->addLayout(footer);
+    footerRow->addWidget(m_saveButton);
+    cardLayout->addWidget(footer);
 
     // Toast for validation and status, positioned over the card.
     m_toast = new QLabel(m_card);
@@ -1239,6 +1266,9 @@ void PolicyEditorDialog::buildUi()
     m_accordionAnim = new QPropertyAnimation(m_accordionBody, "maximumHeight", this);
     m_accordionAnim->setDuration(240);
     m_accordionAnim->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_accordionAnim, &QPropertyAnimation::valueChanged, this, [this]() {
+        m_scroll->updateGeometry();
+    });
     connect(m_accordionAnim, &QPropertyAnimation::finished, this, [this]() {
         if (m_accordionOpen)
             m_accordionBody->setMaximumHeight(QWIDGETSIZE_MAX);
@@ -1251,6 +1281,17 @@ void PolicyEditorDialog::buildUi()
 
     applyTheme();
     updateAccordionStatus();
+
+    // Cap the scroll viewport before the fixed-size layout is first applied so
+    // the dialog never flashes at its full content height. Measure the chrome
+    // (header, sticky footer, dividers and shadow margins) instead of assuming
+    // a constant, then leave 8 px so the card always fits on screen.
+    layout()->activate();
+    const int chrome = cardLayout->sizeHint().height()
+        - m_scroll->sizeHint().height() + 2 * 28;
+    const QRect available = screen() ? screen()->availableGeometry()
+                                     : QRect(0, 0, 1080, 720);
+    m_scroll->setMaximumHeight(qMax(240, available.height() - chrome - 8));
 }
 
 void PolicyEditorDialog::applyTheme()
@@ -1400,6 +1441,9 @@ void PolicyEditorDialog::updateActionControls()
     const bool shaping = action == NetworkPolicy::Action::Throttle ||
                          action == NetworkPolicy::Action::Schedule;
     m_rateContainer->setVisible(shaping);
+    // The scroll area does not hear layout requests from its content widget, so
+    // tell it the preferred height changed.
+    m_scroll->updateGeometry();
     // Direction is stored either way, but only shaping uses it in this build.
     m_directionCombo->setEnabled(shaping);
     updateImpactPreview();
@@ -1719,8 +1763,12 @@ void PolicyEditorDialog::showToast(const QString &message)
     int textHeight = m_toast->heightForWidth(toastWidth);
     if (textHeight <= 0) textHeight = m_toast->fontMetrics().height();
     m_toast->setFixedHeight(textHeight + 24);
+    // Keep the toast above the now-sticky footer.
+    const int toastBottom = m_scroll->isVisible()
+        ? m_scroll->geometry().bottom() - 12
+        : m_card->height() - 20;
     const QPoint pos(m_card->width() - m_toast->width() - 20,
-                     m_card->height() - m_toast->height() - 20);
+                     toastBottom - m_toast->height());
     m_toast->move(pos);
     m_toast->raise();
     m_toast->show();
@@ -1779,20 +1827,36 @@ void PolicyEditorDialog::showEvent(QShowEvent *event)
 {
     QDialog::showEvent(event);
     if (!m_sized) {
-        const QRect available = screen() ? screen()->availableGeometry()
-                                         : QRect(0, 0, 1080, 720);
-        m_scroll->setMaximumHeight(qMax(280, available.height() - 220));
+        layout()->activate();
         adjustSize();
         m_sized = true;
     }
+    const QRect available = screen() ? screen()->availableGeometry()
+                                     : QRect();
+    if (available.isValid())
+        move(available.center() - QPoint(width() / 2, height() / 2));
 }
 
 void PolicyEditorDialog::resizeEvent(QResizeEvent *event)
 {
     QDialog::resizeEvent(event);
+    // The fixed-size layout settles a beat after showEvent, so recentre on the
+    // final size (and after any explicit content-height change).
+    if (m_sized) {
+        const QRect available = screen() ? screen()->availableGeometry()
+                                         : QRect();
+        if (available.isValid()) {
+            const QPoint centered = available.center() -
+                QPoint(width() / 2, height() / 2);
+            if (pos() != centered) move(centered);
+        }
+    }
     if (m_toast && m_toast->isVisible()) {
+        const int toastBottom = m_scroll->isVisible()
+            ? m_scroll->geometry().bottom() - 12
+            : m_card->height() - 20;
         m_toast->move(m_card->width() - m_toast->width() - 20,
-                      m_card->height() - m_toast->height() - 20);
+                      toastBottom - m_toast->height());
     }
 }
 

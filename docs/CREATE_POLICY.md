@@ -43,7 +43,9 @@ structure and is listed alongside editor-created policies.
 The dialog is a frameless 520 px rounded card (576 px window including its drop
 shadow) with four numbered sections: **Target application**, **Traffic action &
 limit**, **Schedule, expiration & note**, and a **Live policy summary**, followed
-by Cancel / Save Policy. It is built in C++ and uses the bundled Inter and
+by a sticky Cancel / Save Policy footer. The form above scrolls within the
+card, while the footer stays visible, and the dialog is capped to the screen
+height and centred. It is built in C++ and uses the bundled Inter and
 JetBrains Mono faces so it matches the design mockup on any machine.
 
 ### Scope

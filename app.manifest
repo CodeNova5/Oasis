@@ -34,7 +34,8 @@
     </application>
   </compatibility>
 
-  <!-- DPI awareness: system DPI-aware -->
+  <!-- DPI awareness: per-monitor V2, with system DPI awareness as the
+       fallback on Windows versions older than 10 1703 -->
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
