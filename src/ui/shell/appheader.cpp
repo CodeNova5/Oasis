@@ -103,8 +103,12 @@ void AppHeader::setPageActions(QWidget *actions)
         return;
 
     auto *actionsLayout = qobject_cast<QHBoxLayout *>(m_actionsHost->layout());
-    if (m_actions && actionsLayout)
+    if (m_actions && actionsLayout) {
         actionsLayout->removeWidget(m_actions);
+        // The widget now belongs to another screen's page; hide it so it does
+        // not keep painting over the controls that replaced it.
+        m_actions->hide();
+    }
 
     m_actions = actions;
     m_actions->setParent(m_actionsHost);

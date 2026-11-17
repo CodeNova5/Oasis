@@ -30,6 +30,7 @@ class QFrame;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QResizeEvent;
 class QScrollArea;
 class QStackedWidget;
 class QVBoxLayout;

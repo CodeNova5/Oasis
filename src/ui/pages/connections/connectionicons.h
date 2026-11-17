@@ -7,9 +7,13 @@
 #pragma once
 
 #include <QColor>
+#include <QGuiApplication>
 #include <QIcon>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
+#include <QPolygonF>
+#include <QScreen>
 #include <QString>
 #include <QtMath>
 
@@ -65,10 +69,9 @@ inline void drawGlyph(QPainter *painter, Glyph glyph, const QRectF &rect,
     case Glyph::Shield:
     case Glyph::Warning:
         if (glyph == Glyph::Shield) {
-            painter->drawPath(QPainterPath());
             QPainterPath shield;
             shield.moveTo(12, 22);
-            shield.cubicTo(20, 18, 20, 12, 20, 12);
+            shield.cubicTo(20, 18, 20, 15, 20, 12);
             shield.lineTo(20, 5);
             shield.lineTo(12, 2);
             shield.lineTo(4, 5);
@@ -136,7 +139,6 @@ inline void drawGlyph(QPainter *painter, Glyph glyph, const QRectF &rect,
             QPointF(5, 3), QPointF(19, 12), QPointF(5, 21)});
         break;
     case Glyph::Download:
-        painter->drawPath(QPainterPath());
         {
             QPainterPath tray;
             tray.moveTo(21, 15);
@@ -190,7 +192,8 @@ inline void drawGlyph(QPainter *painter, Glyph glyph, const QRectF &rect,
 inline QPixmap glyphPixmap(Glyph glyph, int size, const QColor &color,
                            qreal stroke = 1.75)
 {
-    const qreal ratio = qApp ? qApp->devicePixelRatio() : 1.0;
+    const QScreen *screen = QGuiApplication::primaryScreen();
+    const qreal ratio = screen ? screen->devicePixelRatio() : 1.0;
     QPixmap pixmap(qRound(size * ratio), qRound(size * ratio));
     pixmap.setDevicePixelRatio(ratio);
     pixmap.fill(Qt::transparent);

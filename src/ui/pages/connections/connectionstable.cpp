@@ -366,7 +366,12 @@ protected:
         painter.setPen(QPen(border, 1));
         painter.drawLine(0, height() - 1, width(), height() - 1);
 
-        const Columns columns = columnsFor(width());
+        // The content viewport loses the scrollbar width; use it so the header
+        // columns line up with the row cells below.
+        const int contentWidth = m_table->m_scroll
+                                     ? m_table->m_scroll->viewport()->width()
+                                     : width();
+        const Columns columns = columnsFor(contentWidth);
         const QFont font = uiFont(11, QFont::DemiBold);
         const struct {
             int column;
@@ -405,7 +410,10 @@ protected:
     {
         if (event->button() != Qt::LeftButton)
             return;
-        const Columns columns = columnsFor(width());
+        const int contentWidth = m_table->m_scroll
+                                     ? m_table->m_scroll->viewport()->width()
+                                     : width();
+        const Columns columns = columnsFor(contentWidth);
         const QPointF position = event->position();
         auto hit = [&](int column) {
             const QRect cell = columns.cell(column, 0, height());
@@ -850,28 +858,32 @@ void ConnectionsTable::applySort()
 {
     std::stable_sort(m_rows.begin(), m_rows.end(),
                      [this](const Connections::Row &a, const Connections::Row &b) {
-        auto less = [](const QString &left, const QString &right) {
-            return left.compare(right, Qt::CaseInsensitive) < 0;
-        };
-        bool result = false;
+        int compare = 0;
         switch (m_sortKey) {
         case SortKey::Application:
-            result = less(applicationLabel(a), applicationLabel(b));
+            compare = QString::compare(applicationLabel(a), applicationLabel(b),
+                                       Qt::CaseInsensitive);
             break;
         case SortKey::Destination:
-            result = less(a.destination, b.destination);
+            compare = QString::compare(a.destination, b.destination, Qt::CaseInsensitive);
             break;
-        case SortKey::Port:
-            result = rowPort(a) < rowPort(b);
-            break;
-        case SortKey::Policy:
-            result = less(a.policy, b.policy);
-            break;
-        case SortKey::Traffic:
-            result = a.totalBytes() < b.totalBytes();
+        case SortKey::Port: {
+            const quint16 left = rowPort(a);
+            const quint16 right = rowPort(b);
+            compare = left < right ? -1 : (left > right ? 1 : 0);
             break;
         }
-        return m_sortOrder == Qt::AscendingOrder ? result : !result;
+        case SortKey::Policy:
+            compare = QString::compare(a.policy, b.policy, Qt::CaseInsensitive);
+            break;
+        case SortKey::Traffic: {
+            const quint64 left = a.totalBytes();
+            const quint64 right = b.totalBytes();
+            compare = left < right ? -1 : (left > right ? 1 : 0);
+            break;
+        }
+        }
+        return m_sortOrder == Qt::AscendingOrder ? compare < 0 : compare > 0;
     });
 }
 
