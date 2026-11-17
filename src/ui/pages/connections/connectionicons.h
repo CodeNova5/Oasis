@@ -29,8 +29,6 @@ enum class Glyph {
     GroupLines,
     ChevronDown,
     ChevronRight,
-    Pause,
-    Play,
     Download,
     Warning,
     Close,
@@ -125,18 +123,6 @@ inline void drawGlyph(QPainter *painter, Glyph glyph, const QRectF &rect,
     case Glyph::ChevronRight:
         painter->drawPolyline(QPolygonF{
             QPointF(9, 18), QPointF(15, 12), QPointF(9, 6)});
-        break;
-    case Glyph::Pause:
-        painter->setBrush(color);
-        painter->setPen(Qt::NoPen);
-        painter->drawRect(QRectF(6, 4, 4, 16));
-        painter->drawRect(QRectF(14, 4, 4, 16));
-        break;
-    case Glyph::Play:
-        painter->setBrush(color);
-        painter->setPen(Qt::NoPen);
-        painter->drawPolygon(QPolygonF{
-            QPointF(5, 3), QPointF(19, 12), QPointF(5, 21)});
         break;
     case Glyph::Download:
         {

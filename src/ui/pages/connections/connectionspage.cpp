@@ -344,16 +344,11 @@ ConnectionsPage::ConnectionsPage(QWidget *parent)
     buildTable(root);
     buildInspector();
 
-    // Header actions: Pause stops the live feed, Export writes what is shown.
+    // Header actions: Export writes the connections currently shown.
     m_actionsWidget = new QWidget(this);
     auto *actionsLayout = new QHBoxLayout(m_actionsWidget);
     actionsLayout->setContentsMargins(0, 0, 0, 0);
     actionsLayout->setSpacing(8);
-
-    m_pauseButton = new QPushButton(QStringLiteral("Pause"), m_actionsWidget);
-    m_pauseButton->setFixedHeight(Theme::Dim::ButtonHeight);
-    m_pauseButton->setIconSize(QSize(15, 15));
-    m_pauseButton->setCursor(Qt::PointingHandCursor);
 
     m_exportButton = new QPushButton(QStringLiteral("Export"), m_actionsWidget);
     m_exportButton->setFixedHeight(Theme::Dim::ButtonHeight);
@@ -361,12 +356,8 @@ ConnectionsPage::ConnectionsPage(QWidget *parent)
     m_exportButton->setCursor(Qt::PointingHandCursor);
     m_exportButton->setToolTip(QStringLiteral("Export the connections currently shown as CSV."));
 
-    actionsLayout->addWidget(m_pauseButton);
     actionsLayout->addWidget(m_exportButton);
 
-    connect(m_pauseButton, &QPushButton::clicked, this, [this]() {
-        setPaused(!m_paused);
-    });
     connect(m_exportButton, &QPushButton::clicked, this, &ConnectionsPage::exportVisibleRows);
 
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this,
@@ -578,11 +569,6 @@ void ConnectionsPage::buildInspector()
 
 void ConnectionsPage::setGroups(const QList<Connections::Row> &groups)
 {
-    if (m_paused) {
-        m_pendingRows = groups;
-        return;
-    }
-
     m_rows = groups;
     refreshMetrics();
     applyFilters();
@@ -777,10 +763,6 @@ void ConnectionsPage::refreshTheme()
     if (m_searchAction)
         m_searchAction->setIcon(ConnectionsUi::glyphIcon(Glyph::Search, 15,
                                                         token(pal.textMuted), 2.0));
-    if (m_pauseButton) {
-        m_pauseButton->setIcon(ConnectionsUi::glyphIcon(
-            m_paused ? Glyph::Play : Glyph::Pause, 15, secondary, 2.0));
-    }
     if (m_exportButton)
         m_exportButton->setIcon(ConnectionsUi::glyphIcon(Glyph::Download, 15, secondary, 2.0));
     if (m_groupButton)
@@ -802,24 +784,6 @@ void ConnectionsPage::refreshTheme()
             QStringLiteral("color: %1;").arg(pal.textMuted));
 
     update();
-}
-
-void ConnectionsPage::setPaused(bool paused)
-{
-    m_paused = paused;
-    if (m_pauseButton) {
-        m_pauseButton->setText(paused ? QStringLiteral("Resume") : QStringLiteral("Pause"));
-        m_pauseButton->setToolTip(paused
-            ? QStringLiteral("Resume updating the connection list.")
-            : QStringLiteral("Pause updating the connection list. Capture keeps running."));
-    }
-    refreshTheme();
-
-    if (!m_paused && !m_pendingRows.isEmpty()) {
-        const QList<Connections::Row> pending = m_pendingRows;
-        m_pendingRows.clear();
-        setGroups(pending);
-    }
 }
 
 void ConnectionsPage::exportVisibleRows()

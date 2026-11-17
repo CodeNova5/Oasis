@@ -49,7 +49,7 @@ public:
     /// Capture state decides the empty-state wording; it never fakes rows.
     void setMonitoringActive(bool active);
 
-    /// Pause and Export controls, hosted by the shell in the page header.
+    /// The Export control, hosted by the shell in the page header.
     QWidget *actionsWidget() const { return m_actionsWidget; }
 
 signals:
@@ -82,12 +82,10 @@ private:
     void onSelectionChanged(const QString &id);
 
     void exportVisibleRows();
-    void setPaused(bool paused);
 
     const Connections::Row *rowForId(const QString &id) const;
 
     QWidget     *m_actionsWidget = nullptr;
-    QPushButton *m_pauseButton = nullptr;
     QPushButton *m_exportButton = nullptr;
 
     MetricTile  *m_activeTile = nullptr;
@@ -122,12 +120,10 @@ private:
 
     QList<Connections::Row> m_rows;
     QList<Connections::Row> m_filtered;
-    QList<Connections::Row> m_pendingRows;
     QSet<QString> m_seenEndpoints;
 
     Connections::Filter m_filter = Connections::Filter::All;
     QString m_query;
     QString m_selectedId;
     bool m_monitoringActive = false;
-    bool m_paused = false;
 };
