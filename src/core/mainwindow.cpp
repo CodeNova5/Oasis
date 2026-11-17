@@ -1785,12 +1785,6 @@ void MainWindow::setupConnections()
         if (m_netWidget)
             m_netWidget->showTrafficControlsFor(pid, path, name);
     });
-    connect(m_connections, &ConnectionsPage::policyRequested, this,
-            [this](quint32 pid, const QString &path, const QString &name) {
-        if (m_netWidget)
-            m_netWidget->showPolicyEditorFor(pid, path, name);
-    });
-
     m_connections->setMonitoringActive(m_netWidget->isCapturing());
     refreshConnections();
 }

@@ -52,7 +52,6 @@ signals:
     /// Every action reuses an existing NetworkWidget entry point.
     void detailsRequested(quint32 pid, const QString &path, const QString &name);
     void trafficRequested(quint32 pid, const QString &path, const QString &name);
-    void policyRequested(quint32 pid, const QString &path, const QString &name);
 
 private:
     void buildToolbar(QVBoxLayout *root);
@@ -78,6 +77,8 @@ private:
     QFrame      *m_banner = nullptr;
     QLabel      *m_bannerText = nullptr;
     QPushButton *m_bannerAction = nullptr;
+    bool         m_bannerDismissed = false;
+    int          m_bannerUnknownCount = 0;
 
     QLineEdit   *m_search = nullptr;
     QButtonGroup *m_pillGroup = nullptr;
@@ -98,9 +99,7 @@ private:
     QLabel      *m_appIcon = nullptr;
     QLabel      *m_appName = nullptr;
     QLabel      *m_appMeta = nullptr;
-    QLabel      *m_hostValue = nullptr;
-    QLabel      *m_addressesValue = nullptr;
-    QLabel      *m_portsValue = nullptr;
+    QLabel      *m_endpointDetailValue = nullptr;
     QLabel      *m_directionValue = nullptr;
     QLabel      *m_evidenceTitle = nullptr;
     QLabel      *m_evidenceDetail = nullptr;
@@ -114,7 +113,6 @@ private:
     QLabel      *m_policyNote = nullptr;
     QPushButton *m_trafficButton = nullptr;
     QPushButton *m_detailsButton = nullptr;
-    QPushButton *m_policyButton = nullptr;
 
     ConnectionsTableModel *m_model = nullptr;
     ConnectionsFilterProxy *m_proxy = nullptr;

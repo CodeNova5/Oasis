@@ -11,6 +11,7 @@
 #include <QAbstractTableModel>
 #include <QBrush>
 #include <QButtonGroup>
+#include <QColor>
 #include <QComboBox>
 #include <QFont>
 #include <QFrame>
@@ -21,6 +22,7 @@
 #include <QLabel>
 #include <QLayoutItem>
 #include <QLineEdit>
+#include <QPainter>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -29,6 +31,8 @@
 #include <QSortFilterProxyModel>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
 #include <QTableView>
 #include <QTimer>
 #include <QToolButton>
@@ -39,7 +43,6 @@ namespace {
 enum Column {
     Destination = 0,
     Application,
-    RemoteAddress,
     PortProtocol,
     Evidence,
     Rate,
@@ -59,6 +62,12 @@ enum Role {
 QString applicationLabel(const Connections::Row &row)
 {
     return row.displayName.trimmed().isEmpty() ? row.appName : row.displayName;
+}
+
+QFont tabularFont(QFont font)
+{
+    font.setFeature(QFont::Tag("tnum"), 1);
+    return font;
 }
 
 QString initialsFor(const QString &label)
@@ -87,17 +96,6 @@ QString badgeStatusFor(int confidenceRank)
     default: break;
     }
     return QStringLiteral("unknown");
-}
-
-QString sortableAddress(const QString &address)
-{
-    const QStringList parts = address.split(QLatin1Char('.'));
-    if (parts.size() != 4)
-        return address;
-    QString sortable;
-    for (const QString &part : parts)
-        sortable += part.rightJustified(3, QLatin1Char('0'));
-    return sortable;
 }
 
 QString evidenceForRow(const Connections::Row &row)
@@ -138,6 +136,7 @@ QLabel *addKeyValue(QGridLayout *grid, int row, int column,
     valueLabel->setProperty("uiRole", QStringLiteral("rowValue"));
     valueLabel->setWordWrap(true);
     valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    valueLabel->setFont(tabularFont(valueLabel->font()));
 
     layout->addWidget(captionLabel);
     layout->addWidget(valueLabel);
@@ -204,7 +203,6 @@ public:
         switch (section) {
         case Destination:    return QStringLiteral("Domain / Destination");
         case Application:    return QStringLiteral("Application");
-        case RemoteAddress:  return QStringLiteral("Remote IP");
         case PortProtocol:   return QStringLiteral("Port / Protocol");
         case Evidence:       return QStringLiteral("Evidence");
         case Rate:           return QStringLiteral("Current rate");
@@ -228,10 +226,6 @@ public:
             switch (column) {
             case Destination:   return row.destination;
             case Application:   return applicationLabel(row);
-            case RemoteAddress:
-                return row.addresses.size() == 1
-                    ? row.addresses.first()
-                    : QStringLiteral("%1 addresses").arg(row.addresses.size());
             case PortProtocol:  return row.ports;
             case Evidence:      return row.evidenceLabel;
             case Rate:          return Connections::formatRate(row.bytesPerSecond());
@@ -258,8 +252,6 @@ public:
                 return QStringLiteral("No verified hostname. Reverse-DNS guessing is disabled.");
             case Application:
                 return row.path.trimmed().isEmpty() ? row.appName : row.path;
-            case RemoteAddress:
-                return row.addresses.join(QLatin1Char('\n'));
             case PortProtocol:
                 return QStringLiteral("%1 endpoint(s)").arg(row.endpointCount);
             case Evidence:
@@ -284,11 +276,13 @@ public:
 
         case Qt::FontRole:
             if (column == Destination) {
-                QFont font;
+                QFont font = tabularFont(QFont());
                 font.setBold(row.hasDomain);
                 font.setItalic(!row.hasDomain);
                 return font;
             }
+            if (column == PortProtocol || column == Rate || column == Data)
+                return tabularFont(QFont());
             break;
 
         case Qt::ForegroundRole:
@@ -309,10 +303,6 @@ public:
             switch (column) {
             case Destination:  return row.destination.toLower();
             case Application:  return applicationLabel(row).toLower();
-            case RemoteAddress:
-                return row.addresses.isEmpty()
-                    ? QString()
-                    : sortableAddress(row.addresses.first());
             case PortProtocol: {
                 quint16 port = 0;
                 for (const Connections::Endpoint &endpoint : row.endpoints) {
@@ -396,6 +386,31 @@ private:
     QString m_query;
 };
 
+// A QSS ::item border applies to every cell, so the row's accent bar is drawn
+// once, on the first column, after the standard item painting.
+class ConnectionRowDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt(option);
+        initStyleOption(&opt, index);
+        QStyledItemDelegate::paint(painter, opt, index);
+
+        if (index.column() == 0 && (opt.state & QStyle::State_Selected)) {
+            painter->save();
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(QColor(76, 141, 255));
+            painter->drawRect(QRect(opt.rect.left(), opt.rect.top(), 2,
+                                    opt.rect.height()));
+            painter->restore();
+        }
+    }
+};
+
 // ─── Page ───────────────────────────────────────────────────────────────────
 ConnectionsPage::ConnectionsPage(QWidget *parent)
     : QWidget(parent)
@@ -403,8 +418,8 @@ ConnectionsPage::ConnectionsPage(QWidget *parent)
     setObjectName(QStringLiteral("connectionsPage"));
 
     auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(24, 24, 24, 24);
-    root->setSpacing(16);
+    root->setContentsMargins(24, 12, 24, 16);
+    root->setSpacing(12);
 
     buildBanner(root);
     buildToolbar(root);
@@ -425,7 +440,7 @@ void ConnectionsPage::buildBanner(QVBoxLayout *root)
     m_banner->setProperty("severity", QStringLiteral("info"));
 
     auto *layout = new QHBoxLayout(m_banner);
-    layout->setContentsMargins(12, 8, 12, 8);
+    layout->setContentsMargins(12, 6, 8, 6);
     layout->setSpacing(8);
 
     m_bannerText = new QLabel(m_banner);
@@ -436,13 +451,25 @@ void ConnectionsPage::buildBanner(QVBoxLayout *root)
     m_bannerAction->setProperty("uiRole", QStringLiteral("link"));
     m_bannerAction->setCursor(Qt::PointingHandCursor);
 
+    auto *dismiss = new QPushButton(QStringLiteral("×"), m_banner);
+    dismiss->setProperty("uiRole", QStringLiteral("link"));
+    dismiss->setCursor(Qt::PointingHandCursor);
+    dismiss->setFixedSize(24, 24);
+    dismiss->setStyleSheet(QStringLiteral("text-align: center; padding: 0;"));
+    dismiss->setToolTip(QStringLiteral("Dismiss this notice"));
+
     layout->addWidget(m_bannerText, 1);
     layout->addWidget(m_bannerAction, 0, Qt::AlignVCenter);
+    layout->addWidget(dismiss, 0, Qt::AlignVCenter);
     m_banner->hide();
     root->addWidget(m_banner);
 
     connect(m_bannerAction, &QPushButton::clicked, this, [this]() {
         setFilter(Connections::Filter::IpAddresses);
+    });
+    connect(dismiss, &QPushButton::clicked, this, [this]() {
+        m_bannerDismissed = true;
+        m_banner->hide();
     });
 }
 
@@ -452,10 +479,9 @@ void ConnectionsPage::buildToolbar(QVBoxLayout *root)
     toolbar->setSpacing(8);
 
     m_search = new QLineEdit(this);
-    m_search->setPlaceholderText(
-        QStringLiteral("Search domain, IP address, or application..."));
+    m_search->setPlaceholderText(QStringLiteral("Search domain, IP, or app..."));
     m_search->setClearButtonEnabled(true);
-    m_search->setMinimumWidth(260);
+    m_search->setMinimumWidth(280);
     m_search->setMaximumWidth(360);
     toolbar->addWidget(m_search);
 
@@ -525,6 +551,7 @@ void ConnectionsPage::buildTable(QVBoxLayout *root)
     m_proxy->setSourceModel(m_model);
 
     m_table = new QTableView(m_tableCard);
+    m_table->setObjectName(QStringLiteral("connectionsTable"));
     m_table->setModel(m_proxy);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -534,33 +561,28 @@ void ConnectionsPage::buildTable(QVBoxLayout *root)
     m_table->setWordWrap(false);
     m_table->setSortingEnabled(true);
     m_table->setIconSize(QSize(18, 18));
+    m_table->setTextElideMode(Qt::ElideRight);
+    m_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_table->setFont(tabularFont(m_table->font()));
+    m_table->setItemDelegate(new ConnectionRowDelegate(m_table));
+    m_table->setStyleSheet(QStringLiteral(
+        "QTableView#connectionsTable::item:hover {"
+        " background-color: rgba(76, 141, 255, 7%); }"
+        "QTableView#connectionsTable::item:selected {"
+        " background-color: rgba(76, 141, 255, 14%); }"));
     m_table->verticalHeader()->hide();
     m_table->verticalHeader()->setDefaultSectionSize(40);
-    m_table->horizontalHeader()->setHighlightSections(false);
-    m_table->horizontalHeader()->setMinimumSectionSize(70);
-    m_table->horizontalHeader()->setSectionResizeMode(
-        Destination, QHeaderView::Stretch);
-    m_table->horizontalHeader()->setSectionResizeMode(
-        Application, QHeaderView::Interactive);
-    m_table->horizontalHeader()->setSectionResizeMode(
-        RemoteAddress, QHeaderView::Interactive);
-    m_table->horizontalHeader()->setSectionResizeMode(
-        PortProtocol, QHeaderView::Interactive);
-    m_table->horizontalHeader()->setSectionResizeMode(
-        Evidence, QHeaderView::Interactive);
-    m_table->horizontalHeader()->setSectionResizeMode(
-        Rate, QHeaderView::Interactive);
-    m_table->horizontalHeader()->setSectionResizeMode(
-        Data, QHeaderView::Interactive);
-    m_table->horizontalHeader()->setSectionResizeMode(
-        Confidence, QHeaderView::Interactive);
-    m_table->setColumnWidth(Application, 180);
-    m_table->setColumnWidth(RemoteAddress, 120);
-    m_table->setColumnWidth(PortProtocol, 130);
-    m_table->setColumnWidth(Evidence, 130);
-    m_table->setColumnWidth(Rate, 110);
-    m_table->setColumnWidth(Data, 100);
-    m_table->setColumnWidth(Confidence, 100);
+    QHeaderView *header = m_table->horizontalHeader();
+    header->setHighlightSections(false);
+    header->setMinimumSectionSize(90);
+    header->setSectionResizeMode(Destination, QHeaderView::Stretch);
+    header->setSectionResizeMode(Application, QHeaderView::Interactive);
+    header->setSectionResizeMode(PortProtocol, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(Evidence, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(Rate, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(Data, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(Confidence, QHeaderView::ResizeToContents);
+    header->resizeSection(Application, 170);
     m_table->sortByColumn(Rate, Qt::DescendingOrder);
     cardLayout->addWidget(m_table, 1);
 
@@ -644,6 +666,7 @@ void ConnectionsPage::buildDrawer(QWidget *parent)
     m_drawerTitle->setProperty("uiRole", QStringLiteral("cardHeading"));
     m_drawerTitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_drawerTitle->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_drawerTitle->setFont(tabularFont(m_drawerTitle->font()));
 
     m_drawerBadge = new QLabel(QStringLiteral("No selection"), header);
     m_drawerBadge->setProperty("uiRole", QStringLiteral("badge"));
@@ -665,8 +688,8 @@ void ConnectionsPage::buildDrawer(QWidget *parent)
 
     auto *body = new QWidget(scroll);
     auto *bodyLayout = new QVBoxLayout(body);
-    bodyLayout->setContentsMargins(16, 16, 16, 16);
-    bodyLayout->setSpacing(14);
+    bodyLayout->setContentsMargins(16, 14, 16, 14);
+    bodyLayout->setSpacing(12);
 
     auto addSection = [body, bodyLayout](const QString &title) {
         auto *label = new QLabel(title, body);
@@ -705,24 +728,8 @@ void ConnectionsPage::buildDrawer(QWidget *parent)
     appLayout->addLayout(appText, 1);
     bodyLayout->addWidget(appCard);
 
-    // Destination
-    addSection(QStringLiteral("Destination"));
-    auto *destinationCard = new QFrame(body);
-    destinationCard->setProperty("uiRole", QStringLiteral("card"));
-    auto *destinationGrid = new QGridLayout(destinationCard);
-    destinationGrid->setContentsMargins(0, 0, 0, 0);
-    destinationGrid->setSpacing(8);
-    m_hostValue = addKeyValue(destinationGrid, 0, 0,
-                              QStringLiteral("Hostname / Destination"), destinationCard);
-    m_addressesValue = addKeyValue(destinationGrid, 0, 1,
-                                   QStringLiteral("Remote IP"), destinationCard);
-    m_portsValue = addKeyValue(destinationGrid, 1, 0,
-                               QStringLiteral("Port / Protocol"), destinationCard);
-    m_directionValue = addKeyValue(destinationGrid, 1, 1,
-                                   QStringLiteral("Direction"), destinationCard);
-    bodyLayout->addWidget(destinationCard);
-
-    // Evidence
+    // Evidence sits above the destination details so the reason a name is
+    // Confirmed, Possible or Unknown is visible without scrolling.
     addSection(QStringLiteral("Attribution source & evidence"));
     auto *evidenceCard = new QFrame(body);
     evidenceCard->setProperty("uiRole", QStringLiteral("elevated"));
@@ -741,6 +748,20 @@ void ConnectionsPage::buildDrawer(QWidget *parent)
     evidenceLayout->addWidget(m_evidenceTitle);
     evidenceLayout->addWidget(m_evidenceDetail);
     bodyLayout->addWidget(evidenceCard);
+
+    // Destination: the drawer title is the hostname (or raw IP), so one
+    // Endpoint value replaces the duplicate Hostname and Remote IP boxes.
+    addSection(QStringLiteral("Destination"));
+    auto *destinationCard = new QFrame(body);
+    destinationCard->setProperty("uiRole", QStringLiteral("card"));
+    auto *destinationGrid = new QGridLayout(destinationCard);
+    destinationGrid->setContentsMargins(0, 0, 0, 0);
+    destinationGrid->setSpacing(8);
+    m_endpointDetailValue = addKeyValue(destinationGrid, 0, 0,
+                                        QStringLiteral("Endpoint"), destinationCard);
+    m_directionValue = addKeyValue(destinationGrid, 0, 1,
+                                   QStringLiteral("Direction"), destinationCard);
+    bodyLayout->addWidget(destinationCard);
 
     // Session telemetry
     addSection(QStringLiteral("Session telemetry"));
@@ -798,15 +819,13 @@ void ConnectionsPage::buildDrawer(QWidget *parent)
     m_trafficButton = new QPushButton(QStringLiteral("Manage app traffic"), footer);
     m_trafficButton->setProperty("variant", QStringLiteral("primary"));
     m_detailsButton = new QPushButton(QStringLiteral("Application details"), footer);
-    m_policyButton = new QPushButton(QStringLiteral("Create policy"), footer);
 
-    auto *secondaryRow = new QHBoxLayout;
-    secondaryRow->setSpacing(8);
-    secondaryRow->addWidget(m_detailsButton);
-    secondaryRow->addWidget(m_policyButton);
+    auto *actionRow = new QHBoxLayout;
+    actionRow->setSpacing(8);
+    actionRow->addWidget(m_trafficButton, 1);
+    actionRow->addWidget(m_detailsButton, 1);
 
-    footerLayout->addWidget(m_trafficButton);
-    footerLayout->addLayout(secondaryRow);
+    footerLayout->addLayout(actionRow);
     layout->addWidget(footer);
 
     connect(m_trafficButton, &QPushButton::clicked, this, [this]() {
@@ -816,10 +835,6 @@ void ConnectionsPage::buildDrawer(QWidget *parent)
     connect(m_detailsButton, &QPushButton::clicked, this, [this]() {
         if (m_hasSelection)
             emit detailsRequested(m_selected.pid, m_selected.path, m_selected.appName);
-    });
-    connect(m_policyButton, &QPushButton::clicked, this, [this]() {
-        if (m_hasSelection)
-            emit policyRequested(m_selected.pid, m_selected.path, m_selected.appName);
     });
 }
 
@@ -931,16 +946,23 @@ void ConnectionsPage::refreshBanner()
     }
     if (ipOnly == 0) {
         m_banner->hide();
+        m_bannerDismissed = false;
+        m_bannerUnknownCount = 0;
         return;
     }
+    if (m_bannerDismissed && m_bannerUnknownCount == ipOnly) {
+        m_banner->hide();
+        return;
+    }
+    if (m_bannerUnknownCount != ipOnly) {
+        m_bannerDismissed = false;
+        m_bannerUnknownCount = ipOnly;
+    }
     m_bannerText->setText(
-        QStringLiteral("%1 destination%2 (%3) %4 no verified hostname. "
-                       "Reverse-DNS guessing is disabled, so %5 shown by IP.")
+        QStringLiteral("%1 destination%2 (%3) without a verified hostname · shown by IP")
             .arg(ipOnly)
             .arg(ipOnly == 1 ? QString() : QStringLiteral("s"))
-            .arg(Connections::formatBytes(bytes))
-            .arg(ipOnly == 1 ? QStringLiteral("has") : QStringLiteral("have"))
-            .arg(ipOnly == 1 ? QStringLiteral("it is") : QStringLiteral("they are")));
+            .arg(Connections::formatBytes(bytes)));
     m_banner->show();
 }
 
@@ -1066,18 +1088,20 @@ void ConnectionsPage::showRow(const Connections::Row &row)
                                       : meta.join(QStringLiteral(" · ")));
     m_appMeta->setToolTip(row.path);
 
-    m_hostValue->setText(row.hasDomain ? row.destination
-                                       : QStringLiteral("No verified hostname"));
-    m_addressesValue->setText(row.addresses.isEmpty()
-                                  ? QStringLiteral("—")
-                                  : row.addresses.join(QLatin1Char('\n')));
-    m_portsValue->setText(row.ports);
+    QStringList endpointParts;
+    if (!row.addresses.isEmpty())
+        endpointParts << row.addresses.join(QStringLiteral(", "));
+    if (!row.ports.trimmed().isEmpty())
+        endpointParts << row.ports;
+    m_endpointDetailValue->setText(endpointParts.isEmpty()
+                                       ? QStringLiteral("—")
+                                       : endpointParts.join(QStringLiteral(" · ")));
     m_directionValue->setText(row.direction);
 
     m_evidenceTitle->setText(
         row.hasDomain
             ? QStringLiteral("%1 · %2").arg(row.evidenceLabel, row.confidence)
-            : QStringLiteral("No domain evidence · Unknown"));
+            : QStringLiteral("No evidence · Unknown"));
 
     QStringList evidenceLines;
     QStringList seen;
@@ -1135,6 +1159,7 @@ void ConnectionsPage::showRow(const Connections::Row &row)
                     .arg(endpoint.port)
                     .arg(endpoint.protocol));
             primary->setProperty("uiRole", QStringLiteral("rowValue"));
+            primary->setFont(tabularFont(primary->font()));
 
             QStringList details;
             details << Connections::sourceLabel(endpoint.source);
@@ -1192,9 +1217,7 @@ void ConnectionsPage::clearDrawer()
         QStringLiteral("Select a row to inspect its destination and evidence."));
     m_appMeta->setToolTip(QString());
 
-    m_hostValue->setText(QStringLiteral("—"));
-    m_addressesValue->setText(QStringLiteral("—"));
-    m_portsValue->setText(QStringLiteral("—"));
+    m_endpointDetailValue->setText(QStringLiteral("—"));
     m_directionValue->setText(QStringLiteral("—"));
     m_evidenceTitle->setText(QStringLiteral("Attribution evidence"));
     m_evidenceDetail->setText(
@@ -1225,21 +1248,17 @@ void ConnectionsPage::refreshDrawerActions()
                             || !m_selected.path.trimmed().isEmpty());
     m_trafficButton->setEnabled(canAct);
     m_detailsButton->setEnabled(canAct);
-    m_policyButton->setEnabled(canAct);
 
     if (canAct) {
         m_trafficButton->setToolTip(
             QStringLiteral("Open the bandwidth limit for %1.").arg(m_selected.appName));
         m_detailsButton->setToolTip(
             QStringLiteral("Open identity, destinations, policies and audit history."));
-        m_policyButton->setToolTip(
-            QStringLiteral("Create a policy for %1.").arg(m_selected.appName));
     } else {
         const QString reason = m_hasSelection
             ? QStringLiteral("The executable path for this connection is not available.")
             : QStringLiteral("Select a connection first.");
         m_trafficButton->setToolTip(reason);
         m_detailsButton->setToolTip(reason);
-        m_policyButton->setToolTip(reason);
     }
 }

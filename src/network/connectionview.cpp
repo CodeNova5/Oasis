@@ -98,7 +98,7 @@ QString sourceLabel(AttributionSource source)
     case AttributionSource::DnsAndTls: return QStringLiteral("DNS + TLS");
     case AttributionSource::Unknown:   break;
     }
-    return QStringLiteral("No domain evidence");
+    return QStringLiteral("No evidence");
 }
 
 QString confidenceLabel(ApplicationIdentity::Confidence confidence)
