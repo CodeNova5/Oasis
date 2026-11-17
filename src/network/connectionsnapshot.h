@@ -46,6 +46,7 @@ struct Endpoint
 struct Row
 {
     QString id;                      // stable identity across beats
+    QString appKey;                  // application identity behind the row
     quint32 pid = 0;
     qint64 processStartMs = 0;       // pins the process instance behind the row
 

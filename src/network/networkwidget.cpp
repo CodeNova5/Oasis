@@ -1985,6 +1985,7 @@ QList<Connections::Row> NetworkWidget::connectionGroups() const
     }
 
     QHash<QString, int> groupIndex;
+    QHash<QString, quint64> groupBytes;
     const int processRows = m_model->processCount();
     for (int processRow = 0; processRow < processRows; ++processRow) {
         const ProcessRowSnapshot snapshot = m_model->snapshotForRow(processRow);
@@ -2001,15 +2002,24 @@ QList<Connections::Row> NetworkWidget::connectionGroups() const
             if (domain.isEmpty() && !connection.domains.isEmpty())
                 domain = connection.domains.first().trimmed();
             const QString destination = domain.isEmpty() ? address : domain;
-            const QString id = QStringLiteral("%1|%2|%3")
-                                   .arg(snapshot.pid)
-                                   .arg(snapshot.processStartMs)
-                                   .arg(destination.toLower());
+
+            // Group by application identity, not by process instance. A browser
+            // runs one process per tab and site isolation, and all of those
+            // instances are the same application; keying on the pid would list
+            // "chrome.exe" once per renderer process.
+            QString appKey = snapshot.identityId.trimmed();
+            if (appKey.isEmpty())
+                appKey = QStringLiteral("name:%1").arg(snapshot.name.trimmed().toLower());
+            if (appKey == QLatin1String("name:"))
+                appKey = QStringLiteral("pid:%1").arg(snapshot.pid);
+            const QString id = appKey + QLatin1Char('|') + destination.toLower();
+            const quint64 processBytes = snapshot.rxBytes + snapshot.txBytes;
 
             int index = groupIndex.value(id, -1);
             if (index < 0) {
                 Connections::Row row;
                 row.id = id;
+                row.appKey = appKey;
                 row.pid = snapshot.pid;
                 row.processStartMs = snapshot.processStartMs;
                 row.icon = snapshot.icon.isNull() ? genericExecutableIcon()
@@ -2035,9 +2045,24 @@ QList<Connections::Row> NetworkWidget::connectionGroups() const
                 index = groups.size();
                 groups.append(row);
                 groupIndex.insert(id, index);
+                groupBytes.insert(id, processBytes);
             }
 
             Connections::Row &row = groups[index];
+
+            // Actions target one process, so keep the busiest instance of the
+            // application as the representative for the grouped row.
+            if (processBytes > groupBytes.value(id)) {
+                groupBytes[id] = processBytes;
+                row.pid = snapshot.pid;
+                row.processStartMs = snapshot.processStartMs;
+                row.path = consumer ? consumer->path : QString();
+            }
+            // Every instance of one identity resolves to the same executable
+            // path, so an empty path can be filled from any of them.
+            if (row.path.isEmpty() && consumer)
+                row.path = consumer->path;
+
             Connections::Endpoint endpoint;
             endpoint.address = address;
             endpoint.protocol = connection.key.protocol;

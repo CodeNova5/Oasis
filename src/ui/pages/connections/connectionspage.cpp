@@ -634,6 +634,39 @@ void ConnectionsPage::setGroups(const QList<Connections::Row> &groups)
         observed.lastSeenMs = now;
     }
 
+    // When a destination gains a name, its row id changes and the unnamed row
+    // closes. If a live row for the same application still covers one of those
+    // addresses, the closed row is only a stale identity for sockets that are
+    // represented above, so it must not linger as a second copy of the app.
+    if (!m_liveIds.isEmpty()) {
+        QHash<QString, QSet<QString>> liveAddresses;
+        for (auto it = m_history.cbegin(); it != m_history.cend(); ++it) {
+            const QString &key = it.value().row.appKey;
+            if (key.isEmpty() || !m_liveIds.contains(it.key()))
+                continue;
+            QSet<QString> &addresses = liveAddresses[key];
+            for (const QString &address : it.value().row.addresses)
+                addresses.insert(address);
+        }
+        for (auto it = m_history.begin(); it != m_history.end();) {
+            bool superseded = false;
+            const QString &key = it.value().row.appKey;
+            if (!key.isEmpty() && !m_liveIds.contains(it.key())) {
+                const QSet<QString> live = liveAddresses.value(key);
+                for (const QString &address : it.value().row.addresses) {
+                    if (live.contains(address)) {
+                        superseded = true;
+                        break;
+                    }
+                }
+            }
+            if (superseded)
+                it = m_history.erase(it);
+            else
+                ++it;
+        }
+    }
+
     // Forget closed rows once they leave the widest window on offer. Live rows
     // are never dropped, however long they have been connected.
     pruneHistory(now);
