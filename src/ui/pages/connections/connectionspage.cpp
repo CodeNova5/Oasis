@@ -621,9 +621,16 @@ void ConnectionsPage::setGroups(const QList<Connections::Row> &groups)
 
     m_liveIds.clear();
     for (const Connections::Row &row : groups) {
-        m_liveIds.insert(row.id);
         ObservedRow &observed = m_history[row.id];
         observed.row = row;
+        if (!m_monitoringActive) {
+            // A beat delivered while capture is stopped is a stale repeat of
+            // the last observation, not proof the connection is still open.
+            if (observed.lastSeenMs == 0)
+                observed.lastSeenMs = now;
+            continue;
+        }
+        m_liveIds.insert(row.id);
         observed.lastSeenMs = now;
     }
 
@@ -742,7 +749,26 @@ qint64 ConnectionsPage::timeRangeWindowMs(TimeRange range)
 
 void ConnectionsPage::setMonitoringActive(bool active)
 {
+    const bool stopped = m_monitoringActive && !active;
     m_monitoringActive = active;
+
+    if (stopped) {
+        // No further beat will confirm these rows, so the last observation is
+        // the moment capture stopped. They become closed and the page clock
+        // ages them out of the selected window from here on.
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        for (auto it = m_history.begin(); it != m_history.end(); ++it) {
+            if (m_liveIds.contains(it.key()))
+                it.value().lastSeenMs = now;
+        }
+        m_liveIds.clear();
+        rebuildVisibleRows();
+        refreshMetrics();
+        applyFilters();
+        if (!m_inspectorId.isEmpty())
+            renderInspector();
+    }
+
     refreshEmptyState();
 }
 

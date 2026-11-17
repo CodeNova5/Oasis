@@ -1799,8 +1799,10 @@ void MainWindow::refreshConnections()
 {
     if (!m_connections || !m_netWidget)
         return;
-    m_connections->setGroups(m_netWidget->connectionGroups());
+    // State first: the snapshot handler treats rows as live only while capture
+    // is running, so a stopped capture cannot refresh a row's last-seen time.
     m_connections->setMonitoringActive(m_netWidget->isCapturing());
+    m_connections->setGroups(m_netWidget->connectionGroups());
 }
 
 void MainWindow::refreshApplications()
