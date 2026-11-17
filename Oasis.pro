@@ -38,6 +38,7 @@ SOURCES += \
     src/ui/pages/overview/overviewpage.cpp \
     src/ui/pages/activity/activitypage.cpp \
     src/ui/pages/applications/applicationspage.cpp \
+    src/ui/pages/connections/connectionspage.cpp \
     src/ui/pages/activity/activitytimeline.cpp \
     src/ui/pages/settings/settingspage.cpp \
     src/activity/activityevent.cpp \
@@ -55,6 +56,7 @@ SOURCES += \
     src/network/throttlepolicymanager.cpp \
     src/network/networkmodel.cpp \
     src/network/networkwidget.cpp \
+    src/network/connectionview.cpp \
     src/network/packetparser.cpp \
     src/network/testfixtures.cpp \
     src/network/policy.cpp \
@@ -124,6 +126,7 @@ HEADERS += \
     src/ui/pages/overview/overviewpage.h \
     src/ui/pages/activity/activitypage.h \
     src/ui/pages/applications/applicationspage.h \
+    src/ui/pages/connections/connectionspage.h \
     src/ui/pages/activity/activitytimeline.h \
     src/ui/pages/settings/settingspage.h \
     src/activity/activityevent.h \
@@ -143,6 +146,7 @@ HEADERS += \
     src/network/networkmodel.h \
     src/network/networkwidget.h \
     src/network/applicationsnapshot.h \
+    src/network/connectionsnapshot.h \
     src/network/packetparser.h \
     src/network/testfixtures.h \
     src/network/policy.h \

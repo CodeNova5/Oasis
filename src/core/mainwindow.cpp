@@ -15,6 +15,7 @@
 #include "ui/pages/overview/overviewpage.h"
 #include "ui/pages/activity/activitypage.h"
 #include "ui/pages/applications/applicationspage.h"
+#include "ui/pages/connections/connectionspage.h"
 #include "ui/pages/settings/settingspage.h"
 #include "activity/detectionprofile.h"
 #include "ui/components/trafficchart.h"
@@ -157,6 +158,7 @@ MainWindow::MainWindow(QWidget *parent)
     initHistoryManager();
     setupActivity();
     setupApplications();
+    setupConnections();
 
     ui->cmbOverlayRamFormat->setCurrentIndex(0);
     m_header->setDarkMode(ThemeManager::instance().isDark());
@@ -1288,12 +1290,11 @@ void MainWindow::buildShell()
     m_applicationsIndex = m_screenTitles.size() - 1;
     // Applications is the first screen whose controls belong in the page header.
     m_header->setPageActions(m_applications->actionsWidget());
-    addScreen(QStringLiteral("Connections"),
-              makePlaceholderPage(QStringLiteral("Connections"),
-                  QStringLiteral("Endpoint attribution is being rebuilt as a dedicated "
-                                 "screen. Live connections remain visible on Overview.")),
+    m_connections = new ConnectionsPage;
+    addScreen(QStringLiteral("Connections"), m_connections,
               QStringLiteral("Connections"),
               QStringLiteral("Domains, IPs and evidence"));
+    m_connectionsIndex = m_screenTitles.size() - 1;
 
     m_sidebar->addSection(QStringLiteral("Control"));
     // The legacy tabs behind these destinations (Policies, Data Saver, History,
@@ -1759,6 +1760,47 @@ void MainWindow::setupApplications()
     });
 
     refreshApplications();
+}
+
+void MainWindow::setupConnections()
+{
+    if (!m_connections || !m_netWidget)
+        return;
+
+    connect(m_netWidget, &NetworkWidget::dashboardUpdated,
+            this, &MainWindow::refreshConnections);
+    connect(m_connections, &ConnectionsPage::refreshRequested, this, [this]() {
+        if (!m_netWidget)
+            return;
+        m_netWidget->refreshConnectionEvidence();
+        refreshConnections();
+    });
+    connect(m_connections, &ConnectionsPage::detailsRequested, this,
+            [this](quint32 pid, const QString &path, const QString &name) {
+        if (m_netWidget)
+            m_netWidget->showApplicationDetails(pid, path, name);
+    });
+    connect(m_connections, &ConnectionsPage::trafficRequested, this,
+            [this](quint32 pid, const QString &path, const QString &name) {
+        if (m_netWidget)
+            m_netWidget->showTrafficControlsFor(pid, path, name);
+    });
+    connect(m_connections, &ConnectionsPage::policyRequested, this,
+            [this](quint32 pid, const QString &path, const QString &name) {
+        if (m_netWidget)
+            m_netWidget->showPolicyEditorFor(pid, path, name);
+    });
+
+    m_connections->setMonitoringActive(m_netWidget->isCapturing());
+    refreshConnections();
+}
+
+void MainWindow::refreshConnections()
+{
+    if (!m_connections || !m_netWidget)
+        return;
+    m_connections->setGroups(m_netWidget->connectionGroups());
+    m_connections->setMonitoringActive(m_netWidget->isCapturing());
 }
 
 void MainWindow::refreshApplications()

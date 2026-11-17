@@ -39,6 +39,7 @@ class SystemStatusBar;
 class OverviewPage;
 class ActivityPage;
 class ApplicationsPage;
+class ConnectionsPage;
 class SettingsPage;
 class QStackedWidget;
 struct BandwidthEvent;
@@ -103,6 +104,9 @@ private slots:
     // one-second snapshot; it never queries the process model itself.
     void refreshApplications();
 
+    // Connections (Screen 05): grouped destinations from the same beat.
+    void refreshConnections();
+
     void onExportHistory();
     void onClearHistory();
     void onHistoryFilterChanged(int index);
@@ -137,6 +141,7 @@ private:
     void setupOverview();
     void setupActivity();
     void setupApplications();
+    void setupConnections();
     void appendActivityEvent(const Activity::Event &event);
     // Banner, chart placeholder and empty state all follow capture state, so
     // one place decides what the page says about monitoring.
@@ -176,11 +181,13 @@ private:
     int                m_overviewIndex = 0;
     int                m_activityIndex = -1;
     int                m_applicationsIndex = -1;
+    int                m_connectionsIndex = -1;
     int                m_policiesIndex = -1;
     int                m_settingsIndex = 0;
 
     OverviewPage      *m_overview = nullptr;
     ApplicationsPage  *m_applications = nullptr;
+    ConnectionsPage   *m_connections = nullptr;
     quint64            m_overviewRxRate = 0;
     quint64            m_overviewTxRate = 0;
     bool               m_overviewHasData = false;

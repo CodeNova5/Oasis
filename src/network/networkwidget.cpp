@@ -1969,6 +1969,177 @@ QList<Applications::Snapshot> NetworkWidget::applicationSnapshots() const
     return rows;
 }
 
+QList<Connections::Row> NetworkWidget::connectionGroups() const
+{
+    QList<Connections::Row> groups;
+    if (!m_model)
+        return groups;
+
+    // The beat's consumers already hold the resolved executable path and the
+    // firewall/shaping state, so the page does not repeat those lookups.
+    QHash<quint32, const TopConsumers::Consumer *> consumers;
+    consumers.reserve(m_dashboardSummary.consumers.size());
+    for (const TopConsumers::Consumer &consumer : m_dashboardSummary.consumers) {
+        if (consumer.pid != 0)
+            consumers.insert(consumer.pid, &consumer);
+    }
+
+    QHash<QString, int> groupIndex;
+    const int processRows = m_model->processCount();
+    for (int processRow = 0; processRow < processRows; ++processRow) {
+        const ProcessRowSnapshot snapshot = m_model->snapshotForRow(processRow);
+        if (!snapshot.isValid())
+            continue;
+
+        const TopConsumers::Consumer *consumer = consumers.value(snapshot.pid, nullptr);
+        for (const ConnectionStat &connection : snapshot.connections) {
+            const QString address = connection.remoteAddress.trimmed();
+            if (address.isEmpty())
+                continue;
+
+            QString domain = connection.domain.trimmed();
+            if (domain.isEmpty() && !connection.domains.isEmpty())
+                domain = connection.domains.first().trimmed();
+            const QString destination = domain.isEmpty() ? address : domain;
+            const QString id = QStringLiteral("%1|%2|%3")
+                                   .arg(snapshot.pid)
+                                   .arg(snapshot.processStartMs)
+                                   .arg(destination.toLower());
+
+            int index = groupIndex.value(id, -1);
+            if (index < 0) {
+                Connections::Row row;
+                row.id = id;
+                row.pid = snapshot.pid;
+                row.processStartMs = snapshot.processStartMs;
+                row.icon = snapshot.icon.isNull() ? genericExecutableIcon()
+                                                  : snapshot.icon;
+                row.appName = snapshot.name;
+                row.displayName = snapshot.identityName;
+                row.publisher = snapshot.publisher;
+                row.path = consumer ? consumer->path : QString();
+                if (row.appName.isEmpty() && !row.path.isEmpty())
+                    row.appName = QFileInfo(row.path).fileName();
+                if (row.displayName.trimmed().isEmpty())
+                    row.displayName = row.appName;
+                if (snapshot.activity.isKnown())
+                    row.activity = snapshot.activity.summary();
+                row.destination = destination;
+                row.hasDomain = !domain.isEmpty();
+                row.policy = consumer
+                    ? Applications::policyLabel(consumer->blocked, consumer->throttled)
+                    : QStringLiteral("None");
+                row.policyToken = consumer
+                    ? Applications::policyTokenFor(consumer->blocked, consumer->throttled)
+                    : QStringLiteral("none");
+                index = groups.size();
+                groups.append(row);
+                groupIndex.insert(id, index);
+            }
+
+            Connections::Row &row = groups[index];
+            Connections::Endpoint endpoint;
+            endpoint.address = address;
+            endpoint.protocol = connection.key.protocol;
+            // The remote side is the destination for uploads and the source for
+            // downloads; the model already named that side in remoteAddress.
+            endpoint.port = (address == connection.key.dstIP)
+                                ? connection.key.dstPort
+                                : connection.key.srcPort;
+            endpoint.domain = connection.domain;
+            endpoint.domainNames = connection.domains;
+            endpoint.evidence = connection.domainEvidence;
+            endpoint.source = connection.domainSource;
+            endpoint.confidence = connection.domainConfidence;
+            endpoint.rxBytes = connection.rxBytes;
+            endpoint.txBytes = connection.txBytes;
+            endpoint.rxBytesPerSecond = connection.rxSpeed;
+            endpoint.txBytesPerSecond = connection.txSpeed;
+            endpoint.packets = connection.packets;
+            row.endpoints.append(endpoint);
+
+            if (!row.addresses.contains(address))
+                row.addresses.append(address);
+            for (const QString &name : connection.domains) {
+                if (!row.domainNames.contains(name, Qt::CaseInsensitive))
+                    row.domainNames.append(name);
+            }
+            row.rxBytes += connection.rxBytes;
+            row.txBytes += connection.txBytes;
+            row.rxBytesPerSecond += connection.rxSpeed;
+            row.txBytesPerSecond += connection.txSpeed;
+            row.packets += connection.packets;
+        }
+    }
+
+    // Roll each group up once, after every socket has been added.
+    for (Connections::Row &row : groups) {
+        row.endpointCount = row.endpoints.size();
+        row.direction = Connections::directionFor(row.rxBytes, row.txBytes);
+
+        QSet<QString> portLabels;
+        QSet<QString> protocols;
+        for (const Connections::Endpoint &endpoint : row.endpoints) {
+            portLabels.insert(QStringLiteral("%1 / %2")
+                                  .arg(endpoint.port)
+                                  .arg(endpoint.protocol));
+            if (!endpoint.protocol.trimmed().isEmpty())
+                protocols.insert(endpoint.protocol);
+        }
+        if (portLabels.size() == 1) {
+            row.ports = *portLabels.constBegin();
+        } else if (portLabels.size() > 1) {
+            row.ports = protocols.size() == 1
+                ? QStringLiteral("Multiple ports / %1").arg(*protocols.constBegin())
+                : QStringLiteral("Multiple ports / protocols");
+        } else {
+            row.ports = QStringLiteral("—");
+        }
+
+        // The strongest single observation represents the group. Sources are
+        // never combined across sockets, because a DNS answer on one address
+        // and an SNI on another do not confirm either one.
+        AttributionSource bestSource = AttributionSource::Unknown;
+        ApplicationIdentity::Confidence bestConfidence =
+            ApplicationIdentity::Confidence::Unknown;
+        auto sourcePriority = [](AttributionSource source) {
+            switch (source) {
+            case AttributionSource::DnsAndTls: return 3;
+            case AttributionSource::DnsAnswer: return 2;
+            case AttributionSource::TlsSni:    return 2;
+            case AttributionSource::Unknown:   break;
+            }
+            return 0;
+        };
+        for (const Connections::Endpoint &endpoint : row.endpoints) {
+            const int rank = Connections::confidenceRank(endpoint.confidence);
+            const int bestRank = Connections::confidenceRank(bestConfidence);
+            if (rank > bestRank
+                || (rank == bestRank
+                    && sourcePriority(endpoint.source) > sourcePriority(bestSource))) {
+                bestConfidence = endpoint.confidence;
+                bestSource = endpoint.source;
+            }
+        }
+        row.evidenceKey = Connections::sourceKey(bestSource);
+        row.evidenceLabel = Connections::sourceLabel(bestSource);
+        row.confidence = Connections::confidenceLabel(bestConfidence);
+        row.confidenceRank = Connections::confidenceRank(bestConfidence);
+    }
+
+    return groups;
+}
+
+void NetworkWidget::refreshConnectionEvidence()
+{
+    if (m_model)
+        m_model->refreshDomains();
+    // refreshDashboard() rebuilds the beat and emits dashboardUpdated, which is
+    // what the Connections page listens to; forcing one here makes the refresh
+    // action visible even between beats.
+    refreshDashboard();
+}
+
 Applications::Details NetworkWidget::applicationDetails(quint32 pid, const QString &executablePath,
                                                        const QString &processName)
 {

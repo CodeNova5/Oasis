@@ -161,6 +161,9 @@ public:
     ProcessRowSnapshot snapshotForRow(int pRow) const;
     // Source-model row of a live PID, or -1 when the process is not shown.
     int rowForPid(quint32 pid) const;
+    // Number of process rows currently held, for screens that read every
+    // process (the Connections view flattens their sockets into destinations).
+    int processCount() const { return m_procs.size(); }
     // NG-012: replace the PID -> services map and refresh the affected rows.
     void applyServiceSnapshot(const Oasis::ServicePidMap &services);
     void clear();

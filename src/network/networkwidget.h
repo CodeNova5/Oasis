@@ -21,6 +21,7 @@
 #include "auditeventstore.h"
 #include "applicationdetail.h"
 #include "applicationsnapshot.h"
+#include "connectionsnapshot.h"
 #include "policyeditordialog.h"
 #include "topconsumers.h"
 #include "attribution/recommendationengine.h"
@@ -130,6 +131,13 @@ public:
     // state and policy state the first-view summary does not carry. Read from
     // the last beat, so the Applications page adds no capture work of its own.
     QList<Applications::Snapshot> applicationSnapshots() const;
+    // Screen 05: every observed socket grouped by owning process and
+    // destination. The page only renders this snapshot; it never reads the
+    // capture model or re-resolves evidence itself.
+    QList<Connections::Row> connectionGroups() const;
+    // Re-resolve destination names and rebuild the one-second beat, so a manual
+    // refresh shows current evidence instead of a cached answer.
+    void refreshConnectionEvidence();
     // Screen 03 details drawer: read on open, so static executable metadata is
     // not resolved for every row on every beat.
     Applications::Details applicationDetails(quint32 pid, const QString &executablePath,
