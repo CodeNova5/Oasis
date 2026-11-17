@@ -3,34 +3,36 @@
  * @brief   Screen 05 — Connections (SCREENS_SPEC.md).
  *
  * A pure presentation layer over the grouped connection snapshots the network
- * layer produces once per beat. The page owns search, filtering, sorting and
- * the evidence drawer; it never captures packets, resolves names, or applies a
- * policy itself. Actions are routed back to the shell through signals so the
- * existing application/policy flows remain the only enforcement path.
+ * layer produces once per beat. The page renders the KPI row, the filter
+ * toolbar, the expandable grouped table and the connection inspector; it never
+ * captures packets, resolves names, or applies a policy itself. Actions are
+ * routed back to the shell through signals so the existing application/policy
+ * flows remain the only enforcement path.
  *
  * @author  Oasis
  */
 #pragma once
 
+#include <QList>
+#include <QSet>
 #include <QString>
 #include <QWidget>
 
 #include "network/connectionsnapshot.h"
 
+class ConnectionsTable;
+class EmptyStateWidget;
+class FilterPill;
+class MetricTile;
+class QAction;
 class QButtonGroup;
-class QComboBox;
 class QFrame;
-class QGridLayout;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QScrollArea;
 class QStackedWidget;
-class QTableView;
-class QToolButton;
 class QVBoxLayout;
-class ConnectionsFilterProxy;
-class ConnectionsTableModel;
-class EmptyStateWidget;
 
 class ConnectionsPage : public QWidget
 {
@@ -39,12 +41,15 @@ class ConnectionsPage : public QWidget
 public:
     explicit ConnectionsPage(QWidget *parent = nullptr);
 
-    /// Replaces the table contents. Selection survives a beat when the selected
-    /// application + destination is still present.
+    /// Replaces the table contents. Expansion, selection and scroll position
+    /// survive a beat while the same groups are still present.
     void setGroups(const QList<Connections::Row> &groups);
 
     /// Capture state decides the empty-state wording; it never fakes rows.
     void setMonitoringActive(bool active);
+
+    /// Pause and Export controls, hosted by the shell in the page header.
+    QWidget *actionsWidget() const { return m_actionsWidget; }
 
 signals:
     /// Ask the host to re-resolve destination evidence and rebuild the beat.
@@ -53,73 +58,75 @@ signals:
     void detailsRequested(quint32 pid, const QString &path, const QString &name);
     void trafficRequested(quint32 pid, const QString &path, const QString &name);
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
+    void buildMetrics(QVBoxLayout *root);
     void buildToolbar(QVBoxLayout *root);
     void buildTable(QVBoxLayout *root);
-    void buildDrawer(QWidget *parent);
-    void buildBanner(QVBoxLayout *root);
+    void buildInspector();
 
     void setFilter(Connections::Filter filter);
     void clearFilters();
     void applyFilters();
+    void refreshMetrics();
     void refreshPills();
-    void refreshBanner();
-    void refreshFooter();
     void refreshEmptyState();
+    void refreshTheme();
 
-    void showRow(const Connections::Row &row);
-    void clearDrawer();
-    void refreshDrawerActions();
+    void openInspector(const QString &id);
+    void closeInspector();
+    void renderInspector();
+    void onSelectionChanged(const QString &id);
 
-    QString selectedId() const;
-    void selectGroup(const QString &id);
+    void exportVisibleRows();
+    void setPaused(bool paused);
 
-    QFrame      *m_banner = nullptr;
-    QLabel      *m_bannerText = nullptr;
-    QPushButton *m_bannerAction = nullptr;
-    bool         m_bannerDismissed = false;
-    int          m_bannerUnknownCount = 0;
+    const Connections::Row *rowForId(const QString &id) const;
 
-    QLineEdit   *m_search = nullptr;
+    QWidget     *m_actionsWidget = nullptr;
+    QPushButton *m_pauseButton = nullptr;
+    QPushButton *m_exportButton = nullptr;
+
+    MetricTile  *m_activeTile = nullptr;
+    MetricTile  *m_blockedTile = nullptr;
+    MetricTile  *m_outboundTile = nullptr;
+    MetricTile  *m_inboundTile = nullptr;
+    MetricTile  *m_unknownTile = nullptr;
+
+    QLineEdit    *m_search = nullptr;
+    QAction      *m_searchAction = nullptr;
+    QFrame       *m_pillHost = nullptr;
     QButtonGroup *m_pillGroup = nullptr;
-    QComboBox   *m_source = nullptr;
-    QPushButton *m_refreshButton = nullptr;
+    FilterPill   *m_pillAll = nullptr;
+    FilterPill   *m_pillOutbound = nullptr;
+    FilterPill   *m_pillInbound = nullptr;
+    FilterPill   *m_pillBlocked = nullptr;
+    FilterPill   *m_pillUnknown = nullptr;
+    QPushButton  *m_groupButton = nullptr;
+    QPushButton  *m_rangeButton = nullptr;
 
     QStackedWidget *m_stack = nullptr;
-    QFrame         *m_tableCard = nullptr;
-    QTableView     *m_table = nullptr;
-    QLabel         *m_footerCount = nullptr;
-    QLabel         *m_footerNote = nullptr;
+    ConnectionsTable *m_table = nullptr;
     EmptyStateWidget *m_empty = nullptr;
-    bool            m_emptyFiltered = false;
+    bool m_emptyFiltered = false;
 
-    QFrame      *m_drawer = nullptr;
-    QLabel      *m_drawerTitle = nullptr;
-    QLabel      *m_drawerBadge = nullptr;
-    QLabel      *m_appIcon = nullptr;
-    QLabel      *m_appName = nullptr;
-    QLabel      *m_appMeta = nullptr;
-    QLabel      *m_endpointDetailValue = nullptr;
-    QLabel      *m_directionValue = nullptr;
-    QLabel      *m_evidenceTitle = nullptr;
-    QLabel      *m_evidenceDetail = nullptr;
-    QLabel      *m_rateValue = nullptr;
-    QLabel      *m_dataValue = nullptr;
-    QLabel      *m_downloadValue = nullptr;
-    QLabel      *m_uploadValue = nullptr;
-    QLabel      *m_packetsValue = nullptr;
-    QLabel      *m_endpointValue = nullptr;
-    QVBoxLayout *m_endpointsLayout = nullptr;
-    QLabel      *m_policyNote = nullptr;
-    QPushButton *m_trafficButton = nullptr;
-    QPushButton *m_detailsButton = nullptr;
+    QFrame      *m_inspector = nullptr;
+    QLabel      *m_inspectorTitle = nullptr;
+    QLabel      *m_inspectorSubtitle = nullptr;
+    QScrollArea *m_inspectorScroll = nullptr;
+    QVBoxLayout *m_inspectorBody = nullptr;
+    QString      m_inspectorId;
 
-    ConnectionsTableModel *m_model = nullptr;
-    ConnectionsFilterProxy *m_proxy = nullptr;
+    QList<Connections::Row> m_rows;
+    QList<Connections::Row> m_filtered;
+    QList<Connections::Row> m_pendingRows;
+    QSet<QString> m_seenEndpoints;
 
-    QList<Connections::Row> m_groups;
     Connections::Filter m_filter = Connections::Filter::All;
+    QString m_query;
+    QString m_selectedId;
     bool m_monitoringActive = false;
-    bool m_hasSelection = false;
-    Connections::Row m_selected;
+    bool m_paused = false;
 };

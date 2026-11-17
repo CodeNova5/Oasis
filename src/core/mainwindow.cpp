@@ -1520,7 +1520,13 @@ void MainWindow::navigateTo(int index)
     if (m_header && index < m_screenTitles.size()) {
         m_header->setPage(m_screenTitles.at(index),
                           m_screenSubtitles.value(index));
-        m_header->setPageActionsVisible(index == m_applicationsIndex);
+        // Each rebuilt screen owns the header controls its mock puts there.
+        if (index == m_applicationsIndex && m_applications)
+            m_header->setPageActions(m_applications->actionsWidget());
+        else if (index == m_connectionsIndex && m_connections)
+            m_header->setPageActions(m_connections->actionsWidget());
+        m_header->setPageActionsVisible(index == m_applicationsIndex
+                                       || index == m_connectionsIndex);
     }
 }
 

@@ -91,7 +91,10 @@ enum class Filter {
     All = 0,
     Domains,
     IpAddresses,
-    Unknown
+    Unknown,
+    Outbound,
+    Inbound,
+    Blocked
 };
 
 QString filterLabel(Filter filter);

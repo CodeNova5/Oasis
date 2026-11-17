@@ -4,535 +4,483 @@
  */
 #include "connectionspage.h"
 
+#include "connectionicons.h"
+#include "connectionstable.h"
 #include "ui/components/emptystatewidget.h"
 #include "ui/theme/colors.h"
+#include "ui/theme/dimensions.h"
 #include "ui/theme/thememanager.h"
+#include "ui/theme/typography.h"
 
-#include <QAbstractTableModel>
-#include <QBrush>
+#include <QAbstractButton>
+#include <QAction>
 #include <QButtonGroup>
-#include <QColor>
-#include <QComboBox>
-#include <QFont>
+#include <QDateTime>
+#include <QDir>
+#include <QEnterEvent>
+#include <QFile>
+#include <QFileDialog>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
-#include <QHeaderView>
-#include <QItemSelectionModel>
+#include <QIcon>
 #include <QLabel>
-#include <QLayoutItem>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPushButton>
-#include <QRegularExpression>
+#include <QResizeEvent>
 #include <QScrollArea>
-#include <QScrollBar>
-#include <QSizePolicy>
-#include <QSortFilterProxyModel>
+#include <QSignalBlocker>
+#include <QStandardPaths>
 #include <QStackedWidget>
-#include <QStyle>
-#include <QStyledItemDelegate>
-#include <QStyleOptionViewItem>
-#include <QTableView>
-#include <QTimer>
+#include <QStringConverter>
+#include <QTextStream>
 #include <QToolButton>
 #include <QVBoxLayout>
 
+using ConnectionsUi::Glyph;
+
 namespace {
 
-enum Column {
-    Destination = 0,
-    Application,
-    PortProtocol,
-    Evidence,
-    Rate,
-    Data,
-    Confidence,
-    ColumnCount
-};
+Theme::Palette themePalette()
+{
+    return Theme::palette(ThemeManager::instance().isDark());
+}
 
-enum Role {
-    SortRole = Qt::UserRole + 1,
-    IdRole,
-    PidRole,
-    PathRole,
-    NameRole
-};
+QColor token(const QString &value)
+{
+    return Theme::qcolor(value);
+}
+
+QFont uiFont(int pixelSize, QFont::Weight weight)
+{
+    QFont font = Theme::Type::baseFont();
+    font.setPixelSize(pixelSize);
+    font.setWeight(weight);
+    return font;
+}
 
 QString applicationLabel(const Connections::Row &row)
 {
     return row.displayName.trimmed().isEmpty() ? row.appName : row.displayName;
 }
 
-QFont tabularFont(QFont font)
+int endpointCountFor(const Connections::Row &row)
 {
-    font.setFeature(QFont::Tag("tnum"), 1);
-    return font;
+    if (!row.endpoints.isEmpty())
+        return int(row.endpoints.size());
+    return qMax(1, row.endpointCount);
 }
 
-QString initialsFor(const QString &label)
+bool endpointNamed(const Connections::Endpoint &endpoint)
 {
-    QString base = label;
-    const int dot = base.lastIndexOf(QLatin1Char('.'));
-    if (dot > 0)
-        base.truncate(dot);
-
-    QString initials;
-    for (const QString &part : base.split(QRegularExpression(QStringLiteral("[^A-Za-z0-9]+")),
-                                          Qt::SkipEmptyParts)) {
-        initials.append(part.at(0).toUpper());
-        if (initials.size() == 2)
-            break;
-    }
-    return initials.isEmpty() ? QStringLiteral("?") : initials;
+    return !endpoint.domainNames.isEmpty() || !endpoint.domain.trimmed().isEmpty();
 }
 
-QString badgeStatusFor(int confidenceRank)
+quint16 rowPort(const Connections::Row &row)
 {
-    switch (confidenceRank) {
-    case 3: return QStringLiteral("active");
-    case 2: return QStringLiteral("pending");
-    case 1: return QStringLiteral("degraded");
-    default: break;
-    }
-    return QStringLiteral("unknown");
-}
-
-QString evidenceForRow(const Connections::Row &row)
-{
-    QStringList lines;
-    lines << QStringLiteral("%1 · %2").arg(row.evidenceLabel, row.confidence);
-    QStringList seen;
+    quint16 port = 0;
     for (const Connections::Endpoint &endpoint : row.endpoints) {
-        for (const QString &line : endpoint.evidence) {
-            if (!seen.contains(line)) {
-                seen.append(line);
-                lines << QStringLiteral("• %1").arg(line);
-            }
+        if (port == 0 || endpoint.port < port)
+            port = endpoint.port;
+    }
+    return port;
+}
+
+QString protoFor(quint16 port, const QString &protocol)
+{
+    switch (port) {
+    case 80:   return QStringLiteral("HTTP");
+    case 443:  return QStringLiteral("HTTPS");
+    case 53:   return QStringLiteral("DNS");
+    case 22:   return QStringLiteral("SSH");
+    case 25:
+    case 587:  return QStringLiteral("SMTP");
+    case 993:  return QStringLiteral("IMAPS");
+    case 3389: return QStringLiteral("RDP");
+    case 445:  return QStringLiteral("SMB");
+    default:
+        break;
+    }
+    return protocol.isEmpty() ? QStringLiteral("TCP") : protocol.toUpper();
+}
+
+QString rowProtocol(const Connections::Row &row)
+{
+    quint16 port = 0;
+    QString protocol;
+    for (const Connections::Endpoint &endpoint : row.endpoints) {
+        if (port == 0 || endpoint.port < port) {
+            port = endpoint.port;
+            protocol = endpoint.protocol;
         }
     }
-    if (seen.isEmpty()) {
-        lines << (row.hasDomain
-                      ? QStringLiteral("The name was observed without a recorded evidence detail.")
-                      : QStringLiteral("No DNS answer or visible TLS SNI named this destination. "
-                                       "Reverse-DNS guessing is disabled."));
-    }
-    return lines.join(QLatin1Char('\n'));
-}
-
-QLabel *addKeyValue(QGridLayout *grid, int row, int column,
-                    const QString &caption, QWidget *parent)
-{
-    auto *box = new QFrame(parent);
-    box->setProperty("uiRole", QStringLiteral("elevated"));
-    auto *layout = new QVBoxLayout(box);
-    layout->setContentsMargins(10, 8, 10, 8);
-    layout->setSpacing(2);
-
-    auto *captionLabel = new QLabel(caption, box);
-    captionLabel->setProperty("uiRole", QStringLiteral("muted"));
-
-    auto *valueLabel = new QLabel(QStringLiteral("—"), box);
-    valueLabel->setProperty("uiRole", QStringLiteral("rowValue"));
-    valueLabel->setWordWrap(true);
-    valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    valueLabel->setFont(tabularFont(valueLabel->font()));
-
-    layout->addWidget(captionLabel);
-    layout->addWidget(valueLabel);
-    grid->addWidget(box, row, column);
-    return valueLabel;
-}
-
-void repolish(QWidget *widget)
-{
-    widget->style()->unpolish(widget);
-    widget->style()->polish(widget);
+    return protoFor(port, protocol);
 }
 
 void clearLayout(QLayout *layout)
 {
+    if (!layout)
+        return;
     while (QLayoutItem *item = layout->takeAt(0)) {
         if (QWidget *widget = item->widget())
             widget->deleteLater();
+        clearLayout(item->layout());
         delete item;
     }
 }
 
 } // namespace
 
-// ─── Table model ────────────────────────────────────────────────────────────
-class ConnectionsTableModel : public QAbstractTableModel
+// ============================================================================
+// Metric tile
+// ============================================================================
+
+class MetricTile : public QFrame
 {
 public:
-    explicit ConnectionsTableModel(QObject *parent = nullptr)
-        : QAbstractTableModel(parent)
+    enum class Tone { Accent, Danger, Success, Warning };
+
+    MetricTile(Glyph glyph, const QString &label, QWidget *parent = nullptr)
+        : QFrame(parent)
+        , m_glyph(glyph)
     {
+        setProperty("uiRole", QStringLiteral("card"));
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+        auto *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(16, 14, 16, 14);
+        layout->setSpacing(4);
+
+        auto *labelRow = new QHBoxLayout;
+        labelRow->setContentsMargins(0, 0, 0, 0);
+        labelRow->setSpacing(5);
+
+        m_icon = new QLabel(this);
+        m_icon->setFixedSize(13, 13);
+        m_label = new QLabel(label, this);
+        m_label->setFont(uiFont(11, QFont::Medium));
+        labelRow->addWidget(m_icon, 0, Qt::AlignVCenter);
+        labelRow->addWidget(m_label, 0, Qt::AlignVCenter);
+        labelRow->addStretch(1);
+
+        m_value = new QLabel(QStringLiteral("—"), this);
+        m_value->setFont(uiFont(26, QFont::DemiBold));
+        m_caption = new QLabel(this);
+        m_caption->setFont(uiFont(11, QFont::Normal));
+        m_caption->setWordWrap(false);
+
+        layout->addLayout(labelRow);
+        layout->addWidget(m_value);
+        layout->addWidget(m_caption);
+
+        refreshTheme();
     }
 
-    void setGroups(const QList<Connections::Row> &groups)
+    void setValue(const QString &value, Tone tone)
     {
-        beginResetModel();
-        m_rows = groups;
-        endResetModel();
+        m_value->setText(value);
+        m_tone = tone;
+        applyTone();
     }
 
-    const Connections::Row &rowAt(int row) const { return m_rows.at(row); }
-
-    int rowCount(const QModelIndex &parent = QModelIndex()) const override
+    void setCaption(const QString &caption)
     {
-        return parent.isValid() ? 0 : int(m_rows.size());
+        m_caption->setText(caption);
+        m_caption->setVisible(!caption.isEmpty());
     }
 
-    int columnCount(const QModelIndex &parent = QModelIndex()) const override
+    void refreshTheme()
     {
-        return parent.isValid() ? 0 : int(ColumnCount);
-    }
-
-    QVariant headerData(int section, Qt::Orientation orientation,
-                        int role = Qt::DisplayRole) const override
-    {
-        if (orientation != Qt::Horizontal)
-            return {};
-        if (role == Qt::TextAlignmentRole
-            && (section == Rate || section == Data)) {
-            return int(Qt::AlignRight | Qt::AlignVCenter);
-        }
-        if (role != Qt::DisplayRole)
-            return {};
-        switch (section) {
-        case Destination:    return QStringLiteral("Domain / Destination");
-        case Application:    return QStringLiteral("Application");
-        case PortProtocol:   return QStringLiteral("Port / Protocol");
-        case Evidence:       return QStringLiteral("Evidence");
-        case Rate:           return QStringLiteral("Current rate");
-        case Data:           return QStringLiteral("Data");
-        case Confidence:     return QStringLiteral("Confidence");
-        default: break;
-        }
-        return {};
-    }
-
-    QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override
-    {
-        if (!index.isValid() || index.row() < 0 || index.row() >= m_rows.size())
-            return {};
-
-        const Connections::Row &row = m_rows.at(index.row());
-        const int column = index.column();
-
-        switch (role) {
-        case Qt::DisplayRole:
-            switch (column) {
-            case Destination:   return row.destination;
-            case Application:   return applicationLabel(row);
-            case PortProtocol:  return row.ports;
-            case Evidence:      return row.evidenceLabel;
-            case Rate:          return Connections::formatRate(row.bytesPerSecond());
-            case Data:          return Connections::formatBytes(row.totalBytes());
-            case Confidence:    return row.confidence;
-            default: break;
-            }
-            break;
-
-        case Qt::DecorationRole:
-            if (column == Application && !row.icon.isNull())
-                return row.icon;
-            break;
-
-        case Qt::ToolTipRole:
-            switch (column) {
-            case Destination:
-                if (row.hasDomain) {
-                    return row.domainNames.size() > 1
-                        ? QStringLiteral("Observed names: %1").arg(
-                              row.domainNames.join(QStringLiteral(", ")))
-                        : QStringLiteral("Observed hostname: %1").arg(row.domainNames.join(QString()));
-                }
-                return QStringLiteral("No verified hostname. Reverse-DNS guessing is disabled.");
-            case Application:
-                return row.path.trimmed().isEmpty() ? row.appName : row.path;
-            case PortProtocol:
-                return QStringLiteral("%1 endpoint(s)").arg(row.endpointCount);
-            case Evidence:
-                return evidenceForRow(row);
-            case Rate:
-                return QStringLiteral("Download %1 · Upload %2")
-                    .arg(Connections::formatRate(row.rxBytesPerSecond),
-                         Connections::formatRate(row.txBytesPerSecond));
-            case Data:
-                return QStringLiteral("Downloaded %1 · Uploaded %2")
-                    .arg(Connections::formatBytes(row.rxBytes),
-                         Connections::formatBytes(row.txBytes));
-            default:
-                break;
-            }
-            break;
-
-        case Qt::TextAlignmentRole:
-            if (column == Rate || column == Data)
-                return int(Qt::AlignRight | Qt::AlignVCenter);
-            return int(Qt::AlignLeft | Qt::AlignVCenter);
-
-        case Qt::FontRole:
-            if (column == Destination) {
-                QFont font = tabularFont(QFont());
-                font.setBold(row.hasDomain);
-                font.setItalic(!row.hasDomain);
-                return font;
-            }
-            if (column == PortProtocol || column == Rate || column == Data)
-                return tabularFont(QFont());
-            break;
-
-        case Qt::ForegroundRole:
-            if (column == Confidence) {
-                const Theme::Palette palette =
-                    Theme::palette(ThemeManager::instance().isDark());
-                switch (row.confidenceRank) {
-                case 3: return QBrush(Theme::qcolor(palette.semanticSuccess));
-                case 2: return QBrush(Theme::qcolor(palette.semanticInfo));
-                case 1: return QBrush(Theme::qcolor(palette.semanticWarning));
-                default: break;
-                }
-                return QBrush(Theme::qcolor(palette.textMuted));
-            }
-            break;
-
-        case SortRole:
-            switch (column) {
-            case Destination:  return row.destination.toLower();
-            case Application:  return applicationLabel(row).toLower();
-            case PortProtocol: {
-                quint16 port = 0;
-                for (const Connections::Endpoint &endpoint : row.endpoints) {
-                    if (port == 0 || endpoint.port < port)
-                        port = endpoint.port;
-                }
-                return int(port);
-            }
-            case Evidence:     return row.confidenceRank;
-            case Rate:         return QVariant::fromValue<qulonglong>(row.bytesPerSecond());
-            case Data:         return QVariant::fromValue<qulonglong>(row.totalBytes());
-            case Confidence:   return row.confidenceRank;
-            default: break;
-            }
-            break;
-
-        case IdRole:   return row.id;
-        case PidRole:  return row.pid;
-        case PathRole: return row.path;
-        case NameRole: return row.appName;
-        default:
-            break;
-        }
-        return {};
+        const Theme::Palette pal = themePalette();
+        m_icon->setPixmap(ConnectionsUi::glyphPixmap(m_glyph, 13, token(pal.textSecondary), 2.0));
+        m_label->setStyleSheet(QStringLiteral("color: %1;").arg(pal.textSecondary));
+        m_caption->setStyleSheet(QStringLiteral("color: %1;").arg(pal.textMuted));
+        applyTone();
     }
 
 private:
-    QList<Connections::Row> m_rows;
+    void applyTone()
+    {
+        const Theme::Palette pal = themePalette();
+        QString value;
+        switch (m_tone) {
+        case Tone::Accent:  value = pal.accentPrimary; break;
+        case Tone::Danger:  value = pal.semanticDanger; break;
+        case Tone::Success: value = pal.semanticSuccess; break;
+        case Tone::Warning: value = pal.semanticWarning; break;
+        }
+        m_value->setStyleSheet(QStringLiteral("color: %1;").arg(value));
+    }
+
+    Glyph m_glyph;
+    QLabel *m_icon = nullptr;
+    QLabel *m_label = nullptr;
+    QLabel *m_value = nullptr;
+    QLabel *m_caption = nullptr;
+    Tone m_tone = Tone::Accent;
 };
 
-// ─── Filter proxy ───────────────────────────────────────────────────────────
-class ConnectionsFilterProxy : public QSortFilterProxyModel
+// ============================================================================
+// Filter pill
+// ============================================================================
+
+class FilterPill : public QAbstractButton
 {
 public:
-    explicit ConnectionsFilterProxy(QObject *parent = nullptr)
-        : QSortFilterProxyModel(parent)
+    enum class CountTone { Muted, Danger, Warning };
+
+    explicit FilterPill(const QString &label, QWidget *parent = nullptr)
+        : QAbstractButton(parent)
+        , m_label(label)
     {
-        setDynamicSortFilter(true);
-        setSortRole(SortRole);
+        setCheckable(true);
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);
+        setFixedHeight(26);
     }
 
-    void setConnectionFilter(Connections::Filter filter)
+    void setCount(const QString &count, CountTone tone = CountTone::Muted)
     {
-        if (m_filter == filter)
+        if (m_count == count && m_tone == tone)
             return;
-        m_filter = filter;
-        invalidate();
+        m_count = count;
+        m_tone = tone;
+        updateGeometry();
+        update();
     }
 
-    void setSourceKey(const QString &key)
+    QSize sizeHint() const override
     {
-        if (m_sourceKey == key)
-            return;
-        m_sourceKey = key;
-        invalidate();
-    }
-
-    void setQuery(const QString &query)
-    {
-        if (m_query == query)
-            return;
-        m_query = query;
-        invalidate();
+        const QFontMetrics metrics(uiFont(12, QFont::Medium));
+        int width = 24 + metrics.horizontalAdvance(m_label);
+        if (!m_count.isEmpty()) {
+            const QFontMetrics countMetrics(uiFont(11, QFont::Medium));
+            width += 5 + countMetrics.horizontalAdvance(m_count);
+        }
+        return QSize(width, 26);
     }
 
 protected:
-    bool filterAcceptsRow(int sourceRow, const QModelIndex &) const override
+    void paintEvent(QPaintEvent *) override
     {
-        const auto *model = static_cast<const ConnectionsTableModel *>(sourceModel());
-        if (!model || sourceRow < 0 || sourceRow >= model->rowCount())
-            return false;
-        const Connections::Row &row = model->rowAt(sourceRow);
-        return Connections::matchesFilter(row, m_filter)
-               && Connections::matchesSource(row, m_sourceKey)
-               && Connections::matchesQuery(row, m_query);
+        const Theme::Palette pal = themePalette();
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        if (isChecked()) {
+            painter.setPen(QPen(token(pal.borderDefault), 1));
+            painter.setBrush(token(pal.surfaceElevated));
+            painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 5, 5);
+        } else if (underMouse()) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(token(pal.surfaceHover));
+            painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 5, 5);
+        }
+
+        const QColor foreground = isChecked() || underMouse()
+                                      ? token(pal.textPrimary)
+                                      : token(pal.textSecondary);
+        const QFont font = uiFont(12, QFont::Medium);
+        painter.setFont(font);
+        painter.setPen(foreground);
+        const QRect textRect(12, 0, width() - 24, height());
+        painter.drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, m_label);
+
+        if (!m_count.isEmpty()) {
+            QColor countColor;
+            switch (m_tone) {
+            case CountTone::Danger:  countColor = token(pal.semanticDanger); break;
+            case CountTone::Warning: countColor = token(pal.semanticWarning); break;
+            case CountTone::Muted:   countColor = token(pal.textMuted); break;
+            }
+            painter.setFont(uiFont(11, QFont::Medium));
+            painter.setPen(countColor);
+            painter.drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, m_count);
+        }
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        QAbstractButton::enterEvent(event);
+        update();
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QAbstractButton::leaveEvent(event);
+        update();
     }
 
 private:
-    Connections::Filter m_filter = Connections::Filter::All;
-    QString m_sourceKey = QStringLiteral("all");
-    QString m_query;
+    QString m_label;
+    QString m_count;
+    CountTone m_tone = CountTone::Muted;
 };
 
-// A QSS ::item border applies to every cell, so the row's accent bar is drawn
-// once, on the first column, after the standard item painting.
-class ConnectionRowDelegate : public QStyledItemDelegate
-{
-public:
-    using QStyledItemDelegate::QStyledItemDelegate;
+// ============================================================================
+// Page
+// ============================================================================
 
-    void paint(QPainter *painter, const QStyleOptionViewItem &option,
-               const QModelIndex &index) const override
-    {
-        QStyleOptionViewItem opt(option);
-        initStyleOption(&opt, index);
-        QStyledItemDelegate::paint(painter, opt, index);
-
-        if (index.column() == 0 && (opt.state & QStyle::State_Selected)) {
-            painter->save();
-            painter->setPen(Qt::NoPen);
-            painter->setBrush(QColor(76, 141, 255));
-            painter->drawRect(QRect(opt.rect.left(), opt.rect.top(), 2,
-                                    opt.rect.height()));
-            painter->restore();
-        }
-    }
-};
-
-// ─── Page ───────────────────────────────────────────────────────────────────
 ConnectionsPage::ConnectionsPage(QWidget *parent)
     : QWidget(parent)
 {
     setObjectName(QStringLiteral("connectionsPage"));
 
     auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(24, 12, 24, 16);
-    root->setSpacing(12);
+    root->setContentsMargins(Theme::Dim::PagePaddingH, 20,
+                             Theme::Dim::PagePaddingH, 0);
+    root->setSpacing(16);
 
-    buildBanner(root);
+    buildMetrics(root);
     buildToolbar(root);
-    buildDrawer(this);
     buildTable(root);
+    buildInspector();
 
-    clearDrawer();
+    // Header actions: Pause stops the live feed, Export writes what is shown.
+    m_actionsWidget = new QWidget(this);
+    auto *actionsLayout = new QHBoxLayout(m_actionsWidget);
+    actionsLayout->setContentsMargins(0, 0, 0, 0);
+    actionsLayout->setSpacing(8);
+
+    m_pauseButton = new QPushButton(QStringLiteral("Pause"), m_actionsWidget);
+    m_pauseButton->setFixedHeight(Theme::Dim::ButtonHeight);
+    m_pauseButton->setIconSize(QSize(15, 15));
+    m_pauseButton->setCursor(Qt::PointingHandCursor);
+
+    m_exportButton = new QPushButton(QStringLiteral("Export"), m_actionsWidget);
+    m_exportButton->setFixedHeight(Theme::Dim::ButtonHeight);
+    m_exportButton->setIconSize(QSize(15, 15));
+    m_exportButton->setCursor(Qt::PointingHandCursor);
+    m_exportButton->setToolTip(QStringLiteral("Export the connections currently shown as CSV."));
+
+    actionsLayout->addWidget(m_pauseButton);
+    actionsLayout->addWidget(m_exportButton);
+
+    connect(m_pauseButton, &QPushButton::clicked, this, [this]() {
+        setPaused(!m_paused);
+    });
+    connect(m_exportButton, &QPushButton::clicked, this, &ConnectionsPage::exportVisibleRows);
+
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this,
+            [this](ThemeManager::Mode) {
+        refreshTheme();
+    });
+
+    refreshMetrics();
     refreshPills();
-    refreshBanner();
-    refreshFooter();
     refreshEmptyState();
+    refreshTheme();
 }
 
-void ConnectionsPage::buildBanner(QVBoxLayout *root)
+void ConnectionsPage::buildMetrics(QVBoxLayout *root)
 {
-    m_banner = new QFrame(this);
-    m_banner->setProperty("uiRole", QStringLiteral("banner"));
-    m_banner->setProperty("severity", QStringLiteral("info"));
+    auto *grid = new QGridLayout;
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(12);
+    grid->setVerticalSpacing(12);
 
-    auto *layout = new QHBoxLayout(m_banner);
-    layout->setContentsMargins(12, 6, 8, 6);
-    layout->setSpacing(8);
+    m_activeTile = new MetricTile(Glyph::Globe, QStringLiteral("Active Connections"), this);
+    m_blockedTile = new MetricTile(Glyph::Shield, QStringLiteral("Blocked"), this);
+    m_outboundTile = new MetricTile(Glyph::TrendUp, QStringLiteral("Outbound ↑"), this);
+    m_inboundTile = new MetricTile(Glyph::TrendDown, QStringLiteral("Inbound ↓"), this);
+    m_unknownTile = new MetricTile(Glyph::Info, QStringLiteral("Unknown"), this);
 
-    m_bannerText = new QLabel(m_banner);
-    m_bannerText->setWordWrap(true);
-    m_bannerText->setProperty("uiRole", QStringLiteral("secondary"));
-
-    m_bannerAction = new QPushButton(QStringLiteral("Show IP-only"), m_banner);
-    m_bannerAction->setProperty("uiRole", QStringLiteral("link"));
-    m_bannerAction->setCursor(Qt::PointingHandCursor);
-
-    auto *dismiss = new QPushButton(QStringLiteral("×"), m_banner);
-    dismiss->setProperty("uiRole", QStringLiteral("link"));
-    dismiss->setCursor(Qt::PointingHandCursor);
-    dismiss->setFixedSize(24, 24);
-    dismiss->setStyleSheet(QStringLiteral("text-align: center; padding: 0;"));
-    dismiss->setToolTip(QStringLiteral("Dismiss this notice"));
-
-    layout->addWidget(m_bannerText, 1);
-    layout->addWidget(m_bannerAction, 0, Qt::AlignVCenter);
-    layout->addWidget(dismiss, 0, Qt::AlignVCenter);
-    m_banner->hide();
-    root->addWidget(m_banner);
-
-    connect(m_bannerAction, &QPushButton::clicked, this, [this]() {
-        setFilter(Connections::Filter::IpAddresses);
-    });
-    connect(dismiss, &QPushButton::clicked, this, [this]() {
-        m_bannerDismissed = true;
-        m_banner->hide();
-    });
+    MetricTile *tiles[] = {m_activeTile, m_blockedTile, m_outboundTile,
+                           m_inboundTile, m_unknownTile};
+    for (int i = 0; i < 5; ++i) {
+        grid->addWidget(tiles[i], 0, i);
+        grid->setColumnStretch(i, 1);
+    }
+    root->addLayout(grid);
 }
 
 void ConnectionsPage::buildToolbar(QVBoxLayout *root)
 {
-    auto *toolbar = new QHBoxLayout(this);
-    toolbar->setSpacing(8);
+    auto *toolbar = new QHBoxLayout;
+    toolbar->setContentsMargins(0, 0, 0, 0);
+    toolbar->setSpacing(10);
 
     m_search = new QLineEdit(this);
-    m_search->setPlaceholderText(QStringLiteral("Search domain, IP, or app..."));
+    m_search->setPlaceholderText(QStringLiteral("Filter by app, domain, IP, or port…"));
     m_search->setClearButtonEnabled(true);
-    m_search->setMinimumWidth(280);
-    m_search->setMaximumWidth(360);
+    m_search->setFixedHeight(36);
+    m_search->setMinimumWidth(220);
+    m_search->setMaximumWidth(340);
+    m_search->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_searchAction = m_search->addAction(QIcon(), QLineEdit::LeadingPosition);
     toolbar->addWidget(m_search);
+
+    m_pillHost = new QFrame(this);
+    m_pillHost->setObjectName(QStringLiteral("connectionFilterPills"));
+    m_pillHost->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto *pillLayout = new QHBoxLayout(m_pillHost);
+    pillLayout->setContentsMargins(3, 3, 3, 3);
+    pillLayout->setSpacing(2);
 
     m_pillGroup = new QButtonGroup(this);
     m_pillGroup->setExclusive(true);
-    const Connections::Filter filters[] = {
-        Connections::Filter::All,
-        Connections::Filter::Domains,
-        Connections::Filter::IpAddresses,
-        Connections::Filter::Unknown
-    };
-    for (Connections::Filter filter : filters) {
-        auto *button = new QToolButton(this);
-        button->setText(Connections::filterLabel(filter));
-        button->setCheckable(true);
-        button->setAutoRaise(true);
-        button->setCursor(Qt::PointingHandCursor);
-        button->setProperty("uiRole", QStringLiteral("filterPill"));
-        m_pillGroup->addButton(button, int(filter));
-        toolbar->addWidget(button);
-    }
-    if (QAbstractButton *all = m_pillGroup->button(int(Connections::Filter::All)))
-        all->setChecked(true);
 
+    auto makePill = [this, pillLayout](FilterPill **store, const QString &text,
+                                       Connections::Filter filter) {
+        auto *pill = new FilterPill(text, m_pillHost);
+        m_pillGroup->addButton(pill, int(filter));
+        pillLayout->addWidget(pill);
+        *store = pill;
+        return pill;
+    };
+
+    m_pillAll = makePill(&m_pillAll, QStringLiteral("All"), Connections::Filter::All);
+    m_pillOutbound = makePill(&m_pillOutbound, QStringLiteral("Outbound"),
+                              Connections::Filter::Outbound);
+    m_pillInbound = makePill(&m_pillInbound, QStringLiteral("Inbound"),
+                             Connections::Filter::Inbound);
+    m_pillBlocked = makePill(&m_pillBlocked, QStringLiteral("Blocked"),
+                             Connections::Filter::Blocked);
+    m_pillUnknown = makePill(&m_pillUnknown, QStringLiteral("Unknown"),
+                             Connections::Filter::Unknown);
+    m_pillAll->setChecked(true);
+
+    toolbar->addWidget(m_pillHost);
     toolbar->addStretch(1);
 
-    m_source = new QComboBox(this);
-    m_source->addItem(QStringLiteral("All attribution sources"), QStringLiteral("all"));
-    m_source->addItem(QStringLiteral("DNS + TLS"), QStringLiteral("dns+tls"));
-    m_source->addItem(QStringLiteral("DNS only"), QStringLiteral("dns"));
-    m_source->addItem(QStringLiteral("TLS SNI only"), QStringLiteral("tls"));
-    m_source->addItem(QStringLiteral("No name (IP only)"), QStringLiteral("none"));
-    m_source->setMinimumWidth(190);
-    toolbar->addWidget(m_source);
+    m_groupButton = new QPushButton(QStringLiteral("Group by App"), this);
+    m_groupButton->setFixedHeight(36);
+    m_groupButton->setIconSize(QSize(14, 14));
+    m_groupButton->setCursor(Qt::PointingHandCursor);
+    m_groupButton->setToolTip(QStringLiteral(
+        "Rows are grouped by application and destination. Expand a row to see its sockets."));
+    auto *groupMenu = new QMenu(m_groupButton);
+    auto *groupAction = groupMenu->addAction(QStringLiteral("Group by App"));
+    groupAction->setCheckable(true);
+    groupAction->setChecked(true);
+    m_groupButton->setMenu(groupMenu);
+    toolbar->addWidget(m_groupButton);
 
-    m_refreshButton = new QPushButton(QStringLiteral("Refresh"), this);
-    m_refreshButton->setProperty("variant", QStringLiteral("ghost"));
-    toolbar->addWidget(m_refreshButton);
+    m_rangeButton = new QPushButton(QStringLiteral("Last 5 min"), this);
+    m_rangeButton->setFixedHeight(36);
+    m_rangeButton->setIconSize(QSize(14, 14));
+    m_rangeButton->setCursor(Qt::PointingHandCursor);
+    m_rangeButton->setToolTip(QStringLiteral(
+        "The table shows the live five-minute capture window. Longer history is kept in Reports."));
+    auto *rangeMenu = new QMenu(m_rangeButton);
+    auto *rangeAction = rangeMenu->addAction(QStringLiteral("Last 5 min"));
+    rangeAction->setCheckable(true);
+    rangeAction->setChecked(true);
+    m_rangeButton->setMenu(rangeMenu);
+    toolbar->addWidget(m_rangeButton);
 
     root->addLayout(toolbar);
 
-    connect(m_search, &QLineEdit::textChanged, this, [this](const QString &) {
+    connect(m_search, &QLineEdit::textChanged, this, [this](const QString &text) {
+        m_query = text;
         applyFilters();
     });
     connect(m_pillGroup, &QButtonGroup::idClicked, this, [this](int id) {
         setFilter(static_cast<Connections::Filter>(id));
-    });
-    connect(m_source, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int) { applyFilters(); });
-    connect(m_refreshButton, &QPushButton::clicked, this, [this]() {
-        emit refreshRequested();
     });
 }
 
@@ -540,75 +488,20 @@ void ConnectionsPage::buildTable(QVBoxLayout *root)
 {
     m_stack = new QStackedWidget(this);
 
-    m_tableCard = new QFrame(this);
-    m_tableCard->setProperty("uiRole", QStringLiteral("card"));
-    auto *cardLayout = new QVBoxLayout(m_tableCard);
-    cardLayout->setContentsMargins(0, 0, 0, 0);
-    cardLayout->setSpacing(0);
-
-    m_model = new ConnectionsTableModel(this);
-    m_proxy = new ConnectionsFilterProxy(this);
-    m_proxy->setSourceModel(m_model);
-
-    m_table = new QTableView(m_tableCard);
-    m_table->setObjectName(QStringLiteral("connectionsTable"));
-    m_table->setModel(m_proxy);
-    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_table->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_table->setAlternatingRowColors(true);
-    m_table->setShowGrid(false);
-    m_table->setWordWrap(false);
-    m_table->setSortingEnabled(true);
-    m_table->setIconSize(QSize(18, 18));
-    m_table->setTextElideMode(Qt::ElideRight);
-    m_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_table->setFont(tabularFont(m_table->font()));
-    m_table->setItemDelegate(new ConnectionRowDelegate(m_table));
-    m_table->setStyleSheet(QStringLiteral(
-        "QTableView#connectionsTable::item:hover {"
-        " background-color: rgba(76, 141, 255, 7%); }"
-        "QTableView#connectionsTable::item:selected {"
-        " background-color: rgba(76, 141, 255, 14%); }"));
-    m_table->verticalHeader()->hide();
-    m_table->verticalHeader()->setDefaultSectionSize(40);
-    QHeaderView *header = m_table->horizontalHeader();
-    header->setHighlightSections(false);
-    header->setMinimumSectionSize(90);
-    header->setSectionResizeMode(Destination, QHeaderView::Stretch);
-    header->setSectionResizeMode(Application, QHeaderView::Interactive);
-    header->setSectionResizeMode(PortProtocol, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(Evidence, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(Rate, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(Data, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(Confidence, QHeaderView::ResizeToContents);
-    header->resizeSection(Application, 170);
-    m_table->sortByColumn(Rate, Qt::DescendingOrder);
-    cardLayout->addWidget(m_table, 1);
-
-    auto *footer = new QFrame(m_tableCard);
-    auto *footerLayout = new QHBoxLayout(footer);
-    footerLayout->setContentsMargins(12, 8, 12, 8);
-    footerLayout->setSpacing(8);
-
-    m_footerCount = new QLabel(QStringLiteral("0 destinations"), footer);
-    m_footerCount->setProperty("uiRole", QStringLiteral("muted"));
-
-    m_footerNote = new QLabel(
-        QStringLiteral("Unverified domains are never guessed via reverse-DNS"),
-        footer);
-    m_footerNote->setProperty("uiRole", QStringLiteral("muted"));
-
-    footerLayout->addWidget(m_footerCount);
-    footerLayout->addStretch(1);
-    footerLayout->addWidget(m_footerNote);
-    cardLayout->addWidget(footer);
-
-    m_stack->addWidget(m_tableCard);
+    m_table = new ConnectionsTable(m_stack);
+    m_stack->addWidget(m_table);
 
     m_empty = new EmptyStateWidget(m_stack);
     m_stack->addWidget(m_empty);
-    m_stack->setCurrentWidget(m_tableCard);
+
+    m_stack->setCurrentWidget(m_table);
+    root->addWidget(m_stack, 1);
+
+    connect(m_table, &ConnectionsTable::selectionChanged,
+            this, &ConnectionsPage::onSelectionChanged);
+    connect(m_table, &ConnectionsTable::inspectRequested, this, [this](const QString &id) {
+        openInspector(id);
+    });
 
     connect(m_empty, &EmptyStateWidget::actionTriggered, this, [this]() {
         if (m_emptyFiltered)
@@ -616,250 +509,82 @@ void ConnectionsPage::buildTable(QVBoxLayout *root)
         else
             emit refreshRequested();
     });
-
-    connect(m_table->selectionModel(), &QItemSelectionModel::currentRowChanged,
-            this, [this](const QModelIndex &current, const QModelIndex &) {
-        if (!current.isValid()) {
-            clearDrawer();
-            return;
-        }
-        const QModelIndex source = m_proxy->mapToSource(current);
-        if (!source.isValid()) {
-            clearDrawer();
-            return;
-        }
-        showRow(m_model->rowAt(source.row()));
-    });
-
-    connect(m_table, &QTableView::doubleClicked, this,
-            [this](const QModelIndex &index) {
-        const QModelIndex source = m_proxy->mapToSource(index);
-        if (!source.isValid())
-            return;
-        const Connections::Row &row = m_model->rowAt(source.row());
-        emit detailsRequested(row.pid, row.path, row.appName);
-    });
-
-    auto *split = new QHBoxLayout;
-    split->setSpacing(16);
-    split->addWidget(m_stack, 1);
-    split->addWidget(m_drawer, 0);
-    root->addLayout(split, 1);
 }
 
-void ConnectionsPage::buildDrawer(QWidget *parent)
+void ConnectionsPage::buildInspector()
 {
-    m_drawer = new QFrame(parent);
-    m_drawer->setProperty("uiRole", QStringLiteral("card"));
-    m_drawer->setFixedWidth(410);
+    m_inspector = new QFrame(this);
+    m_inspector->setObjectName(QStringLiteral("connectionInspector"));
+    m_inspector->setFixedWidth(320);
+    m_inspector->hide();
 
-    auto *layout = new QVBoxLayout(m_drawer);
+    auto *layout = new QVBoxLayout(m_inspector);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto *header = new QWidget(m_drawer);
+    auto *header = new QWidget(m_inspector);
     auto *headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(16, 14, 16, 12);
+    headerLayout->setContentsMargins(16, 16, 12, 12);
     headerLayout->setSpacing(8);
 
-    m_drawerTitle = new QLabel(QStringLiteral("Connection Inspector"), header);
-    m_drawerTitle->setProperty("uiRole", QStringLiteral("cardHeading"));
-    m_drawerTitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    m_drawerTitle->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_drawerTitle->setFont(tabularFont(m_drawerTitle->font()));
+    auto *titleBox = new QVBoxLayout;
+    titleBox->setContentsMargins(0, 0, 0, 0);
+    titleBox->setSpacing(2);
 
-    m_drawerBadge = new QLabel(QStringLiteral("No selection"), header);
-    m_drawerBadge->setProperty("uiRole", QStringLiteral("badge"));
-    m_drawerBadge->setProperty("status", QStringLiteral("unknown"));
-    m_drawerBadge->setAlignment(Qt::AlignCenter);
+    m_inspectorTitle = new QLabel(QStringLiteral("Connection Detail"), header);
+    m_inspectorTitle->setFont(uiFont(14, QFont::DemiBold));
+    m_inspectorTitle->setWordWrap(true);
+    m_inspectorSubtitle = new QLabel(QStringLiteral("—"), header);
+    m_inspectorSubtitle->setFont(uiFont(11, QFont::Normal));
+    m_inspectorSubtitle->setWordWrap(true);
+    titleBox->addWidget(m_inspectorTitle);
+    titleBox->addWidget(m_inspectorSubtitle);
 
-    headerLayout->addWidget(m_drawerTitle, 1);
-    headerLayout->addWidget(m_drawerBadge, 0, Qt::AlignTop);
+    auto *closeButton = new QPushButton(header);
+    closeButton->setFixedSize(26, 26);
+    closeButton->setProperty("variant", QStringLiteral("ghost"));
+    closeButton->setCursor(Qt::PointingHandCursor);
+    closeButton->setToolTip(QStringLiteral("Close inspector"));
+    closeButton->setIconSize(QSize(14, 14));
+    closeButton->setIcon(ConnectionsUi::glyphIcon(Glyph::Close, 14,
+                                                  token(themePalette().textSecondary), 2.0));
+
+    headerLayout->addLayout(titleBox, 1);
+    headerLayout->addWidget(closeButton, 0, Qt::AlignTop);
     layout->addWidget(header);
 
-    auto *divider = new QFrame(m_drawer);
+    auto *divider = new QFrame(m_inspector);
     divider->setProperty("uiRole", QStringLiteral("divider"));
     layout->addWidget(divider);
 
-    auto *scroll = new QScrollArea(m_drawer);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_inspectorScroll = new QScrollArea(m_inspector);
+    m_inspectorScroll->setWidgetResizable(true);
+    m_inspectorScroll->setFrameShape(QFrame::NoFrame);
+    m_inspectorScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-    auto *body = new QWidget(scroll);
-    auto *bodyLayout = new QVBoxLayout(body);
-    bodyLayout->setContentsMargins(16, 14, 16, 14);
-    bodyLayout->setSpacing(12);
+    auto *body = new QWidget(m_inspectorScroll);
+    m_inspectorBody = new QVBoxLayout(body);
+    m_inspectorBody->setContentsMargins(16, 16, 16, 16);
+    m_inspectorBody->setSpacing(0);
+    m_inspectorScroll->setWidget(body);
+    layout->addWidget(m_inspectorScroll, 1);
 
-    auto addSection = [body, bodyLayout](const QString &title) {
-        auto *label = new QLabel(title, body);
-        label->setProperty("uiRole", QStringLiteral("kpiLabel"));
-        bodyLayout->addWidget(label);
-    };
-
-    // Parent application
-    addSection(QStringLiteral("Application"));
-    auto *appCard = new QFrame(body);
-    appCard->setProperty("uiRole", QStringLiteral("elevated"));
-    auto *appLayout = new QHBoxLayout(appCard);
-    appLayout->setContentsMargins(10, 10, 10, 10);
-    appLayout->setSpacing(10);
-
-    m_appIcon = new QLabel(appCard);
-    m_appIcon->setFixedSize(32, 32);
-    m_appIcon->setAlignment(Qt::AlignCenter);
-    m_appIcon->setProperty("uiRole", QStringLiteral("avatar"));
-
-    auto *appText = new QVBoxLayout;
-    appText->setContentsMargins(0, 0, 0, 0);
-    appText->setSpacing(2);
-    m_appName = new QLabel(QStringLiteral("No connection selected"), appCard);
-    m_appName->setProperty("uiRole", QStringLiteral("rowTitle"));
-    m_appName->setWordWrap(true);
-    m_appMeta = new QLabel(
-        QStringLiteral("Select a row to inspect its destination and evidence."),
-        appCard);
-    m_appMeta->setProperty("uiRole", QStringLiteral("muted"));
-    m_appMeta->setWordWrap(true);
-    appText->addWidget(m_appName);
-    appText->addWidget(m_appMeta);
-
-    appLayout->addWidget(m_appIcon, 0, Qt::AlignTop);
-    appLayout->addLayout(appText, 1);
-    bodyLayout->addWidget(appCard);
-
-    // Evidence sits above the destination details so the reason a name is
-    // Confirmed, Possible or Unknown is visible without scrolling.
-    addSection(QStringLiteral("Attribution source & evidence"));
-    auto *evidenceCard = new QFrame(body);
-    evidenceCard->setProperty("uiRole", QStringLiteral("elevated"));
-    auto *evidenceLayout = new QVBoxLayout(evidenceCard);
-    evidenceLayout->setContentsMargins(12, 10, 12, 10);
-    evidenceLayout->setSpacing(4);
-    m_evidenceTitle = new QLabel(QStringLiteral("Attribution evidence"), evidenceCard);
-    m_evidenceTitle->setProperty("uiRole", QStringLiteral("rowTitle"));
-    m_evidenceTitle->setWordWrap(true);
-    m_evidenceDetail = new QLabel(
-        QStringLiteral("Select a connection to see how its name was established."),
-        evidenceCard);
-    m_evidenceDetail->setProperty("uiRole", QStringLiteral("muted"));
-    m_evidenceDetail->setWordWrap(true);
-    m_evidenceDetail->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    evidenceLayout->addWidget(m_evidenceTitle);
-    evidenceLayout->addWidget(m_evidenceDetail);
-    bodyLayout->addWidget(evidenceCard);
-
-    // Destination: the drawer title is the hostname (or raw IP), so one
-    // Endpoint value replaces the duplicate Hostname and Remote IP boxes.
-    addSection(QStringLiteral("Destination"));
-    auto *destinationCard = new QFrame(body);
-    destinationCard->setProperty("uiRole", QStringLiteral("card"));
-    auto *destinationGrid = new QGridLayout(destinationCard);
-    destinationGrid->setContentsMargins(0, 0, 0, 0);
-    destinationGrid->setSpacing(8);
-    m_endpointDetailValue = addKeyValue(destinationGrid, 0, 0,
-                                        QStringLiteral("Endpoint"), destinationCard);
-    m_directionValue = addKeyValue(destinationGrid, 0, 1,
-                                   QStringLiteral("Direction"), destinationCard);
-    bodyLayout->addWidget(destinationCard);
-
-    // Session telemetry
-    addSection(QStringLiteral("Session telemetry"));
-    auto *telemetryCard = new QFrame(body);
-    telemetryCard->setProperty("uiRole", QStringLiteral("card"));
-    auto *telemetryGrid = new QGridLayout(telemetryCard);
-    telemetryGrid->setContentsMargins(0, 0, 0, 0);
-    telemetryGrid->setSpacing(8);
-    m_rateValue = addKeyValue(telemetryGrid, 0, 0, QStringLiteral("Current rate"),
-                              telemetryCard);
-    m_dataValue = addKeyValue(telemetryGrid, 0, 1, QStringLiteral("Data transferred"),
-                              telemetryCard);
-    m_downloadValue = addKeyValue(telemetryGrid, 1, 0, QStringLiteral("Downloaded"),
-                                  telemetryCard);
-    m_uploadValue = addKeyValue(telemetryGrid, 1, 1, QStringLiteral("Uploaded"),
-                                telemetryCard);
-    m_packetsValue = addKeyValue(telemetryGrid, 2, 0, QStringLiteral("Packets"),
-                                 telemetryCard);
-    m_endpointValue = addKeyValue(telemetryGrid, 2, 1, QStringLiteral("Endpoints"),
-                                  telemetryCard);
-    bodyLayout->addWidget(telemetryCard);
-
-    // Endpoints inside the grouped row
-    addSection(QStringLiteral("Endpoints"));
-    auto *endpointsCard = new QFrame(body);
-    endpointsCard->setProperty("uiRole", QStringLiteral("elevated"));
-    m_endpointsLayout = new QVBoxLayout(endpointsCard);
-    m_endpointsLayout->setContentsMargins(12, 10, 12, 10);
-    m_endpointsLayout->setSpacing(6);
-    bodyLayout->addWidget(endpointsCard);
-
-    // Policy scope note
-    auto *policyCard = new QFrame(body);
-    policyCard->setProperty("uiRole", QStringLiteral("elevated"));
-    auto *policyLayout = new QVBoxLayout(policyCard);
-    policyLayout->setContentsMargins(10, 8, 10, 8);
-    m_policyNote = new QLabel(
-        QStringLiteral("Traffic limits, blocks and firewall rules apply to the "
-                       "application executable, not to a single IP."),
-        policyCard);
-    m_policyNote->setProperty("uiRole", QStringLiteral("muted"));
-    m_policyNote->setWordWrap(true);
-    policyLayout->addWidget(m_policyNote);
-    bodyLayout->addWidget(policyCard);
-
-    bodyLayout->addStretch(1);
-    scroll->setWidget(body);
-    layout->addWidget(scroll, 1);
-
-    auto *footer = new QFrame(m_drawer);
-    auto *footerLayout = new QVBoxLayout(footer);
-    footerLayout->setContentsMargins(16, 12, 16, 12);
-    footerLayout->setSpacing(8);
-
-    m_trafficButton = new QPushButton(QStringLiteral("Manage app traffic"), footer);
-    m_trafficButton->setProperty("variant", QStringLiteral("primary"));
-    m_detailsButton = new QPushButton(QStringLiteral("Application details"), footer);
-
-    auto *actionRow = new QHBoxLayout;
-    actionRow->setSpacing(8);
-    actionRow->addWidget(m_trafficButton, 1);
-    actionRow->addWidget(m_detailsButton, 1);
-
-    footerLayout->addLayout(actionRow);
-    layout->addWidget(footer);
-
-    connect(m_trafficButton, &QPushButton::clicked, this, [this]() {
-        if (m_hasSelection)
-            emit trafficRequested(m_selected.pid, m_selected.path, m_selected.appName);
-    });
-    connect(m_detailsButton, &QPushButton::clicked, this, [this]() {
-        if (m_hasSelection)
-            emit detailsRequested(m_selected.pid, m_selected.path, m_selected.appName);
-    });
+    connect(closeButton, &QPushButton::clicked, this, &ConnectionsPage::closeInspector);
 }
 
 void ConnectionsPage::setGroups(const QList<Connections::Row> &groups)
 {
-    const QString keepId = selectedId();
-    const int scroll = m_table ? m_table->verticalScrollBar()->value() : 0;
-
-    m_groups = groups;
-    m_model->setGroups(groups);
-
-    refreshPills();
-    refreshBanner();
-    refreshFooter();
-
-    if (m_proxy->rowCount() > 0) {
-        selectGroup(keepId);
-        m_table->verticalScrollBar()->setValue(scroll);
-        QTimer::singleShot(0, this, [this, scroll]() {
-            m_table->verticalScrollBar()->setValue(scroll);
-        });
-    } else {
-        clearDrawer();
+    if (m_paused) {
+        m_pendingRows = groups;
+        return;
     }
-    refreshEmptyState();
+
+    m_rows = groups;
+    refreshMetrics();
+    applyFilters();
+
+    if (!m_inspectorId.isEmpty())
+        renderInspector();
 }
 
 void ConnectionsPage::setMonitoringActive(bool active)
@@ -870,132 +595,144 @@ void ConnectionsPage::setMonitoringActive(bool active)
 
 void ConnectionsPage::setFilter(Connections::Filter filter)
 {
-    const QString keepId = selectedId();
     m_filter = filter;
     if (QAbstractButton *button = m_pillGroup->button(int(filter)))
         button->setChecked(true);
-    m_proxy->setConnectionFilter(filter);
-    if (m_proxy->rowCount() > 0)
-        selectGroup(keepId);
-    refreshEmptyState();
-    refreshFooter();
+    applyFilters();
 }
 
 void ConnectionsPage::clearFilters()
 {
     m_filter = Connections::Filter::All;
-    if (QAbstractButton *button = m_pillGroup->button(int(Connections::Filter::All)))
-        button->setChecked(true);
-    m_proxy->setConnectionFilter(Connections::Filter::All);
-    if (m_source)
-        m_source->setCurrentIndex(0);
-    if (m_search)
+    if (m_pillAll)
+        m_pillAll->setChecked(true);
+    if (m_search) {
+        const QSignalBlocker blocker(m_search);
         m_search->clear();
+    }
+    m_query.clear();
     applyFilters();
 }
 
 void ConnectionsPage::applyFilters()
 {
-    if (!m_proxy)
-        return;
-    const QString keepId = selectedId();
-    m_proxy->setQuery(m_search ? m_search->text() : QString());
-    m_proxy->setSourceKey(m_source ? m_source->currentData().toString()
-                                   : QStringLiteral("all"));
-    if (m_proxy->rowCount() > 0)
-        selectGroup(keepId);
+    m_filtered.clear();
+    for (const Connections::Row &row : m_rows) {
+        if (Connections::matchesFilter(row, m_filter)
+            && Connections::matchesQuery(row, m_query)) {
+            m_filtered.append(row);
+        }
+    }
+
+    m_table->setRows(m_filtered);
+    refreshPills();
     refreshEmptyState();
-    refreshFooter();
 }
 
 void ConnectionsPage::refreshPills()
 {
-    if (!m_pillGroup)
-        return;
-    const Connections::Filter filters[] = {
-        Connections::Filter::All,
-        Connections::Filter::Domains,
-        Connections::Filter::IpAddresses,
-        Connections::Filter::Unknown
-    };
-    for (Connections::Filter filter : filters) {
-        int count = 0;
-        for (const Connections::Row &row : m_groups) {
-            if (Connections::matchesFilter(row, filter))
-                ++count;
-        }
-        if (QAbstractButton *button = m_pillGroup->button(int(filter))) {
-            button->setText(QStringLiteral("%1  %2")
-                                .arg(Connections::filterLabel(filter))
-                                .arg(count));
-        }
-    }
-}
-
-void ConnectionsPage::refreshBanner()
-{
-    if (!m_banner)
-        return;
-    int ipOnly = 0;
-    quint64 bytes = 0;
-    for (const Connections::Row &row : m_groups) {
-        if (!row.hasDomain) {
-            ++ipOnly;
-            bytes += row.totalBytes();
-        }
-    }
-    if (ipOnly == 0) {
-        m_banner->hide();
-        m_bannerDismissed = false;
-        m_bannerUnknownCount = 0;
-        return;
-    }
-    if (m_bannerDismissed && m_bannerUnknownCount == ipOnly) {
-        m_banner->hide();
-        return;
-    }
-    if (m_bannerUnknownCount != ipOnly) {
-        m_bannerDismissed = false;
-        m_bannerUnknownCount = ipOnly;
-    }
-    m_bannerText->setText(
-        QStringLiteral("%1 destination%2 (%3) without a verified hostname · shown by IP")
-            .arg(ipOnly)
-            .arg(ipOnly == 1 ? QString() : QStringLiteral("s"))
-            .arg(Connections::formatBytes(bytes)));
-    m_banner->show();
-}
-
-void ConnectionsPage::refreshFooter()
-{
-    if (!m_footerCount || !m_proxy)
-        return;
     int endpoints = 0;
-    for (const Connections::Row &row : m_groups)
-        endpoints += row.endpointCount;
-    m_footerCount->setText(
-        QStringLiteral("Showing %1 of %2 destinations · %3 endpoints")
-            .arg(m_proxy->rowCount())
-            .arg(m_groups.size())
-            .arg(endpoints));
+    int blocked = 0;
+    int unknown = 0;
+
+    for (const Connections::Row &row : m_rows) {
+        const int count = endpointCountFor(row);
+        endpoints += count;
+        if (row.policyToken == QLatin1String("blocked"))
+            blocked += count;
+
+        for (const Connections::Endpoint &endpoint : row.endpoints) {
+            if (!endpointNamed(endpoint))
+                ++unknown;
+        }
+        if (row.endpoints.isEmpty() && !row.hasDomain)
+            unknown += count;
+    }
+
+    if (m_pillAll)
+        m_pillAll->setCount(QString::number(endpoints));
+    if (m_pillBlocked)
+        m_pillBlocked->setCount(QString::number(blocked), FilterPill::CountTone::Danger);
+    if (m_pillUnknown)
+        m_pillUnknown->setCount(QString::number(unknown), FilterPill::CountTone::Warning);
+}
+
+void ConnectionsPage::refreshMetrics()
+{
+    int endpoints = 0;
+    int blocked = 0;
+    int unknown = 0;
+    quint64 rxBytes = 0;
+    quint64 txBytes = 0;
+    quint64 rxRate = 0;
+    quint64 txRate = 0;
+    QSet<QString> seen;
+
+    for (const Connections::Row &row : m_rows) {
+        const int count = endpointCountFor(row);
+        endpoints += count;
+        if (row.policyToken == QLatin1String("blocked"))
+            blocked += count;
+
+        rxBytes += row.rxBytes;
+        txBytes += row.txBytes;
+        rxRate += row.rxBytesPerSecond;
+        txRate += row.txBytesPerSecond;
+
+        for (const Connections::Endpoint &endpoint : row.endpoints) {
+            seen.insert(QStringLiteral("%1|%2|%3")
+                            .arg(row.id, endpoint.address)
+                            .arg(endpoint.port));
+            if (!endpointNamed(endpoint))
+                ++unknown;
+        }
+        if (row.endpoints.isEmpty() && !row.hasDomain)
+            unknown += count;
+    }
+
+    int added = 0;
+    if (!m_seenEndpoints.isEmpty()) {
+        for (const QString &key : seen) {
+            if (!m_seenEndpoints.contains(key))
+                ++added;
+        }
+    }
+    m_seenEndpoints = seen;
+
+    m_activeTile->setValue(QString::number(endpoints), MetricTile::Tone::Accent);
+    m_activeTile->setCaption(QStringLiteral("↑ %1 in last 60s").arg(added));
+
+    m_blockedTile->setValue(QString::number(blocked), MetricTile::Tone::Danger);
+    m_blockedTile->setCaption(QStringLiteral("%1 blocked this session").arg(blocked));
+
+    m_outboundTile->setValue(Connections::formatBytes(txBytes), MetricTile::Tone::Accent);
+    m_outboundTile->setCaption(
+        QStringLiteral("Avg %1").arg(Connections::formatRate(txRate)));
+
+    m_inboundTile->setValue(Connections::formatBytes(rxBytes), MetricTile::Tone::Success);
+    m_inboundTile->setCaption(
+        QStringLiteral("Avg %1").arg(Connections::formatRate(rxRate)));
+
+    m_unknownTile->setValue(QString::number(unknown), MetricTile::Tone::Warning);
+    m_unknownTile->setCaption(QStringLiteral("No domain attribution"));
 }
 
 void ConnectionsPage::refreshEmptyState()
 {
-    if (!m_stack || !m_proxy || !m_empty)
+    if (!m_stack)
         return;
 
-    if (m_proxy->rowCount() > 0) {
-        m_stack->setCurrentWidget(m_tableCard);
+    if (!m_filtered.isEmpty()) {
         m_emptyFiltered = false;
+        m_stack->setCurrentWidget(m_table);
         return;
     }
 
-    if (!m_groups.isEmpty()) {
+    if (!m_rows.isEmpty()) {
         m_emptyFiltered = true;
         m_empty->setTitle(QStringLiteral("No matching connections"));
         m_empty->setDetail(
-            QStringLiteral("No destination matches the current search or filters."));
+            QStringLiteral("No destination matches the current search or filter."));
         m_empty->setAction(QStringLiteral("Clear filters"));
     } else {
         m_emptyFiltered = false;
@@ -1010,255 +747,334 @@ void ConnectionsPage::refreshEmptyState()
         m_empty->setAction(QStringLiteral("Refresh"));
     }
 
-    clearDrawer();
     m_stack->setCurrentWidget(m_empty);
 }
 
-QString ConnectionsPage::selectedId() const
+void ConnectionsPage::refreshTheme()
 {
-    return m_hasSelection ? m_selected.id : QString();
+    const Theme::Palette pal = themePalette();
+
+    m_inspector->setStyleSheet(
+        QStringLiteral("QFrame#connectionInspector {"
+                       " background-color: %1;"
+                       " border-left: 1px solid %2; }")
+            .arg(pal.surfaceSidebar, pal.borderDefault));
+
+    if (m_pillHost) {
+        m_pillHost->setStyleSheet(
+            QStringLiteral("QFrame#connectionFilterPills {"
+                           " background-color: %1;"
+                           " border: 1px solid %2;"
+                           " border-radius: 8px; }")
+                .arg(pal.surfacePrimary, pal.borderDefault));
+    }
+
+    const QColor secondary = token(pal.textSecondary);
+    if (m_searchAction)
+        m_searchAction->setIcon(ConnectionsUi::glyphIcon(Glyph::Search, 15,
+                                                        token(pal.textMuted), 2.0));
+    if (m_pauseButton) {
+        m_pauseButton->setIcon(ConnectionsUi::glyphIcon(
+            m_paused ? Glyph::Play : Glyph::Pause, 15, secondary, 2.0));
+    }
+    if (m_exportButton)
+        m_exportButton->setIcon(ConnectionsUi::glyphIcon(Glyph::Download, 15, secondary, 2.0));
+    if (m_groupButton)
+        m_groupButton->setIcon(ConnectionsUi::glyphIcon(Glyph::GroupLines, 14, secondary, 2.0));
+    if (m_rangeButton)
+        m_rangeButton->setIcon(ConnectionsUi::glyphIcon(Glyph::Clock, 14, secondary, 2.0));
+
+    for (MetricTile *tile : {m_activeTile, m_blockedTile, m_outboundTile,
+                             m_inboundTile, m_unknownTile}) {
+        if (tile)
+            tile->refreshTheme();
+    }
+
+    if (m_inspectorTitle)
+        m_inspectorTitle->setStyleSheet(
+            QStringLiteral("color: %1;").arg(pal.textPrimary));
+    if (m_inspectorSubtitle)
+        m_inspectorSubtitle->setStyleSheet(
+            QStringLiteral("color: %1;").arg(pal.textMuted));
+
+    update();
 }
 
-void ConnectionsPage::selectGroup(const QString &id)
+void ConnectionsPage::setPaused(bool paused)
 {
-    if (!m_proxy || m_proxy->rowCount() == 0) {
-        clearDrawer();
+    m_paused = paused;
+    if (m_pauseButton) {
+        m_pauseButton->setText(paused ? QStringLiteral("Resume") : QStringLiteral("Pause"));
+        m_pauseButton->setToolTip(paused
+            ? QStringLiteral("Resume updating the connection list.")
+            : QStringLiteral("Pause updating the connection list. Capture keeps running."));
+    }
+    refreshTheme();
+
+    if (!m_paused && !m_pendingRows.isEmpty()) {
+        const QList<Connections::Row> pending = m_pendingRows;
+        m_pendingRows.clear();
+        setGroups(pending);
+    }
+}
+
+void ConnectionsPage::exportVisibleRows()
+{
+    if (m_filtered.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Export connections"),
+                                 QStringLiteral("There are no connections to export."));
         return;
     }
 
-    int target = -1;
-    if (!id.isEmpty()) {
-        for (int row = 0; row < m_proxy->rowCount(); ++row) {
-            const QModelIndex index = m_proxy->index(row, 0);
-            if (index.data(IdRole).toString() == id) {
-                target = row;
-                break;
+    const QString directory =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString suggestion = QDir(directory).filePath(
+        QStringLiteral("oasis-connections-%1.csv")
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"))));
+
+    const QString fileName = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Export connections"), suggestion,
+        QStringLiteral("CSV files (*.csv)"));
+    if (fileName.isEmpty())
+        return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, QStringLiteral("Export failed"),
+                             QStringLiteral("The file could not be written:\n%1")
+                                 .arg(file.errorString()));
+        return;
+    }
+
+    auto quote = [](QString value) {
+        value.replace(QLatin1Char('"'), QStringLiteral("\"\""));
+        return QStringLiteral("\"%1\"").arg(value);
+    };
+
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf8);
+    out << "Application,Process,PID,Destination,Addresses,Port,Protocol,Direction,"
+           "Confidence,Policy,Rx bytes,Tx bytes\n";
+
+    for (const Connections::Row &row : m_filtered) {
+        out << quote(applicationLabel(row)) << ','
+            << quote(row.appName) << ','
+            << row.pid << ','
+            << quote(row.hasDomain ? row.destination : QStringLiteral("No domain")) << ','
+            << quote(row.addresses.join(QStringLiteral("; "))) << ','
+            << rowPort(row) << ','
+            << quote(rowProtocol(row)) << ','
+            << quote(row.direction) << ','
+            << quote(row.confidence) << ','
+            << quote(row.policy) << ','
+            << row.rxBytes << ','
+            << row.txBytes << '\n';
+    }
+    file.close();
+}
+
+void ConnectionsPage::openInspector(const QString &id)
+{
+    if (!rowForId(id))
+        return;
+    m_inspectorId = id;
+    renderInspector();
+    if (!m_inspector->isVisible()) {
+        m_inspector->show();
+        m_inspector->raise();
+    }
+}
+
+void ConnectionsPage::closeInspector()
+{
+    m_inspectorId.clear();
+    if (m_inspector)
+        m_inspector->hide();
+}
+
+void ConnectionsPage::onSelectionChanged(const QString &id)
+{
+    m_selectedId = id;
+    if (id.isEmpty()) {
+        closeInspector();
+        return;
+    }
+    if (m_inspector && m_inspector->isVisible()) {
+        m_inspectorId = id;
+        renderInspector();
+    }
+}
+
+void ConnectionsPage::renderInspector()
+{
+    const Connections::Row *row = rowForId(m_inspectorId);
+    if (!row) {
+        closeInspector();
+        return;
+    }
+
+    m_inspectorTitle->setText(
+        QStringLiteral("%1 → %2")
+            .arg(applicationLabel(*row),
+                 row->hasDomain ? row->destination : QStringLiteral("No domain")));
+
+    const quint16 port = rowPort(*row);
+    m_inspectorSubtitle->setText(
+        QStringLiteral("PID %1 · %2 :%3 · %4")
+            .arg(row->pid)
+            .arg(rowProtocol(*row))
+            .arg(port)
+            .arg(row->confidence));
+
+    clearLayout(m_inspectorBody);
+
+    auto addSection = [this](const QString &title,
+                             const QList<QPair<QString, QString>> &rows,
+                             bool monoValues = false) {
+        auto *titleLabel = new QLabel(title, m_inspectorScroll);
+        QFont titleFont = uiFont(10, QFont::DemiBold);
+        titleFont.setCapitalization(QFont::AllUppercase);
+        titleFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
+        titleLabel->setFont(titleFont);
+        titleLabel->setStyleSheet(
+            QStringLiteral("color: %1; margin-top: 4px;")
+                .arg(themePalette().textMuted));
+        m_inspectorBody->addWidget(titleLabel);
+        m_inspectorBody->addSpacing(6);
+
+        bool first = true;
+        for (const auto &entry : rows) {
+            if (!first) {
+                auto *divider = new QFrame(m_inspectorScroll);
+                divider->setProperty("uiRole", QStringLiteral("divider"));
+                divider->setStyleSheet(QStringLiteral("background-color: %1;")
+                                           .arg(themePalette().borderDefault));
+                m_inspectorBody->addWidget(divider);
             }
+            first = false;
+
+            auto *line = new QWidget(m_inspectorScroll);
+            auto *lineLayout = new QHBoxLayout(line);
+            lineLayout->setContentsMargins(0, 6, 0, 6);
+            lineLayout->setSpacing(10);
+
+            auto *key = new QLabel(entry.first, line);
+            key->setFont(uiFont(11, QFont::Normal));
+            key->setStyleSheet(
+                QStringLiteral("color: %1;").arg(themePalette().textMuted));
+            key->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+
+            auto *value = new QLabel(entry.second.isEmpty() ? QStringLiteral("—")
+                                                            : entry.second,
+                                     line);
+            QFont valueFont = monoValues ? QFont(QStringLiteral("Consolas"))
+                                         : uiFont(12, QFont::Normal);
+            if (monoValues)
+                valueFont.setPixelSize(11);
+            value->setFont(valueFont);
+            value->setStyleSheet(
+                QStringLiteral("color: %1;").arg(themePalette().textPrimary));
+            value->setWordWrap(true);
+            value->setAlignment(Qt::AlignRight | Qt::AlignTop);
+            value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+            lineLayout->addWidget(key, 0);
+            lineLayout->addWidget(value, 1);
+            m_inspectorBody->addWidget(line);
         }
-    }
-    if (target < 0)
-        target = 0;
+        m_inspectorBody->addSpacing(14);
+    };
 
-    const QModelIndex index = m_proxy->index(target, 0);
-    if (!index.isValid()) {
-        clearDrawer();
-        return;
-    }
-    m_table->setCurrentIndex(index);
-    m_table->selectionModel()->select(
-        index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    QStringList names = row->domainNames;
+    if (row->hasDomain && names.isEmpty())
+        names << row->destination;
 
-    const QModelIndex source = m_proxy->mapToSource(index);
-    if (source.isValid())
-        showRow(m_model->rowAt(source.row()));
+    addSection(QStringLiteral("Application"), {
+        {QStringLiteral("Process"), row->appName.isEmpty()
+                                        ? QStringLiteral("Unknown process")
+                                        : row->appName},
+        {QStringLiteral("PID"), QString::number(row->pid)},
+        {QStringLiteral("Binary path"), row->path.isEmpty()
+                                            ? QStringLiteral("Unable to resolve")
+                                            : row->path},
+        {QStringLiteral("Publisher"), row->publisher},
+        {QStringLiteral("Attribution"), QStringLiteral("%1 — %2")
+                                            .arg(row->confidence, row->evidenceLabel)},
+    }, true);
+
+    addSection(QStringLiteral("Destination"), {
+        {QStringLiteral("Domain"), row->hasDomain ? names.join(QStringLiteral(", "))
+                                                  : QStringLiteral("None resolved")},
+        {QStringLiteral("Resolved IPs"), row->addresses.join(QStringLiteral(", "))},
+        {QStringLiteral("Port"), port ? QString::number(port) : QStringLiteral("—")},
+        {QStringLiteral("Protocol"), rowProtocol(*row)},
+        {QStringLiteral("Direction"), row->direction},
+        {QStringLiteral("Observed names"), row->domainNames.join(QStringLiteral(", "))},
+    });
+
+    addSection(QStringLiteral("Policy"), {
+        {QStringLiteral("Status"), row->policy == QLatin1String("None")
+                                       ? QStringLiteral("No policy")
+                                       : row->policy},
+        {QStringLiteral("Scope"), QStringLiteral("Rules apply to %1, not to a single IP.")
+                                      .arg(applicationLabel(*row))},
+    });
+
+    addSection(QStringLiteral("Traffic (session)"), {
+        {QStringLiteral("Inbound"), Connections::formatBytes(row->rxBytes)},
+        {QStringLiteral("Outbound"), Connections::formatBytes(row->txBytes)},
+        {QStringLiteral("Current rate"), Connections::formatRate(row->bytesPerSecond())},
+        {QStringLiteral("Endpoints"), QString::number(endpointCountFor(*row))},
+        {QStringLiteral("Packets"), QString::number(row->packets)},
+    });
+
+    auto *actions = new QWidget(m_inspectorScroll);
+    auto *actionsLayout = new QVBoxLayout(actions);
+    actionsLayout->setContentsMargins(0, 0, 0, 0);
+    actionsLayout->setSpacing(8);
+
+    auto *trafficButton = new QPushButton(QStringLiteral("Manage app traffic"), actions);
+    trafficButton->setFixedHeight(34);
+    auto *detailsButton = new QPushButton(QStringLiteral("Application details"), actions);
+    detailsButton->setFixedHeight(34);
+
+    const bool canAct = row->pid != 0 || !row->path.trimmed().isEmpty();
+    trafficButton->setEnabled(canAct);
+    detailsButton->setEnabled(canAct);
+
+    const quint32 pid = row->pid;
+    const QString path = row->path;
+    const QString name = row->appName;
+    connect(trafficButton, &QPushButton::clicked, this, [this, pid, path, name]() {
+        emit trafficRequested(pid, path, name);
+    });
+    connect(detailsButton, &QPushButton::clicked, this, [this, pid, path, name]() {
+        emit detailsRequested(pid, path, name);
+    });
+
+    actionsLayout->addWidget(trafficButton);
+    actionsLayout->addWidget(detailsButton);
+    m_inspectorBody->addWidget(actions);
+    m_inspectorBody->addStretch(1);
 }
 
-void ConnectionsPage::showRow(const Connections::Row &row)
+const Connections::Row *ConnectionsPage::rowForId(const QString &id) const
 {
-    m_selected = row;
-    m_hasSelection = true;
-
-    m_drawerTitle->setText(row.destination);
-    m_drawerTitle->setToolTip(row.destination);
-
-    m_drawerBadge->setText(row.confidence);
-    m_drawerBadge->setProperty("status", badgeStatusFor(row.confidenceRank));
-    repolish(m_drawerBadge);
-
-    const QPixmap icon = row.icon.pixmap(QSize(28, 28), devicePixelRatioF());
-    if (!icon.isNull()) {
-        m_appIcon->setPixmap(icon);
-        m_appIcon->setText(QString());
-    } else {
-        m_appIcon->setPixmap(QPixmap());
-        m_appIcon->setText(initialsFor(applicationLabel(row)));
+    if (id.isEmpty())
+        return nullptr;
+    for (const Connections::Row &row : m_rows) {
+        if (row.id == id)
+            return &row;
     }
-
-    m_appName->setText(applicationLabel(row));
-    QStringList meta;
-    if (!row.appName.trimmed().isEmpty())
-        meta << row.appName;
-    if (!row.publisher.trimmed().isEmpty())
-        meta << row.publisher;
-    if (!row.policy.trimmed().isEmpty() && row.policy != QLatin1String("None"))
-        meta << QStringLiteral("Policy: %1").arg(row.policy);
-    if (!row.activity.trimmed().isEmpty())
-        meta << row.activity;
-    m_appMeta->setText(meta.isEmpty() ? QStringLiteral("Identity not resolved")
-                                      : meta.join(QStringLiteral(" · ")));
-    m_appMeta->setToolTip(row.path);
-
-    QStringList endpointParts;
-    if (!row.addresses.isEmpty())
-        endpointParts << row.addresses.join(QStringLiteral(", "));
-    if (!row.ports.trimmed().isEmpty())
-        endpointParts << row.ports;
-    m_endpointDetailValue->setText(endpointParts.isEmpty()
-                                       ? QStringLiteral("—")
-                                       : endpointParts.join(QStringLiteral(" · ")));
-    m_directionValue->setText(row.direction);
-
-    m_evidenceTitle->setText(
-        row.hasDomain
-            ? QStringLiteral("%1 · %2").arg(row.evidenceLabel, row.confidence)
-            : QStringLiteral("No evidence · Unknown"));
-
-    QStringList evidenceLines;
-    QStringList seen;
-    for (const Connections::Endpoint &endpoint : row.endpoints) {
-        for (const QString &line : endpoint.evidence) {
-            if (!seen.contains(line)) {
-                seen.append(line);
-                evidenceLines << QStringLiteral("• %1").arg(line);
-            }
-        }
-    }
-    if (row.hasDomain) {
-        if (row.domainNames.size() > 1) {
-            evidenceLines.prepend(
-                QStringLiteral("Observed names: %1")
-                    .arg(row.domainNames.join(QStringLiteral(", "))));
-        }
-        if (evidenceLines.isEmpty())
-            evidenceLines << QStringLiteral("The name was observed without a recorded "
-                                            "evidence detail.");
-    } else {
-        evidenceLines << QStringLiteral(
-            "No DNS answer or visible TLS SNI named this destination. "
-            "Reverse-DNS guessing is disabled, so the raw address is shown instead.");
-    }
-    m_evidenceDetail->setText(evidenceLines.join(QLatin1Char('\n')));
-
-    m_rateValue->setText(Connections::formatRate(row.bytesPerSecond()));
-    m_dataValue->setText(Connections::formatBytes(row.totalBytes()));
-    m_downloadValue->setText(Connections::formatBytes(row.rxBytes));
-    m_uploadValue->setText(Connections::formatBytes(row.txBytes));
-    m_packetsValue->setText(QString::number(row.packets));
-    m_endpointValue->setText(QString::number(row.endpointCount));
-
-    clearLayout(m_endpointsLayout);
-    if (row.endpoints.isEmpty()) {
-        auto *empty = new QLabel(QStringLiteral("No sockets recorded."));
-        empty->setProperty("uiRole", QStringLiteral("muted"));
-        m_endpointsLayout->addWidget(empty);
-    } else {
-        constexpr int kShownEndpoints = 12;
-        int shown = 0;
-        for (const Connections::Endpoint &endpoint : row.endpoints) {
-            if (shown == kShownEndpoints)
-                break;
-            auto *endpointCard = new QFrame;
-            endpointCard->setProperty("uiRole", QStringLiteral("card"));
-            auto *endpointLayout = new QVBoxLayout(endpointCard);
-            endpointLayout->setContentsMargins(8, 6, 8, 6);
-            endpointLayout->setSpacing(2);
-
-            auto *primary = new QLabel(
-                QStringLiteral("%1:%2 · %3")
-                    .arg(endpoint.address)
-                    .arg(endpoint.port)
-                    .arg(endpoint.protocol));
-            primary->setProperty("uiRole", QStringLiteral("rowValue"));
-            primary->setFont(tabularFont(primary->font()));
-
-            QStringList details;
-            details << Connections::sourceLabel(endpoint.source);
-            details << Connections::confidenceLabel(endpoint.confidence);
-            details << QStringLiteral("↓ %1  ↑ %2")
-                           .arg(Connections::formatRate(endpoint.rxBytesPerSecond),
-                                Connections::formatRate(endpoint.txBytesPerSecond));
-            details << Connections::formatBytes(endpoint.rxBytes + endpoint.txBytes);
-
-            auto *secondary = new QLabel(details.join(QStringLiteral(" · ")));
-            secondary->setProperty("uiRole", QStringLiteral("muted"));
-            secondary->setWordWrap(true);
-
-            endpointLayout->addWidget(primary);
-            endpointLayout->addWidget(secondary);
-            m_endpointsLayout->addWidget(endpointCard);
-            ++shown;
-        }
-        if (row.endpoints.size() > kShownEndpoints) {
-            auto *more = new QLabel(
-                QStringLiteral("and %1 more endpoint(s)")
-                    .arg(row.endpoints.size() - kShownEndpoints));
-            more->setProperty("uiRole", QStringLiteral("muted"));
-            m_endpointsLayout->addWidget(more);
-        }
-    }
-
-    m_policyNote->setText(
-        QStringLiteral("Policy scope: traffic limits, blocks and firewall rules "
-                       "apply to %1, not to a single IP, so rotating addresses stay "
-                       "covered.")
-            .arg(applicationLabel(row)));
-
-    refreshDrawerActions();
+    return nullptr;
 }
 
-void ConnectionsPage::clearDrawer()
+void ConnectionsPage::resizeEvent(QResizeEvent *event)
 {
-    m_hasSelection = false;
-    m_selected = Connections::Row();
-
-    if (!m_drawer)
-        return;
-
-    m_drawerTitle->setText(QStringLiteral("Connection Inspector"));
-    m_drawerTitle->setToolTip(QString());
-    m_drawerBadge->setText(QStringLiteral("No selection"));
-    m_drawerBadge->setProperty("status", QStringLiteral("unknown"));
-    repolish(m_drawerBadge);
-
-    m_appIcon->setPixmap(QPixmap());
-    m_appIcon->setText(QStringLiteral("—"));
-    m_appName->setText(QStringLiteral("No connection selected"));
-    m_appMeta->setText(
-        QStringLiteral("Select a row to inspect its destination and evidence."));
-    m_appMeta->setToolTip(QString());
-
-    m_endpointDetailValue->setText(QStringLiteral("—"));
-    m_directionValue->setText(QStringLiteral("—"));
-    m_evidenceTitle->setText(QStringLiteral("Attribution evidence"));
-    m_evidenceDetail->setText(
-        QStringLiteral("Select a connection to see how its name was established."));
-
-    m_rateValue->setText(QStringLiteral("—"));
-    m_dataValue->setText(QStringLiteral("—"));
-    m_downloadValue->setText(QStringLiteral("—"));
-    m_uploadValue->setText(QStringLiteral("—"));
-    m_packetsValue->setText(QStringLiteral("—"));
-    m_endpointValue->setText(QStringLiteral("—"));
-
-    clearLayout(m_endpointsLayout);
-    auto *empty = new QLabel(QStringLiteral("No endpoints selected."));
-    empty->setProperty("uiRole", QStringLiteral("muted"));
-    m_endpointsLayout->addWidget(empty);
-
-    m_policyNote->setText(
-        QStringLiteral("Traffic limits, blocks and firewall rules apply to the "
-                       "application executable, not to a single IP."));
-    refreshDrawerActions();
-}
-
-void ConnectionsPage::refreshDrawerActions()
-{
-    const bool canAct = m_hasSelection
-                        && (m_selected.pid != 0
-                            || !m_selected.path.trimmed().isEmpty());
-    m_trafficButton->setEnabled(canAct);
-    m_detailsButton->setEnabled(canAct);
-
-    if (canAct) {
-        m_trafficButton->setToolTip(
-            QStringLiteral("Open the bandwidth limit for %1.").arg(m_selected.appName));
-        m_detailsButton->setToolTip(
-            QStringLiteral("Open identity, destinations, policies and audit history."));
-    } else {
-        const QString reason = m_hasSelection
-            ? QStringLiteral("The executable path for this connection is not available.")
-            : QStringLiteral("Select a connection first.");
-        m_trafficButton->setToolTip(reason);
-        m_detailsButton->setToolTip(reason);
+    QWidget::resizeEvent(event);
+    if (m_inspector) {
+        m_inspector->setGeometry(width() - m_inspector->width(), 0,
+                                 m_inspector->width(), height());
+        m_inspector->raise();
     }
 }

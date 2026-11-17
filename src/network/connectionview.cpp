@@ -15,6 +15,9 @@ QString filterLabel(Filter filter)
     case Filter::Domains:     return QStringLiteral("Domains");
     case Filter::IpAddresses: return QStringLiteral("IP addresses");
     case Filter::Unknown:     return QStringLiteral("Unknown");
+    case Filter::Outbound:    return QStringLiteral("Outbound");
+    case Filter::Inbound:     return QStringLiteral("Inbound");
+    case Filter::Blocked:     return QStringLiteral("Blocked");
     case Filter::All:         break;
     }
     return QStringLiteral("All");
@@ -26,6 +29,9 @@ QString filterToken(Filter filter)
     case Filter::Domains:     return QStringLiteral("domains");
     case Filter::IpAddresses: return QStringLiteral("ip");
     case Filter::Unknown:     return QStringLiteral("unknown");
+    case Filter::Outbound:    return QStringLiteral("outbound");
+    case Filter::Inbound:     return QStringLiteral("inbound");
+    case Filter::Blocked:     return QStringLiteral("blocked");
     case Filter::All:         break;
     }
     return QStringLiteral("all");
@@ -45,6 +51,12 @@ bool matchesFilter(const Row &row, Filter filter)
         return !row.hasDomain
                || row.confidenceRank <= confidenceRank(
                       ApplicationIdentity::Confidence::WeakInference);
+    case Filter::Outbound:
+        return row.direction == QLatin1String("Outbound");
+    case Filter::Inbound:
+        return row.direction == QLatin1String("Inbound");
+    case Filter::Blocked:
+        return row.policyToken == QLatin1String("blocked");
     }
     return true;
 }
@@ -74,6 +86,12 @@ bool matchesQuery(const Row &row, const QString &query)
     }
     for (const QString &address : row.addresses) {
         if (address.toLower().contains(needle))
+            return true;
+    }
+    if (row.ports.toLower().contains(needle))
+        return true;
+    for (const Endpoint &endpoint : row.endpoints) {
+        if (QString::number(endpoint.port).contains(needle))
             return true;
     }
     return false;
