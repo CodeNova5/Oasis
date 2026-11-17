@@ -13,6 +13,7 @@
  */
 #pragma once
 
+#include <QHash>
 #include <QList>
 #include <QSet>
 #include <QString>
@@ -63,6 +64,14 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
+    enum class TimeRange { Live, OneMinute, FiveMinutes, FifteenMinutes, OneHour };
+
+    struct ObservedRow
+    {
+        Connections::Row row;
+        qint64 lastSeenMs = 0;
+    };
+
     void buildMetrics(QVBoxLayout *root);
     void buildToolbar(QVBoxLayout *root);
     void buildTable(QVBoxLayout *root);
@@ -70,6 +79,10 @@ private:
 
     void setFilter(Connections::Filter filter);
     void clearFilters();
+    void setTimeRange(TimeRange range);
+    void rebuildVisibleRows();
+    static QString timeRangeLabel(TimeRange range);
+    static qint64 timeRangeWindowMs(TimeRange range);
     void applyFilters();
     void refreshMetrics();
     void refreshPills();
@@ -121,8 +134,11 @@ private:
     QList<Connections::Row> m_rows;
     QList<Connections::Row> m_filtered;
     QSet<QString> m_seenEndpoints;
+    QHash<QString, ObservedRow> m_history;
+    QSet<QString> m_liveIds;
 
     Connections::Filter m_filter = Connections::Filter::All;
+    TimeRange m_timeRange = TimeRange::FiveMinutes;
     QString m_query;
     QString m_selectedId;
     bool m_monitoringActive = false;

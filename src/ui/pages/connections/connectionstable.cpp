@@ -9,6 +9,7 @@
 #include "ui/theme/thememanager.h"
 #include "ui/theme/typography.h"
 
+#include <QDateTime>
 #include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
@@ -94,6 +95,16 @@ QString initialsFor(const QString &label)
             break;
     }
     return initials.isEmpty() ? QStringLiteral("?") : initials;
+}
+
+QString formatAge(qint64 ageMs)
+{
+    if (ageMs < 60LL * 1000)
+        return QStringLiteral("just now");
+    const qint64 minutes = ageMs / (60LL * 1000);
+    if (minutes < 60)
+        return QStringLiteral("%1 min ago").arg(minutes);
+    return QStringLiteral("%1 h ago").arg(minutes / 60);
 }
 
 QString protoLabel(quint16 port, const QString &protocol)
@@ -600,7 +611,8 @@ private:
         }
 
         const bool expanded = m_table->isExpanded(row.id);
-        paintAppCell(painter, rect, columns, row, expanded, pal);
+        const bool closed = m_table->m_closedAt.contains(row.id);
+        paintAppCell(painter, rect, columns, row, expanded, closed, pal);
         paintDestinationCell(painter, rect, columns, row.destination, row.addresses,
                              row.hasDomain, row.confidenceRank, pal);
         paintDirection(painter, columns.cell(ColDirection, rect.y(), rect.height()).left(),
@@ -689,7 +701,7 @@ private:
     }
 
     void paintAppCell(QPainter *painter, const QRect &rect, const Columns &columns,
-                      const Connections::Row &row, bool expanded,
+                      const Connections::Row &row, bool expanded, bool closed,
                       const Theme::Palette &pal)
     {
         const QRect expand = columns.cell(ColExpand, rect.y(), rect.height());
@@ -711,13 +723,20 @@ private:
         const bool danger = row.policyToken == QLatin1String("blocked");
         drawElided(painter, QRect(textLeft, rect.top() + 7, textWidth, 18),
                    applicationLabel(row), uiFont(13, QFont::Medium),
-                   color(danger ? pal.semanticDanger : pal.textPrimary));
-        drawElided(painter, QRect(textLeft, rect.top() + 25, textWidth, 15),
-                   QStringLiteral("%1 — %2 endpoint%3")
-                       .arg(row.appName.isEmpty() ? QStringLiteral("Unknown process")
-                                                  : row.appName)
-                       .arg(row.endpointCount)
-                       .arg(row.endpointCount == 1 ? QString() : QStringLiteral("s")),
+                   color(closed ? pal.textSecondary
+                                : (danger ? pal.semanticDanger : pal.textPrimary)));
+
+        QString detail = QStringLiteral("%1 — %2 endpoint%3")
+                             .arg(row.appName.isEmpty() ? QStringLiteral("Unknown process")
+                                                        : row.appName)
+                             .arg(row.endpointCount)
+                             .arg(row.endpointCount == 1 ? QString() : QStringLiteral("s"));
+        if (closed) {
+            const qint64 age = QDateTime::currentMSecsSinceEpoch()
+                               - m_table->m_closedAt.value(row.id);
+            detail = QStringLiteral("Closed %1 · %2").arg(formatAge(age), detail);
+        }
+        drawElided(painter, QRect(textLeft, rect.top() + 25, textWidth, 15), detail,
                    uiFont(11, QFont::Normal), color(pal.textMuted));
     }
 
@@ -838,6 +857,13 @@ void ConnectionsTable::setRows(const QList<Connections::Row> &rows)
 
     rebuildBody();
     m_header->update();
+}
+
+void ConnectionsTable::setClosedAt(const QHash<QString, qint64> &closedAt)
+{
+    m_closedAt = closedAt;
+    if (m_body)
+        m_body->update();
 }
 
 void ConnectionsTable::setSortKey(SortKey key)

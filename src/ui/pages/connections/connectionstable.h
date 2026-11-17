@@ -12,6 +12,7 @@
  */
 #pragma once
 
+#include <QHash>
 #include <QList>
 #include <QSet>
 #include <QString>
@@ -31,6 +32,11 @@ public:
     /// Replaces the rows. Expansion survives a beat when the group is still
     /// present; selection survives when the same identity is still visible.
     void setRows(const QList<Connections::Row> &rows);
+
+    /// Rows that are no longer in the live capture, with the moment each was
+    /// last observed. They stay in the table for the page's time window and are
+    /// painted as closed rather than passed off as active.
+    void setClosedAt(const QHash<QString, qint64> &closedAt);
 
     QString selectedId() const { return m_selectedId; }
     void selectId(const QString &id);
@@ -69,6 +75,7 @@ private:
     QWidget *m_body = nullptr;
 
     QList<Connections::Row> m_rows;
+    QHash<QString, qint64> m_closedAt;
     QSet<QString> m_expanded;
     SortKey m_sortKey = SortKey::Traffic;
     Qt::SortOrder m_sortOrder = Qt::DescendingOrder;

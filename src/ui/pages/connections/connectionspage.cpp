@@ -14,6 +14,7 @@
 
 #include <QAbstractButton>
 #include <QAction>
+#include <QActionGroup>
 #include <QButtonGroup>
 #include <QDateTime>
 #include <QDir>
@@ -70,6 +71,16 @@ QFont uiFont(int pixelSize, QFont::Weight weight)
 QString applicationLabel(const Connections::Row &row)
 {
     return row.displayName.trimmed().isEmpty() ? row.appName : row.displayName;
+}
+
+QString formatAge(qint64 ageMs)
+{
+    if (ageMs < 60LL * 1000)
+        return QStringLiteral("just now");
+    const qint64 minutes = ageMs / (60LL * 1000);
+    if (minutes < 60)
+        return QStringLiteral("%1 min ago").arg(minutes);
+    return QStringLiteral("%1 h ago").arg(minutes / 60);
 }
 
 int endpointCountFor(const Connections::Row &row)
@@ -455,16 +466,27 @@ void ConnectionsPage::buildToolbar(QVBoxLayout *root)
     m_groupButton->setMenu(groupMenu);
     toolbar->addWidget(m_groupButton);
 
-    m_rangeButton = new QPushButton(QStringLiteral("Last 5 min"), this);
+    m_rangeButton = new QPushButton(timeRangeLabel(m_timeRange), this);
     m_rangeButton->setFixedHeight(36);
     m_rangeButton->setIconSize(QSize(14, 14));
     m_rangeButton->setCursor(Qt::PointingHandCursor);
     m_rangeButton->setToolTip(QStringLiteral(
-        "The table shows the live five-minute capture window. Longer history is kept in Reports."));
+        "Shows connections observed in the selected window. Connections that "
+        "close stay listed, marked closed, until they age out of the window."));
     auto *rangeMenu = new QMenu(m_rangeButton);
-    auto *rangeAction = rangeMenu->addAction(QStringLiteral("Last 5 min"));
-    rangeAction->setCheckable(true);
-    rangeAction->setChecked(true);
+    auto *rangeGroup = new QActionGroup(rangeMenu);
+    rangeGroup->setExclusive(true);
+    for (TimeRange range : {TimeRange::Live, TimeRange::OneMinute,
+                            TimeRange::FiveMinutes, TimeRange::FifteenMinutes,
+                            TimeRange::OneHour}) {
+        QAction *action = rangeMenu->addAction(timeRangeLabel(range));
+        action->setCheckable(true);
+        action->setChecked(range == m_timeRange);
+        rangeGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [this, range]() {
+            setTimeRange(range);
+        });
+    }
     m_rangeButton->setMenu(rangeMenu);
     toolbar->addWidget(m_rangeButton);
 
@@ -569,12 +591,86 @@ void ConnectionsPage::buildInspector()
 
 void ConnectionsPage::setGroups(const QList<Connections::Row> &groups)
 {
-    m_rows = groups;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    m_liveIds.clear();
+    for (const Connections::Row &row : groups) {
+        m_liveIds.insert(row.id);
+        ObservedRow &observed = m_history[row.id];
+        observed.row = row;
+        observed.lastSeenMs = now;
+    }
+
+    // Forget closed rows once they leave the widest window on offer. Live rows
+    // are never dropped, however long they have been connected.
+    const qint64 retention = timeRangeWindowMs(TimeRange::OneHour);
+    for (auto it = m_history.begin(); it != m_history.end();) {
+        if (!m_liveIds.contains(it.key()) && now - it.value().lastSeenMs > retention)
+            it = m_history.erase(it);
+        else
+            ++it;
+    }
+
+    rebuildVisibleRows();
     refreshMetrics();
     applyFilters();
 
     if (!m_inspectorId.isEmpty())
         renderInspector();
+}
+
+void ConnectionsPage::setTimeRange(TimeRange range)
+{
+    m_timeRange = range;
+    if (m_rangeButton)
+        m_rangeButton->setText(timeRangeLabel(range));
+    rebuildVisibleRows();
+    refreshMetrics();
+    applyFilters();
+
+    if (!m_inspectorId.isEmpty())
+        renderInspector();
+}
+
+void ConnectionsPage::rebuildVisibleRows()
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 window = timeRangeWindowMs(m_timeRange);
+
+    m_rows.clear();
+    for (auto it = m_history.cbegin(); it != m_history.cend(); ++it) {
+        const ObservedRow &observed = it.value();
+        const bool live = m_liveIds.contains(it.key());
+        if (m_timeRange == TimeRange::Live && !live)
+            continue;
+        if (!live && now - observed.lastSeenMs > window)
+            continue;
+        m_rows.append(observed.row);
+    }
+}
+
+QString ConnectionsPage::timeRangeLabel(TimeRange range)
+{
+    switch (range) {
+    case TimeRange::Live:           return QStringLiteral("Live");
+    case TimeRange::OneMinute:      return QStringLiteral("Last 1 min");
+    case TimeRange::FiveMinutes:    return QStringLiteral("Last 5 min");
+    case TimeRange::FifteenMinutes: return QStringLiteral("Last 15 min");
+    case TimeRange::OneHour:        return QStringLiteral("Last 1 hour");
+    }
+    return QStringLiteral("Last 5 min");
+}
+
+qint64 ConnectionsPage::timeRangeWindowMs(TimeRange range)
+{
+    switch (range) {
+    case TimeRange::Live:           return 0;
+    case TimeRange::OneMinute:      return 60LL * 1000;
+    case TimeRange::FiveMinutes:    return 5LL * 60 * 1000;
+    case TimeRange::FifteenMinutes: return 15LL * 60 * 1000;
+    case TimeRange::OneHour:        return 60LL * 60 * 1000;
+    }
+    return 5LL * 60 * 1000;
 }
 
 void ConnectionsPage::setMonitoringActive(bool active)
@@ -614,6 +710,13 @@ void ConnectionsPage::applyFilters()
         }
     }
 
+    QHash<QString, qint64> closedAt;
+    for (const Connections::Row &row : m_filtered) {
+        if (!m_liveIds.contains(row.id))
+            closedAt.insert(row.id, m_history.value(row.id).lastSeenMs);
+    }
+
+    m_table->setClosedAt(closedAt);
     m_table->setRows(m_filtered);
     refreshPills();
     refreshEmptyState();
@@ -659,6 +762,10 @@ void ConnectionsPage::refreshMetrics()
     QSet<QString> seen;
 
     for (const Connections::Row &row : m_rows) {
+        // Tiles describe the live capture, not rows that closed in the window.
+        if (!m_liveIds.contains(row.id))
+            continue;
+
         const int count = endpointCountFor(row);
         endpoints += count;
         if (row.policyToken == QLatin1String("blocked"))
@@ -822,7 +929,7 @@ void ConnectionsPage::exportVisibleRows()
     QTextStream out(&file);
     out.setEncoding(QStringConverter::Utf8);
     out << "Application,Process,PID,Destination,Addresses,Port,Protocol,Direction,"
-           "Confidence,Policy,Rx bytes,Tx bytes\n";
+           "Confidence,Policy,Rx bytes,Tx bytes,Status\n";
 
     for (const Connections::Row &row : m_filtered) {
         out << quote(applicationLabel(row)) << ','
@@ -836,7 +943,9 @@ void ConnectionsPage::exportVisibleRows()
             << quote(row.confidence) << ','
             << quote(row.policy) << ','
             << row.rxBytes << ','
-            << row.txBytes << '\n';
+            << row.txBytes << ','
+            << quote(m_liveIds.contains(row.id) ? QStringLiteral("Live")
+                                                : QStringLiteral("Closed")) << '\n';
     }
     file.close();
 }
@@ -887,12 +996,17 @@ void ConnectionsPage::renderInspector()
                  row->hasDomain ? row->destination : QStringLiteral("No domain")));
 
     const quint16 port = rowPort(*row);
-    m_inspectorSubtitle->setText(
-        QStringLiteral("PID %1 · %2 :%3 · %4")
-            .arg(row->pid)
-            .arg(rowProtocol(*row))
-            .arg(port)
-            .arg(row->confidence));
+    QString subtitle = QStringLiteral("PID %1 · %2 :%3 · %4")
+                           .arg(row->pid)
+                           .arg(rowProtocol(*row))
+                           .arg(port)
+                           .arg(row->confidence);
+    if (!m_liveIds.contains(row->id)) {
+        const qint64 age = QDateTime::currentMSecsSinceEpoch()
+                           - m_history.value(row->id).lastSeenMs;
+        subtitle += QStringLiteral(" · Closed %1").arg(formatAge(age));
+    }
+    m_inspectorSubtitle->setText(subtitle);
 
     clearLayout(m_inspectorBody);
 
