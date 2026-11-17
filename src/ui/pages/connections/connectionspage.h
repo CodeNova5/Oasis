@@ -34,6 +34,7 @@ class QPushButton;
 class QResizeEvent;
 class QScrollArea;
 class QStackedWidget;
+class QTimer;
 class QVBoxLayout;
 
 class ConnectionsPage : public QWidget
@@ -81,6 +82,9 @@ private:
     void clearFilters();
     void setTimeRange(TimeRange range);
     void rebuildVisibleRows();
+    QList<Connections::Row> collectVisibleRows(qint64 nowMs) const;
+    void pruneHistory(qint64 nowMs);
+    void onClockTick();
     static QString timeRangeLabel(TimeRange range);
     static qint64 timeRangeWindowMs(TimeRange range);
     void applyFilters();
@@ -92,6 +96,7 @@ private:
     void openInspector(const QString &id);
     void closeInspector();
     void renderInspector();
+    QString inspectorSubtitle(const Connections::Row &row) const;
     void onSelectionChanged(const QString &id);
 
     void exportVisibleRows();
@@ -130,6 +135,8 @@ private:
     QScrollArea *m_inspectorScroll = nullptr;
     QVBoxLayout *m_inspectorBody = nullptr;
     QString      m_inspectorId;
+
+    QTimer *m_clock = nullptr;
 
     QList<Connections::Row> m_rows;
     QList<Connections::Row> m_filtered;

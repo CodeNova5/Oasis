@@ -38,6 +38,10 @@ public:
     /// painted as closed rather than passed off as active.
     void setClosedAt(const QHash<QString, qint64> &closedAt);
 
+    /// Repaints the closed rows so their "Closed 5 min ago" labels advance
+    /// even when no new snapshot arrives.
+    void refreshClosedTimestamps();
+
     QString selectedId() const { return m_selectedId; }
     void selectId(const QString &id);
     void clearSelection();

@@ -43,8 +43,11 @@
 #include <QStackedWidget>
 #include <QStringConverter>
 #include <QTextStream>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+
+#include <initializer_list>
 
 using ConnectionsUi::Glyph;
 
@@ -71,6 +74,21 @@ QFont uiFont(int pixelSize, QFont::Weight weight)
 QString applicationLabel(const Connections::Row &row)
 {
     return row.displayName.trimmed().isEmpty() ? row.appName : row.displayName;
+}
+
+bool sameRowIds(const QList<Connections::Row> &left,
+                const QList<Connections::Row> &right)
+{
+    if (left.size() != right.size())
+        return false;
+    QSet<QString> ids;
+    for (const Connections::Row &row : left)
+        ids.insert(row.id);
+    for (const Connections::Row &row : right) {
+        if (!ids.contains(row.id))
+            return false;
+    }
+    return true;
 }
 
 QString formatAge(qint64 ageMs)
@@ -376,6 +394,14 @@ ConnectionsPage::ConnectionsPage(QWidget *parent)
         refreshTheme();
     });
 
+    // The window must keep ageing even if capture stops and no new beat
+    // arrives, so closed rows expire on wall-clock time rather than on data.
+    m_clock = new QTimer(this);
+    m_clock->setInterval(1000);
+    m_clock->setTimerType(Qt::CoarseTimer);
+    connect(m_clock, &QTimer::timeout, this, &ConnectionsPage::onClockTick);
+    m_clock->start();
+
     refreshMetrics();
     refreshPills();
     refreshEmptyState();
@@ -603,13 +629,7 @@ void ConnectionsPage::setGroups(const QList<Connections::Row> &groups)
 
     // Forget closed rows once they leave the widest window on offer. Live rows
     // are never dropped, however long they have been connected.
-    const qint64 retention = timeRangeWindowMs(TimeRange::OneHour);
-    for (auto it = m_history.begin(); it != m_history.end();) {
-        if (!m_liveIds.contains(it.key()) && now - it.value().lastSeenMs > retention)
-            it = m_history.erase(it);
-        else
-            ++it;
-    }
+    pruneHistory(now);
 
     rebuildVisibleRows();
     refreshMetrics();
@@ -625,7 +645,6 @@ void ConnectionsPage::setTimeRange(TimeRange range)
     if (m_rangeButton)
         m_rangeButton->setText(timeRangeLabel(range));
     rebuildVisibleRows();
-    refreshMetrics();
     applyFilters();
 
     if (!m_inspectorId.isEmpty())
@@ -634,18 +653,66 @@ void ConnectionsPage::setTimeRange(TimeRange range)
 
 void ConnectionsPage::rebuildVisibleRows()
 {
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    m_rows = collectVisibleRows(QDateTime::currentMSecsSinceEpoch());
+}
+
+QList<Connections::Row> ConnectionsPage::collectVisibleRows(qint64 nowMs) const
+{
     const qint64 window = timeRangeWindowMs(m_timeRange);
 
-    m_rows.clear();
+    QList<Connections::Row> visible;
     for (auto it = m_history.cbegin(); it != m_history.cend(); ++it) {
         const ObservedRow &observed = it.value();
         const bool live = m_liveIds.contains(it.key());
         if (m_timeRange == TimeRange::Live && !live)
             continue;
-        if (!live && now - observed.lastSeenMs > window)
+        if (!live && nowMs - observed.lastSeenMs > window)
             continue;
-        m_rows.append(observed.row);
+        visible.append(observed.row);
+    }
+    return visible;
+}
+
+void ConnectionsPage::pruneHistory(qint64 nowMs)
+{
+    const qint64 retention = timeRangeWindowMs(TimeRange::OneHour);
+    for (auto it = m_history.begin(); it != m_history.end();) {
+        if (!m_liveIds.contains(it.key()) && nowMs - it.value().lastSeenMs > retention)
+            it = m_history.erase(it);
+        else
+            ++it;
+    }
+}
+
+void ConnectionsPage::onClockTick()
+{
+    // Only closed rows age; live rows stay visible for as long as they live.
+    bool hasClosed = false;
+    for (auto it = m_history.cbegin(); it != m_history.cend() && !hasClosed; ++it)
+        hasClosed = !m_liveIds.contains(it.key());
+    if (!hasClosed)
+        return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    pruneHistory(now);
+
+    const QList<Connections::Row> visible = collectVisibleRows(now);
+    if (!sameRowIds(m_rows, visible)) {
+        m_rows = visible;
+        applyFilters();
+        if (!m_inspectorId.isEmpty())
+            renderInspector();
+        return;
+    }
+
+    // Row contents are unchanged, but the "Closed 2 min ago" labels are drawn
+    // at paint time, so a repaint is all that ageing needs.
+    m_table->refreshClosedTimestamps();
+    if (!m_inspectorId.isEmpty() && m_inspectorSubtitle) {
+        if (const Connections::Row *row = rowForId(m_inspectorId)) {
+            if (!m_liveIds.contains(row->id))
+                m_inspectorSubtitle->setText(inspectorSubtitle(*row));
+        }
     }
 }
 
@@ -995,18 +1062,7 @@ void ConnectionsPage::renderInspector()
             .arg(applicationLabel(*row),
                  row->hasDomain ? row->destination : QStringLiteral("No domain")));
 
-    const quint16 port = rowPort(*row);
-    QString subtitle = QStringLiteral("PID %1 · %2 :%3 · %4")
-                           .arg(row->pid)
-                           .arg(rowProtocol(*row))
-                           .arg(port)
-                           .arg(row->confidence);
-    if (!m_liveIds.contains(row->id)) {
-        const qint64 age = QDateTime::currentMSecsSinceEpoch()
-                           - m_history.value(row->id).lastSeenMs;
-        subtitle += QStringLiteral(" · Closed %1").arg(formatAge(age));
-    }
-    m_inspectorSubtitle->setText(subtitle);
+    m_inspectorSubtitle->setText(inspectorSubtitle(*row));
 
     clearLayout(m_inspectorBody);
 
@@ -1138,6 +1194,21 @@ void ConnectionsPage::renderInspector()
     actionsLayout->addWidget(detailsButton);
     m_inspectorBody->addWidget(actions);
     m_inspectorBody->addStretch(1);
+}
+
+QString ConnectionsPage::inspectorSubtitle(const Connections::Row &row) const
+{
+    QString subtitle = QStringLiteral("PID %1 · %2 :%3 · %4")
+                           .arg(row.pid)
+                           .arg(rowProtocol(row))
+                           .arg(rowPort(row))
+                           .arg(row.confidence);
+    if (!m_liveIds.contains(row.id)) {
+        const qint64 age = QDateTime::currentMSecsSinceEpoch()
+                           - m_history.value(row.id).lastSeenMs;
+        subtitle += QStringLiteral(" · Closed %1").arg(formatAge(age));
+    }
+    return subtitle;
 }
 
 const Connections::Row *ConnectionsPage::rowForId(const QString &id) const

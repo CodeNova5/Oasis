@@ -866,6 +866,12 @@ void ConnectionsTable::setClosedAt(const QHash<QString, qint64> &closedAt)
         m_body->update();
 }
 
+void ConnectionsTable::refreshClosedTimestamps()
+{
+    if (m_body && !m_closedAt.isEmpty())
+        m_body->update();
+}
+
 void ConnectionsTable::setSortKey(SortKey key)
 {
     if (m_sortKey == key) {
