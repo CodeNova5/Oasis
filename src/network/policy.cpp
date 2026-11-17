@@ -11,6 +11,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDebug>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QSettings>
 
 namespace {
@@ -29,6 +31,35 @@ bool schemaVersionOk(const QJsonObject &object)
     qWarning() << "policy: rejecting payload with unsupported contract schema version"
                << version;
     return false;
+}
+
+// ─── Parsed policy cache ───────────────────────────────────────────────────
+// Every screen re-reads the policy set on its once-a-second beat, and a few
+// callers read it once per row. Constructing QSettings and parsing the stored
+// JSON are pure overhead once the set has been read, so the parsed list is
+// memoized and invalidated by savePolicies(). The application is
+// single-instance, so an in-process write is the only way the stored set can
+// change. The cache is mutex-guarded because the reconciler reads policies
+// from its worker thread.
+struct PolicyCache
+{
+    QMutex               mutex;
+    bool                 valid = false;
+    QList<NetworkPolicy> policies;
+};
+
+PolicyCache &policyCache()
+{
+    static PolicyCache cache;
+    return cache;
+}
+
+void invalidatePolicyCache()
+{
+    PolicyCache &cache = policyCache();
+    QMutexLocker locker(&cache.mutex);
+    cache.valid = false;
+    cache.policies.clear();
 }
 
 } // namespace
@@ -416,6 +447,15 @@ PolicyOrigin policyOrigin(const NetworkPolicy &policy)
 
 QList<NetworkPolicy> PolicyStore::loadPolicies()
 {
+    PolicyCache &cache = policyCache();
+    {
+        QMutexLocker locker(&cache.mutex);
+        // Implicitly shared: the copy costs a refcount bump, and a caller that
+        // mutates the list detaches without disturbing the memo.
+        if (cache.valid)
+            return cache.policies;
+    }
+
     QList<NetworkPolicy> result;
     QSettings settings;
     // Read format version first (outside any group to avoid QSettings::value() no-arg issues)
@@ -485,6 +525,12 @@ QList<NetworkPolicy> PolicyStore::loadPolicies()
         }
     }
     settings.endGroup();
+
+    {
+        QMutexLocker locker(&cache.mutex);
+        cache.policies = result;
+        cache.valid = true;
+    }
     return result;
 }
 
@@ -504,6 +550,12 @@ bool PolicyStore::savePolicies(const QList<NetworkPolicy> &policies)
                       QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
     settings.endGroup();
     settings.sync();
+
+    // A write is the only way the stored set can change, so the memo is dropped
+    // here. This happens even when the sync reports an error: a partial write
+    // must be re-read rather than hidden behind a stale list.
+    invalidatePolicyCache();
+
     return settings.status() == QSettings::NoError;
 }
 

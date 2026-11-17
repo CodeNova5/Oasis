@@ -174,6 +174,12 @@ public:
 public slots:
     void onTick();
 
+signals:
+    // One per tick, after the rows that changed have published their cells. The
+    // view re-sorts and re-filters on this, so the proxy reacts once per tick
+    // instead of once per row that moved.
+    void tickRefreshed();
+
 private:
     int  findOrAddProcess(const QString &name, quint32 pid);
     bool isProcessIndex  (const QModelIndex &idx) const;

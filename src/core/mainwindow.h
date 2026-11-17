@@ -142,6 +142,16 @@ private:
     void setupActivity();
     void setupApplications();
     void setupConnections();
+
+    // The one-second beat only refreshes the screen that is on top; every other
+    // screen is refreshed when it is navigated to. These helpers decide which
+    // screen that is and bring it up to date from the latest beat.
+    bool isCurrentPage(QWidget *page) const;
+    void refreshVisiblePage();
+    // Activity keeps collecting while another screen is open; only the panel
+    // updates are deferred to here.
+    void renderActivityPanel();
+
     void appendActivityEvent(const Activity::Event &event);
     // Banner, chart placeholder and empty state all follow capture state, so
     // one place decides what the page says about monitoring.

@@ -766,6 +766,15 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // ── FIX: Set the custom SortRole for precise numeric sorting ──
     m_proxy->setSortRole(Qt::UserRole + 5);
 
+    // A dynamic proxy re-sorts and re-filters on every dataChanged, and a tick
+    // republishes every row whose numbers moved. The model publishes one
+    // tickRefreshed at the end of the tick, so the tree is re-sorted and
+    // re-filtered once per second instead of once per row.
+    m_proxy->setDynamicSortFilter(false);
+    connect(m_model, &NetworkTreeModel::tickRefreshed, this, [this]() {
+        m_proxy->invalidate();
+    });
+
     ui->treeView->setModel(m_proxy);
     ui->treeView->setUniformRowHeights(true);
     ui->treeView->setAnimated(true);
@@ -784,6 +793,10 @@ NetworkWidget::NetworkWidget(QWidget *parent)
 
     QHeaderView *hv = ui->treeView->header();
     hv->setMinimumSectionSize(50);
+    // ResizeToContents measures rows to find the widest cell. Sampling a handful
+    // is enough for a stable width and keeps five measured columns off the
+    // per-tick path.
+    hv->setResizeContentsPrecision(10);
     hv->setSectionResizeMode(0, QHeaderView::Interactive);       // COL_NAME
     hv->setSectionResizeMode(1, QHeaderView::ResizeToContents);  // COL_SRC
     hv->setSectionResizeMode(2, QHeaderView::ResizeToContents);  // COL_DST
@@ -1767,7 +1780,17 @@ void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batc
 {
     m_bandwidthGuard->observe(batch);
     m_model->addPackets(batch);
-    m_model->refreshDomains();
+    // Destination names come from the correlator the capture thread writes
+    // through, so resolving them holds a lock that thread needs. This ran on
+    // every batch; once per second keeps the Domain column current without
+    // taking that lock several times a second. The explicit refresh
+    // (refreshConnectionEvidence) stays unthrottled.
+    constexpr qint64 kDomainRefreshMs = 900;
+    if (!m_domainRefreshClock.isValid()
+        || m_domainRefreshClock.elapsed() >= kDomainRefreshMs) {
+        m_domainRefreshClock.start();
+        m_model->refreshDomains();
+    }
     m_totalPkts += batch.size();
     ui->lblPackets->setText(QString::number(m_totalPkts));
 

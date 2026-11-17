@@ -1517,6 +1517,10 @@ void MainWindow::navigateTo(int index)
     m_pages->setCurrentIndex(index);
     if (m_sidebar)
         m_sidebar->setCurrentIndex(index);
+    // This screen has not been rebuilt since it was last visible, so refresh it
+    // from the latest beat now instead of leaving stale figures on show for up
+    // to a second.
+    refreshVisiblePage();
     if (m_header && index < m_screenTitles.size()) {
         m_header->setPage(m_screenTitles.at(index),
                           m_screenSubtitles.value(index));
@@ -1630,8 +1634,14 @@ void MainWindow::setupOverview()
     if (!m_overview || !m_netWidget)
         return;
 
-    connect(m_netWidget, &NetworkWidget::dashboardUpdated,
-            this, &MainWindow::refreshOverview);
+    // The beat fires once a second for every screen, but only the screen that is
+    // on top needs to rebuild. Hidden pages are refreshed on navigation instead,
+    // so four screens no longer do their full work every second.
+    connect(m_netWidget, &NetworkWidget::dashboardUpdated, this,
+            [this](const TopConsumers::Summary &summary) {
+        if (isCurrentPage(m_overview))
+            refreshOverview(summary);
+    });
     connect(m_netWidget, &NetworkWidget::speedUpdated,
             this, &MainWindow::onOverviewSpeed);
     if (AuditEventStore *audit = m_netWidget->auditStore())
@@ -1680,6 +1690,9 @@ void MainWindow::setupActivity()
     m_activityApplications.removeDuplicates();
     m_activity->setApplications(m_activityApplications, QString());
 
+    // Collection (the bounded series and the detector) runs on every beat so the
+    // timeline has no gaps while the user is on another screen; the panel itself
+    // is only redrawn when it is visible.
     connect(m_netWidget, &NetworkWidget::dashboardUpdated,
             this, &MainWindow::onActivityTelemetry);
     if (AuditEventStore *audit = m_netWidget->auditStore()) {
@@ -1708,8 +1721,11 @@ void MainWindow::setupApplications()
     if (!m_applications || !m_netWidget)
         return;
 
-    connect(m_netWidget, &NetworkWidget::dashboardUpdated,
-            this, &MainWindow::refreshApplications);
+    connect(m_netWidget, &NetworkWidget::dashboardUpdated, this,
+            [this](const TopConsumers::Summary &) {
+        if (isCurrentPage(m_applications))
+            refreshApplications();
+    });
 
     connect(m_applications, &ApplicationsPage::detailsRequested,
             this, [this](quint32 pid, const QString &path, const QString &name) {
@@ -1773,8 +1789,11 @@ void MainWindow::setupConnections()
     if (!m_connections || !m_netWidget)
         return;
 
-    connect(m_netWidget, &NetworkWidget::dashboardUpdated,
-            this, &MainWindow::refreshConnections);
+    connect(m_netWidget, &NetworkWidget::dashboardUpdated, this,
+            [this](const TopConsumers::Summary &) {
+        if (isCurrentPage(m_connections))
+            refreshConnections();
+    });
     connect(m_connections, &ConnectionsPage::refreshRequested, this, [this]() {
         if (!m_netWidget)
             return;
@@ -1900,6 +1919,48 @@ void MainWindow::onActivityTelemetry(const TopConsumers::Summary &summary)
 
     if (!detected.isEmpty())
         m_activity->setEvents(m_activityEvents);
+
+    // Everything above is collected state and must be complete whether or not
+    // the screen is on show (the timeline would otherwise have gaps). The panel
+    // updates below are only worth the work while it is visible.
+    if (!isCurrentPage(m_activity))
+        return;
+
+    renderActivityPanel();
+}
+
+bool MainWindow::isCurrentPage(QWidget *page) const
+{
+    return page != nullptr && m_pages && m_pages->currentWidget() == page;
+}
+
+void MainWindow::refreshVisiblePage()
+{
+    if (!m_netWidget || !m_pages)
+        return;
+
+    QWidget *current = m_pages->currentWidget();
+    if (current == m_overview) {
+        refreshOverview(m_netWidget->dashboardSummary());
+    } else if (current == m_applications) {
+        refreshApplications();
+    } else if (current == m_connections) {
+        refreshConnections();
+    } else if (current == m_activity) {
+        renderActivityPanel();
+    }
+}
+
+void MainWindow::renderActivityPanel()
+{
+    if (!m_activity || !m_netWidget)
+        return;
+
+    // The panel reflects the last collected sample, which may have arrived while
+    // another screen was open.
+    const QDateTime now = m_activityLastBeat.isValid()
+        ? m_activityLastBeat
+        : QDateTime::currentDateTime();
 
     m_activity->setSeries(m_activitySeries.series(m_activity->range()));
     m_activity->setUpdated(now);

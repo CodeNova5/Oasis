@@ -9,6 +9,7 @@
 #include <QSortFilterProxyModel>
 #include <QDialog>
 #include <QEvent>
+#include <QElapsedTimer>
 #include <memory>
 #include "networkmonitor.h"
 #include "networkmodel.h"
@@ -232,6 +233,10 @@ private:
     bool                    m_capturing = false;
     quint64                 m_totalPkts = 0;
     int                     m_dataSaverMode = 1;
+    // Batches arrive several times a second; the destination resolver behind it
+    // shares a mutex with the capture thread, so it runs at most once per
+    // kDomainRefreshMs from the batch path.
+    QElapsedTimer           m_domainRefreshClock;
 
     QHash<QString, QIcon>   m_iconCache;
     mutable QIcon           m_genericExecutableIcon;

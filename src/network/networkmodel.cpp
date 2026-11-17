@@ -508,8 +508,16 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
 void NetworkTreeModel::onTick()
 {
     const QDateTime now = QDateTime::currentDateTimeUtc();
+    bool anyChanged = false;
     for (int pRow = 0; pRow < m_procs.size(); ++pRow) {
         ProcessNode &p = m_procs[pRow];
+        // What the row shows right now: the tick publishes this row only when
+        // one of these moves, so an idle process costs nothing after its rate
+        // has decayed to zero.
+        const quint64 shownRx = p.totalRxSpeed;
+        const quint64 shownTx = p.totalTxSpeed;
+        const quint64 shownBytes = p.totalRxBytes + p.totalTxBytes;
+        const quint32 shownPackets = p.totalPackets;
         quint64 sumRx = 0, sumTx = 0;
         QString primaryDomain;
         quint64 primarySpeed = 0;
@@ -567,6 +575,13 @@ void NetworkTreeModel::onTick()
         if (domainChanged || p.foreground != Oasis::ForegroundAssociation::None)
             refreshActivity(pRow);
 
+        if (shownRx == p.totalRxSpeed && shownTx == p.totalTxSpeed
+            && shownBytes == (p.totalRxBytes + p.totalTxBytes)
+            && shownPackets == p.totalPackets) {
+            continue;
+        }
+        anyChanged = true;
+
         // ── FIX: Emit dataChanged starting from COL_NAME to update parent UI correctly ──
         // ── FIX: Include Qt::UserRole + 5 to keep sorting updated dynamically ──
         if (!p.conns.isEmpty() || !p.services.isEmpty()) {
@@ -577,6 +592,10 @@ void NetworkTreeModel::onTick()
         }
         emit dataChanged(createIndex(pRow, COL_NAME, nullptr), createIndex(pRow, COL_PKTS, nullptr), {Qt::DisplayRole, Qt::UserRole + 5});
     }
+
+    // The proxy is not dynamically sorted, so this is the one hint it gets that
+    // the tick moved rows. An idle tick publishes nothing and emits nothing.
+    if (anyChanged) emit tickRefreshed();
 }
 
 void NetworkTreeModel::setDomainResolver(
