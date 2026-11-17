@@ -167,4 +167,5 @@ private:
 
     bool m_accordionOpen = false;
     bool m_sized = false;
+    bool m_initialFocusDone = false;
 };

@@ -677,7 +677,6 @@ PolicyEditorDialog::PolicyEditorDialog(const PolicyTarget &target, QWidget *pare
     updateScopeTarget();
     updateActionControls();
     updateImpactPreview();
-    m_targetEdit->setFocus();
 }
 
 PolicyEditorDialog::PolicyEditorDialog(const NetworkPolicy &policy, QWidget *parent)
@@ -1830,6 +1829,19 @@ void PolicyEditorDialog::showEvent(QShowEvent *event)
         layout()->activate();
         adjustSize();
         m_sized = true;
+    }
+    if (!m_initialFocusDone) {
+        m_initialFocusDone = true;
+        // Start on the field the dialog is about. When the scope makes the
+        // target read-only (PID or activity group), the action choice is the
+        // first thing the user can actually change, so focus the selected
+        // action card instead of a field that only displays a value.
+        QWidget *initial = m_targetEdit;
+        if (m_targetEdit->isReadOnly() && m_actionGroup &&
+            m_actionGroup->checkedButton()) {
+            initial = m_actionGroup->checkedButton();
+        }
+        if (initial) initial->setFocus(Qt::OtherFocusReason);
     }
     const QRect available = screen() ? screen()->availableGeometry()
                                      : QRect();

@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oasis – Connections</title>
+<style>
+:root{
+  --surface-window:#111318;--surface-sidebar:#171A21;--surface-primary:#1C2029;--surface-elevated:#242A35;--surface-hover:#2B3240;--border:#343B48;
+  --accent:#4C8DFF;--success:#3FB982;--warning:#E6AD4D;--danger:#E36B70;--info:#62B5E8;
+  --text:#F3F5F8;--text2:#A1A9B7;--muted:#6C7586;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  --surface-window:#F3F4F7;--surface-sidebar:#EAECF1;--surface-primary:#FFFFFF;--surface-elevated:#F6F7FA;--surface-hover:#E6E9F0;--border:#D5D9E2;
+  --accent:#2F6FE0;--success:#1F9A66;--warning:#B7791F;--danger:#C9454B;--info:#1E88C7;
+  --text:#14171D;--text2:#4B5363;--muted:#80889A;color-scheme:light;}}
+:root[data-theme="light"]{
+  --surface-window:#F3F4F7;--surface-sidebar:#EAECF1;--surface-primary:#FFFFFF;--surface-elevated:#F6F7FA;--surface-hover:#E6E9F0;--border:#D5D9E2;
+  --accent:#2F6FE0;--success:#1F9A66;--warning:#B7791F;--danger:#C9454B;--info:#1E88C7;
+  --text:#14171D;--text2:#4B5363;--muted:#80889A;color-scheme:light;}
+:root[data-theme="dark"]{color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--surface-window);color:var(--text);font:400 13px/18px "Segoe UI Variable","Segoe UI",system-ui,sans-serif;overflow:hidden}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+svg.i.s{width:16px;height:16px}
+svg.i.xs{width:14px;height:14px}
+
+/* App Shell */
+.app{display:grid;grid-template-columns:232px 1fr;grid-template-rows:60px 1fr 28px;height:100%}
+.side{grid-row:1/4;background:var(--surface-sidebar);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:4px;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px;font-size:16px;line-height:24px;font-weight:600}
+.logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--info));display:grid;place-items:center;color:#fff}
+.nav{display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border-radius:6px;border:0;background:none;color:var(--text2);text-align:left;width:100%;position:relative}
+.nav:hover{background:var(--surface-hover);color:var(--text)}
+.nav.on{background:var(--surface-elevated);color:var(--text)}
+.nav.on svg{color:var(--accent)}
+.nav.on::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--accent)}
+.side .sp{flex:1}
+
+.head{display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--border)}
+.head h1{margin:0;font-size:24px;line-height:32px;font-weight:600}
+.head .grow{flex:1}
+.ib{width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:6px;background:none;color:var(--text2)}
+.ib:hover{background:var(--surface-hover);color:var(--text)}
+
+main{overflow:auto;padding:24px;display:flex;flex-direction:column}
+.wrap{max-width:1440px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:16px;flex:1;min-height:0}
+.status{grid-column:2;display:flex;align-items:center;gap:16px;padding:0 16px;background:var(--surface-sidebar);border-top:1px solid var(--border);font-size:11px;line-height:14px;color:var(--text2)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--c,var(--muted));display:inline-block}
+
+/* Badges & Tags */
+.badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:6px;font-size:11px;font-weight:600;line-height:14px;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);white-space:nowrap}
+.badge.Confirmed{--c:var(--success)}
+.badge.Strong{--c:var(--info)}
+.badge.Weak{--c:var(--warning)}
+.badge.Unknown{--c:var(--text2)}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--c)}
+
+.src-tag{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:4px;font-size:11px;font-weight:500;background:var(--surface-elevated);border:1px solid var(--border);color:var(--text2);white-space:nowrap}
+.src-tag.sni,.src-tag.dns{color:var(--info);border-color:color-mix(in srgb,var(--info) 35%,var(--border))}
+.src-tag.none{color:var(--muted)}
+
+/* Toolbar */
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.search{display:flex;align-items:center;gap:8px;height:36px;width:280px;padding:0 12px;background:var(--surface-primary);border:1px solid var(--border);border-radius:6px;color:var(--muted)}
+.search:focus-within{border-color:var(--accent)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--text)}
+.search .clear-q{background:none;border:0;padding:2px;color:var(--muted);display:grid;place-items:center;border-radius:4px}
+.search .clear-q:hover{color:var(--text);background:var(--surface-hover)}
+
+.pills{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pill{height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface-primary);color:var(--text2);font-size:12px;display:inline-flex;align-items:center;gap:6px;transition:background .12s}
+.pill:hover{background:var(--surface-hover);color:var(--text)}
+.pill.on{background:var(--surface-elevated);border-color:var(--accent);color:var(--text);font-weight:600}
+.pill .cnt{font-size:11px;color:var(--muted);background:var(--surface-elevated);padding:1px 6px;border-radius:10px}
+.pill.on .cnt{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+
+select{height:32px;background:var(--surface-primary);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0 10px;font-size:12px}
+
+.btn{height:34px;padding:0 12px;border-radius:6px;font-weight:600;font-size:12px;border:1px solid var(--border);background:var(--surface-elevated);display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn:hover{background:var(--surface-hover)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.p:hover{filter:brightness(1.1)}
+.btn.danger{background:color-mix(in srgb,var(--danger) 14%,transparent);border-color:color-mix(in srgb,var(--danger) 40%,transparent);color:var(--danger)}
+.btn.danger:hover{background:color-mix(in srgb,var(--danger) 24%,transparent)}
+
+/* Split View Layout */
+.split-layout{display:grid;grid-template-columns:1fr 410px;gap:16px;flex:1;min-height:0;overflow:hidden}
+@media (max-width:1180px){.split-layout{grid-template-columns:1fr;overflow:auto}}
+
+.table-card{background:var(--surface-primary);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.table-scroll{overflow:auto;flex:1}
+table{width:100%;border-collapse:collapse;table-layout:auto}
+thead th{position:sticky;top:0;z-index:2;background:var(--surface-elevated);text-align:left;font-weight:600;font-size:12px;color:var(--text2);height:38px;padding:0 12px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
+thead th:hover{color:var(--text);background:var(--surface-hover)}
+thead th.n{text-align:right}
+thead th .sort-ic{display:inline-block;width:12px;margin-left:4px;color:var(--accent);font-size:10px}
+
+tbody tr{height:40px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;transition:background .08s}
+tbody tr:last-child{border-bottom:0}
+tbody tr:hover{background:var(--surface-hover)}
+tbody tr.selected{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+tbody tr.selected td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+
+td{padding:0 12px;white-space:nowrap;vertical-align:middle;font-size:12px}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+
+.app-link{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:2px 4px;margin:-2px -4px;border-radius:4px;color:var(--text);text-align:left}
+.app-link:hover{background:var(--surface-elevated);color:var(--accent);text-decoration:underline}
+.app-ic-sm{width:18px;height:18px;border-radius:4px;display:grid;place-items:center;font-size:9px;font-weight:700;background:var(--surface-elevated);border:1px solid var(--border);flex:none}
+.ip-mono{font-family:Consolas,Monaco,monospace;font-size:11px;color:var(--text2)}
+.domain-bold{font-weight:600;color:var(--text)}
+.domain-raw{color:var(--muted);font-style:italic}
+
+.table-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface-elevated);border-top:1px solid var(--border);font-size:11px;color:var(--text2)}
+
+/* Contextual Side Drawer */
+.drawer{background:var(--surface-primary);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.drawer-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface-elevated);gap:8px}
+.drawer-hd h3{margin:0;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drawer-body{padding:16px;overflow:auto;display:flex;flex-direction:column;gap:14px;flex:1}
+.sec-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.drawer-kv{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kv-box{background:var(--surface-elevated);padding:8px 10px;border-radius:6px;border:1px solid var(--border)}
+.kv-box span{display:block;font-size:10px;color:var(--text2);margin-bottom:2px}
+.kv-box b{font-size:12px;word-break:break-all}
+
+.app-pivot-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-elevated);border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .12s,background .12s}
+.app-pivot-card:hover{border-color:var(--accent);background:var(--surface-hover)}
+.app-pivot-left{display:flex;align-items:center;gap:10px;min-width:0}
+.app-pivot-ic{width:28px;height:28px;border-radius:6px;background:var(--surface-primary);border:1px solid var(--border);display:grid;place-items:center;font-weight:700;font-size:11px;flex:none}
+.app-pivot-info{min-width:0}
+.app-pivot-info b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-pivot-info small{display:block;font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.evidence-card{background:var(--surface-elevated);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.evidence-row{display:flex;align-items:flex-start;gap:8px;font-size:12px}
+.evidence-row svg{margin-top:2px;color:var(--success)}
+.evidence-row.warn svg{color:var(--warning)}
+.evidence-row.danger svg{color:var(--danger)}
+
+.policy-note{font-size:11px;color:var(--text2);background:color-mix(in srgb,var(--accent) 8%,transparent);border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);border-radius:6px;padding:8px 10px;line-height:1.45}
+
+.drawer-foot{padding:12px 16px;border-top:1px solid var(--border);background:var(--surface-elevated);display:flex;flex-direction:column;gap:8px}
+.drawer-foot-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* Application Details Modal (Screen 04 Pivot Target) */
+.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);display:grid;place-items:center;z-index:40;padding:24px}
+.dialog{width:100%;max-width:660px;background:var(--surface-primary);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 48px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;max-height:90vh}
+.dlg-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);gap:12px}
+.dlg-title{display:flex;align-items:center;gap:12px}
+.dlg-ic{width:32px;height:32px;border-radius:8px;background:var(--surface-elevated);border:1px solid var(--border);display:grid;place-items:center;font-weight:700;font-size:13px}
+.dlg-title h2{margin:0;font-size:18px;font-weight:600}
+.dlg-title p{margin:2px 0 0;font-size:12px;color:var(--text2)}
+.dlg-body{padding:20px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.dlg-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface-elevated)}
+
+/* Toast */
+.toast{position:fixed;right:24px;bottom:calc(44px + env(safe-area-inset-bottom,0px));width:350px;max-width:calc(100% - 48px);background:var(--surface-elevated);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:12px 16px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:60}
+.toast.show{display:block}.toast b{display:block;font-size:13px;margin-bottom:2px}.toast span{color:var(--text2);font-size:12px}
+[hidden]{display:none!important}
+
+@media (max-width:760px){
+  body{overflow:auto}.app{grid-template-columns:1fr;grid-template-rows:auto auto 1fr 28px;height:auto;min-height:100%}
+  .side{grid-row:auto;flex-direction:row;overflow-x:auto;padding:8px;border-right:0;border-bottom:1px solid var(--border)}
+  .brand,.side .sp{display:none}.nav{width:auto;flex:none;padding:0 12px}.nav span{display:none}.status{grid-column:1}
+  main{padding:16px}.search{width:100%}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="logo"><svg class="i" viewBox="0 0 24 24"><path d="M2 12c3-6 7-6 10 0s7 6 10 0"/></svg></div>Oasis</div>
+    <div id="nav" style="display:contents"></div>
+    <div class="sp"></div>
+    <div class="badge Confirmed" style="align-self:flex-start;margin:0 8px">Monitoring</div>
+  </aside>
+
+  <header class="head">
+    <h1>Connections</h1>
+    <div class="grow"></div>
+    <button class="btn" id="refreshBtn" title="Refresh connections stream">
+      <svg class="i s" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+      Refresh
+    </button>
+    <button class="ib" aria-label="Notifications"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <!-- 1. Filter & Search Bar -->
+      <div class="toolbar">
+        <label class="search">
+          <svg class="i s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="searchInput" placeholder="Search domain, IP address, or application..." aria-label="Search connections">
+          <button type="button" class="clear-q" id="clearSearch" hidden aria-label="Clear search">
+            <svg class="i xs" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </label>
+
+        <div class="pills" id="filterPills" role="group" aria-label="Connection filters"></div>
+
+        <select id="evidenceFilter" aria-label="Attribution source filter" style="margin-left:auto">
+          <option value="All">All attribution sources</option>
+          <option value="TLS SNI">TLS SNI only</option>
+          <option value="DNS Query">DNS Query only</option>
+          <option value="Catalog">Endpoint Catalog</option>
+          <option value="IP-Only">IP-Only (No metadata)</option>
+        </select>
+      </div>
+
+      <!-- 2. Split View (Main Table + Contextual Side Drawer) -->
+      <div class="split-layout">
+        <!-- Connections Table -->
+        <section class="table-card">
+          <div class="table-scroll">
+            <table id="connTable">
+              <thead id="tableHead"></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+          <div class="table-footer">
+            <span id="rowCount">0 connections</span>
+            <span>Strict Honesty Rule: Unverified domains are never guessed via reverse-DNS</span>
+          </div>
+        </section>
+
+        <!-- Connection Detail Side Drawer -->
+        <aside class="drawer" id="sideDrawer">
+          <div class="drawer-hd">
+            <h3 id="drawerTitle">Connection Inspector</h3>
+            <span class="badge" id="drawerBadge">Confirmed</span>
+          </div>
+          <div class="drawer-body" id="drawerBody"></div>
+          <div class="drawer-foot" id="drawerFoot"></div>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <footer class="status">
+    <span><span class="dot" style="--c:var(--success)"></span> Capture driver ready</span>
+    <span>Adapter: Wi-Fi (Intel AX211)</span>
+    <span>Reverse-DNS Guessing: Disabled</span>
+    <span style="margin-left:auto">v1.2.0</span>
+  </footer>
+</div>
+
+<!-- Screen 04 Pivot Modal: Application Details & Executable Policy Controls -->
+<div class="backdrop" id="appModalBackdrop" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgAppName">
+    <div class="dlg-head">
+      <div class="dlg-title">
+        <div class="dlg-ic" id="dlgAppIcon">OD</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <h2 id="dlgAppName">Microsoft OneDrive</h2>
+            <span class="badge Confirmed" id="dlgAppBadge">Confirmed</span>
+          </div>
+          <p id="dlgAppPath">C:\Users\Alex\AppData\Local\Microsoft\OneDrive\OneDrive.exe</p>
+        </div>
+      </div>
+      <button class="ib" id="closeAppModal" aria-label="Close modal"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="dlg-body" id="dlgAppBody"></div>
+    <div class="dlg-foot">
+      <button class="btn danger" id="dlgBlockAppBtn">Block executable</button>
+      <button class="btn" id="dlgCreatePolicyBtn">Create executable policy</button>
+      <button class="btn p" id="dlgManageTrafficBtn">Manage app traffic</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><b></b><span></span></div>
+
+<script>
+const P = {
+  "layout-dashboard": '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  "app-window": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4M2 8h20M6 4v4"/>',
+  network: '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  lightbulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/>',
+  "clipboard-list": '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M12 11h4M12 16h4M8 11h.01M8 16h.01"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3M12 9v4M12 17h.01"/>',
+  arrowRight: '<path d="M5 12h14M12 5l7 7-7 7"/>'
+};
+const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24">${P[n]}</svg>`;
+const $ = s => document.querySelector(s);
+
+// Sidebar Navigation
+const navItems = [
+  ["Overview", "layout-dashboard"], ["Activity", "activity"], ["Applications", "app-window"],
+  ["Connections", "network"], ["Policies", "shield"], ["Insights", "lightbulb"],
+  ["Reports", "clipboard-list"], ["Settings", "settings"]
+];
+$('#nav').innerHTML = navItems.map(n => `<button class="nav ${n[0] === 'Connections' ? 'on' : ''}" data-n="${n[0]}">${ic(n[1])}<span>${n[0]}</span></button>`).join('');
+document.querySelectorAll('.nav').forEach(b => b.onclick = () => {
+  if (b.dataset.n !== 'Connections') toast(b.dataset.n, 'Standalone Connections screen preview.');
+});
+
+// Toast Helper
+let toastTimer;
+function toast(title, msg) {
+  const t = $('#toast');
+  t.querySelector('b').textContent = title;
+  t.querySelector('span').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3800);
+}
+
+function fmtBytes(mb) {
+  if (mb >= 1000) return (mb / 1000).toFixed(2) + ' GB';
+  if (mb >= 1) return Math.round(mb) + ' MB';
+  return Math.round(mb * 1024) + ' KB';
+}
+
+// Parent Application Registry (For pivoting into Screen 04 Executable Controls)
+const APP_REGISTRY = {
+  onedrive: {
+    id: 'onedrive', name: 'Microsoft OneDrive', exe: 'OneDrive.exe', initials: 'OD', color: '#4C8DFF',
+    path: 'C:\\Users\\Alex\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe',
+    publisher: 'Microsoft Corporation', identity: 'Confirmed',
+    policy: 'None', totalSession: '315 MB', activeConns: 4
+  },
+  unknown_worker: {
+    id: 'unknown_worker', name: 'sync_worker_v2.exe', exe: 'sync_worker_v2.exe', initials: '??', color: '#E36B70',
+    path: 'C:\\Users\\Alex\\AppData\\Local\\Temp\\sync_worker_v2.exe',
+    publisher: 'Unknown publisher', identity: 'Unknown',
+    policy: 'None', totalSession: '96 MB', activeConns: 1
+  },
+  steam: {
+    id: 'steam', name: 'Steam Client', exe: 'steam.exe', initials: 'ST', color: '#62B5E8',
+    path: 'C:\\Program Files (x86)\\Steam\\steam.exe',
+    publisher: 'Valve Corporation', identity: 'Confirmed',
+    policy: 'Throttle (Active · 5 Mbps)', totalSession: '3.42 GB', activeConns: 9
+  },
+  bits: {
+    id: 'bits', name: 'Background Intelligent Transfer', exe: 'svchost.exe (BITS)', initials: 'BT', color: '#E6AD4D',
+    path: 'C:\\Windows\\System32\\svchost.exe -k netsvcs -p',
+    publisher: 'Microsoft Windows', identity: 'Confirmed',
+    policy: 'None', totalSession: '64 MB', activeConns: 2
+  },
+  teams: {
+    id: 'teams', name: 'Microsoft Teams', exe: 'ms-teams.exe', initials: 'MT', color: '#6264A7',
+    path: 'C:\\Program Files\\WindowsApps\\MSTeams_24277\\ms-teams.exe',
+    publisher: 'Microsoft Corporation', identity: 'Confirmed',
+    policy: 'Throttle (Active)', totalSession: '642 MB', activeConns: 6
+  },
+  docker: {
+    id: 'docker', name: 'Docker Desktop Backend', exe: 'com.docker.backend.exe', initials: 'DK', color: '#2496ED',
+    path: 'C:\\Program Files\\Docker\\Docker\\resources\\com.docker.backend.exe',
+    publisher: 'Docker Inc.', identity: 'Confirmed',
+    policy: 'None', totalSession: '890 MB', activeConns: 5
+  }
+};
+
+// Mock Connections Dataset
+let CONNECTIONS = [
+  {
+    id: 'c-1',
+    domain: 'api.onedrive.com',
+    isDomainResolved: true,
+    appId: 'onedrive',
+    ip: '52.112.0.14',
+    port: '443 / TCP',
+    direction: 'Outbound (↗)',
+    bytes: 315,
+    lastSeen: '4s ago',
+    confidence: 'Confirmed',
+    method: 'TLS SNI',
+    methodClass: 'sni',
+    asn: 'ASN 8075 (Microsoft Corporation)',
+    source: 'TLS ClientHello SNI observed + DNS query match',
+    evidenceDesc: 'Captured outgoing SNI extension matching hostname and verified against local DNS query cache within 5s window.'
+  },
+  {
+    id: 'c-2',
+    domain: '203.0.113.42',
+    isDomainResolved: false,
+    appId: 'unknown_worker',
+    ip: '203.0.113.42',
+    port: '443 / UDP',
+    direction: 'Outbound (↗)',
+    bytes: 96,
+    lastSeen: '12s ago',
+    confidence: 'Unknown',
+    method: 'IP-Only',
+    methodClass: 'none',
+    asn: 'ASN 64496 (Example Network LLC)',
+    source: 'No domain evidence (Direct IP socket)',
+    evidenceDesc: 'Strict Honesty Rule enforced: Reverse-DNS guessing is disabled. Destination hostname is unverified.'
+  },
+  {
+    id: 'c-3',
+    domain: 'cache12-iad1.steamcontent.com',
+    isDomainResolved: true,
+    appId: 'steam',
+    ip: '162.254.196.72',
+    port: '443 / TCP',
+    direction: 'Outbound (↗)',
+    bytes: 3420,
+    lastSeen: '18s ago',
+    confidence: 'Confirmed',
+    method: 'TLS SNI',
+    methodClass: 'sni',
+    asn: 'ASN 32590 (Valve Corporation)',
+    source: 'TLS ClientHello SNI observed',
+    evidenceDesc: 'Extracted hostname directly from unencrypted TLS ClientHello SNI extension during handshake initialization.'
+  },
+  {
+    id: 'c-4',
+    domain: '198.51.100.12',
+    isDomainResolved: false,
+    appId: 'bits',
+    ip: '198.51.100.12',
+    port: '80 / TCP',
+    direction: 'Outbound (↗)',
+    bytes: 64,
+    lastSeen: '1m ago',
+    confidence: 'Weak',
+    method: 'Catalog',
+    methodClass: '',
+    asn: 'ASN 8075 (Microsoft Corporation)',
+    source: 'Inferred by endpoint IP catalog',
+    evidenceDesc: 'No TLS SNI or DNS query captured on plaintext port 80. Weakly attributed based on local Microsoft CDN IP catalog.'
+  },
+  {
+    id: 'c-5',
+    domain: 'teams.microsoft.com',
+    isDomainResolved: true,
+    appId: 'teams',
+    ip: '52.120.0.95',
+    port: '443 / TCP',
+    direction: 'Both (↕)',
+    bytes: 642,
+    lastSeen: '2m ago',
+    confidence: 'Confirmed',
+    method: 'DNS Query',
+    methodClass: 'dns',
+    asn: 'ASN 8075 (Microsoft Corporation)',
+    source: 'DNS A/AAAA query observed',
+    evidenceDesc: 'Observed DNS resolution query issued immediately prior to socket connection.'
+  },
+  {
+    id: 'c-6',
+    domain: 'registry-1.docker.io',
+    isDomainResolved: true,
+    appId: 'docker',
+    ip: '54.161.240.18',
+    port: '443 / TCP',
+    direction: 'Outbound (↗)',
+    bytes: 890,
+    lastSeen: '5m ago',
+    confidence: 'Strong',
+    method: 'TLS SNI',
+    methodClass: 'sni',
+    asn: 'ASN 16509 (Amazon.com Inc)',
+    source: 'TLS SNI extension matched',
+    evidenceDesc: 'Strong inference derived from SNI handshake header matching container registry domain.'
+  }
+];
+
+let STATE = {
+  filter: 'All',
+  methodFilter: 'All',
+  query: '',
+  sortCol: 'lastSeen',
+  sortDir: 'desc',
+  selectedId: 'c-1'
+};
+
+const FILTERS = [
+  { id: 'All', label: 'All', fn: () => true },
+  { id: 'Domains', label: 'Domains', fn: c => c.isDomainResolved },
+  { id: 'IP addresses', label: 'IP addresses', fn: c => !c.isDomainResolved },
+  { id: 'Unknown', label: 'Unknown', fn: c => c.confidence === 'Unknown' || c.confidence === 'Weak' },
+  { id: 'Recent', label: 'Recent', fn: c => c.lastSeen.includes('s ago') || c.lastSeen.includes('1m') }
+];
+
+function renderFilterPills() {
+  $('#filterPills').innerHTML = FILTERS.map(f => {
+    const count = CONNECTIONS.filter(f.fn).length;
+    return `<button class="pill ${STATE.filter === f.id ? 'on' : ''}" data-filter="${f.id}">
+      ${f.label}<span class="cnt">${count}</span>
+    </button>`;
+  }).join('');
+}
+
+const COLUMNS = [
+  { id: 'domain', label: 'Domain / Destination', align: 'left' },
+  { id: 'app', label: 'Application', align: 'left' },
+  { id: 'ip', label: 'Remote IP', align: 'left' },
+  { id: 'port', label: 'Port / Protocol', align: 'left' },
+  { id: 'method', label: 'Evidence', align: 'left' },
+  { id: 'bytes', label: 'Data Transferred', align: 'right' },
+  { id: 'lastSeen', label: 'Last Observed', align: 'left' },
+  { id: 'confidence', label: 'Confidence', align: 'left' }
+];
+
+function getFilteredAndSorted() {
+  const activeFilter = FILTERS.find(f => f.id === STATE.filter) || FILTERS[0];
+  const q = STATE.query.toLowerCase();
+
+  return CONNECTIONS
+    .filter(activeFilter.fn)
+    .filter(c => STATE.methodFilter === 'All' || c.method === STATE.methodFilter)
+    .filter(c => {
+      const app = APP_REGISTRY[c.appId];
+      if (!q) return true;
+      return c.domain.toLowerCase().includes(q) ||
+             c.ip.toLowerCase().includes(q) ||
+             app.name.toLowerCase().includes(q) ||
+             app.exe.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      let va = a[STATE.sortCol], vb = b[STATE.sortCol];
+      if (STATE.sortCol === 'app') {
+        va = APP_REGISTRY[a.appId].name.toLowerCase();
+        vb = APP_REGISTRY[b.appId].name.toLowerCase();
+      }
+      if (va < vb) return STATE.sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return STATE.sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+}
+
+function renderTable() {
+  const rows = getFilteredAndSorted();
+  $('#rowCount').textContent = `Showing ${rows.length} of ${CONNECTIONS.length} connections`;
+
+  $('#tableHead').innerHTML = `<tr>${COLUMNS.map(c => {
+    const isSorted = STATE.sortCol === c.id;
+    const arrow = isSorted ? (STATE.sortDir === 'asc' ? '▲' : '▼') : '';
+    return `<th class="${c.align === 'right' ? 'n' : ''}" data-sort="${c.id}">
+      ${c.label}<span class="sort-ic">${arrow}</span>
+    </th>`;
+  }).join('')}</tr>`;
+
+  if (!rows.length) {
+    $('#tableBody').innerHTML = `<tr><td colspan="${COLUMNS.length}" style="text-align:center;padding:36px;color:var(--text2)">
+      No connections match the current filter or search query.
+    </td></tr>`;
+    return;
+  }
+
+  $('#tableBody').innerHTML = rows.map(c => {
+    const app = APP_REGISTRY[c.appId];
+    const isSel = c.id === STATE.selectedId;
+    const domainHtml = c.isDomainResolved
+      ? `<span class="domain-bold">${c.domain}</span>`
+      : `<span class="domain-raw">${c.domain} (Unresolved IP)</span>`;
+
+    return `<tr data-id="${c.id}" class="${isSel ? 'selected' : ''}">
+      <td>${domainHtml}</td>
+      <td>
+        <button type="button" class="app-link" data-open-app="${app.id}" title="Open Application Details for ${app.exe}">
+          <span class="app-ic-sm" style="color:${app.color}">${app.initials}</span>
+          <span>${app.name}</span>
+        </button>
+      </td>
+      <td><span class="ip-mono">${c.ip}</span></td>
+      <td>${c.port}</td>
+      <td><span class="src-tag ${c.methodClass}">${c.method}</span></td>
+      <td class="n" style="font-weight:600">${fmtBytes(c.bytes)}</td>
+      <td>${c.lastSeen}</td>
+      <td><span class="badge ${c.confidence}">${c.confidence}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderDrawer() {
+  const c = CONNECTIONS.find(x => x.id === STATE.selectedId) || CONNECTIONS[0];
+  if (!c) return;
+  const app = APP_REGISTRY[c.appId];
+
+  $('#drawerTitle').textContent = c.isDomainResolved ? c.domain : c.ip;
+  const badge = $('#drawerBadge');
+  badge.className = `badge ${c.confidence}`;
+  badge.textContent = c.confidence;
+
+  const isUnknown = c.confidence === 'Unknown';
+
+  $('#drawerBody').innerHTML = `
+    <div>
+      <div class="sec-title">Parent Application Identity</div>
+      <div class="app-pivot-card" data-open-app="${app.id}" role="button" tabindex="0">
+        <div class="app-pivot-left">
+          <div class="app-pivot-ic" style="color:${app.color}">${app.initials}</div>
+          <div class="app-pivot-info">
+            <b>${app.name}</b>
+            <small>${app.exe} · Policy: ${app.policy}</small>
+          </div>
+        </div>
+        ${ic('arrowRight', 's')}
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-title">Destination Overview</div>
+      <div class="drawer-kv">
+        <div class="kv-box"><span>Hostname / Destination</span><b>${c.domain}</b></div>
+        <div class="kv-box"><span>Resolved IP Address</span><b class="ip-mono">${c.ip}</b></div>
+        <div class="kv-box" style="grid-column:1/-1"><span>ASN / Network Info</span><b>${c.asn}</b></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-title">Session Telemetry</div>
+      <div class="drawer-kv">
+        <div class="kv-box"><span>Port & Protocol</span><b>${c.port}</b></div>
+        <div class="kv-box"><span>Direction</span><b>${c.direction}</b></div>
+        <div class="kv-box"><span>Volume Transferred</span><b>${fmtBytes(c.bytes)}</b></div>
+        <div class="kv-box"><span>Last Observed</span><b>${c.lastSeen}</b></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-title">Attribution Source & Evidence</div>
+      <div class="evidence-card">
+        <div class="evidence-row ${isUnknown ? 'danger' : ''}">
+          ${isUnknown ? ic('alert', 'xs') : ic('check', 'xs')}
+          <div>
+            <b>${c.source}</b>
+            <p style="margin:3px 0 0;color:var(--text2);font-size:11px;line-height:1.45">${c.evidenceDesc}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="policy-note">
+      <strong>Durable Policy Scope:</strong> To prevent breaking multi-endpoint apps, traffic limits and firewall rules are managed at the <b>${app.exe}</b> executable level rather than single IPs.
+    </div>
+  `;
+
+  $('#drawerFoot').innerHTML = `
+    <div class="drawer-foot-row">
+      <button class="btn p" data-open-app="${app.id}">Manage app traffic</button>
+      <button class="btn" data-open-app="${app.id}">Application details</button>
+    </div>
+  `;
+}
+
+// Open Screen 04 Application Details Modal (where executable policies live)
+function openAppModal(appId) {
+  const app = APP_REGISTRY[appId];
+  if (!app) return;
+
+  $('#dlgAppIcon').textContent = app.initials;
+  $('#dlgAppIcon').style.color = app.color;
+  $('#dlgAppName').textContent = app.name;
+  $('#dlgAppPath').textContent = `${app.path} · ${app.publisher}`;
+
+  const b = $('#dlgAppBadge');
+  b.className = `badge ${app.identity}`;
+  b.textContent = app.identity;
+
+  $('#dlgAppBody').innerHTML = `
+    <div class="drawer-kv">
+      <div class="kv-box"><span>Session Data Usage</span><b>${app.totalSession}</b></div>
+      <div class="kv-box"><span>Active Connections</span><b>${app.activeConns} endpoints</b></div>
+      <div class="kv-box" style="grid-column:1/-1"><span>Current Executable Policy</span><b>${app.policy}</b></div>
+    </div>
+    <p style="margin:0;font-size:12px;color:var(--text2)">
+      Applying a policy here controls all current and future connections made by <b>${app.exe}</b> across all rotating CDN IPs and subdomains.
+    </p>
+  `;
+
+  $('#dlgManageTrafficBtn').onclick = () => {
+    toast('Manage traffic', `Opening rate limiter dialog for ${app.exe}...`);
+    $('#appModalBackdrop').hidden = true;
+  };
+  $('#dlgCreatePolicyBtn').onclick = () => {
+    app.policy = 'Throttle (Active · 5 Mbps)';
+    renderDrawer();
+    openAppModal(app.id);
+    toast('Executable policy applied', `Durable throttle rule saved for ${app.exe}.`);
+  };
+  $('#dlgBlockAppBtn').onclick = () => {
+    app.policy = 'Block (Active)';
+    renderDrawer();
+    openAppModal(app.id);
+    toast('Executable blocked', `Windows Firewall rule applied to ${app.exe}.`);
+  };
+
+  $('#appModalBackdrop').hidden = false;
+}
+
+// Event Listeners
+$('#searchInput').oninput = e => {
+  STATE.query = e.target.value.trim();
+  $('#clearSearch').hidden = !STATE.query;
+  renderTable();
+};
+$('#clearSearch').onclick = () => {
+  $('#searchInput').value = '';
+  STATE.query = '';
+  $('#clearSearch').hidden = true;
+  renderTable();
+};
+
+$('#filterPills').onclick = e => {
+  const pill = e.target.closest('.pill');
+  if (!pill) return;
+  STATE.filter = pill.dataset.filter;
+  renderFilterPills();
+  renderTable();
+};
+
+$('#evidenceFilter').onchange = e => {
+  STATE.methodFilter = e.target.value;
+  renderTable();
+};
+
+$('#tableHead').onclick = e => {
+  const th = e.target.closest('th[data-sort]');
+  if (!th) return;
+  const col = th.dataset.sort;
+  if (STATE.sortCol === col) {
+    STATE.sortDir = STATE.sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    STATE.sortCol = col;
+    STATE.sortDir = col === 'bytes' ? 'desc' : 'asc';
+  }
+  renderTable();
+};
+
+$('#tableBody').onclick = e => {
+  const appBtn = e.target.closest('[data-open-app]');
+  if (appBtn) {
+    e.stopPropagation();
+    openAppModal(appBtn.dataset.openApp);
+    return;
+  }
+  const tr = e.target.closest('tr[data-id]');
+  if (!tr) return;
+  STATE.selectedId = tr.dataset.id;
+  renderTable();
+  renderDrawer();
+};
+
+$('#sideDrawer').onclick = e => {
+  const appTrigger = e.target.closest('[data-open-app]');
+  if (appTrigger) openAppModal(appTrigger.dataset.openApp);
+};
+
+$('#closeAppModal').onclick = () => $('#appModalBackdrop').hidden = true;
+$('#appModalBackdrop').onclick = e => { if (e.target === $('#appModalBackdrop')) $('#appModalBackdrop').hidden = true; };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#appModalBackdrop').hidden = true; });
+
+$('#refreshBtn').onclick = () => {
+  toast('Connections refreshed', 'Synced latest passive DNS and TLS SNI telemetry.');
+  renderTable();
+  renderDrawer();
+};
+
+// Initial Render
+renderFilterPills();
+renderTable();
+renderDrawer();
+</script>
+</body>
+</html>
