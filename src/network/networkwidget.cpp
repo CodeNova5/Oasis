@@ -2089,7 +2089,43 @@ QList<Connections::Row> NetworkWidget::connectionGroups() const
             endpoint.rxBytesPerSecond = connection.rxSpeed;
             endpoint.txBytesPerSecond = connection.txSpeed;
             endpoint.packets = connection.packets;
-            row.endpoints.append(endpoint);
+
+            Connections::Endpoint *existingEndpoint = nullptr;
+            for (Connections::Endpoint &candidate : row.endpoints) {
+                if (candidate.address == endpoint.address
+                    && candidate.port == endpoint.port
+                    && candidate.protocol.compare(endpoint.protocol, Qt::CaseInsensitive) == 0) {
+                    existingEndpoint = &candidate;
+                    break;
+                }
+            }
+
+            if (existingEndpoint) {
+                existingEndpoint->rxBytes += endpoint.rxBytes;
+                existingEndpoint->txBytes += endpoint.txBytes;
+                existingEndpoint->rxBytesPerSecond += endpoint.rxBytesPerSecond;
+                existingEndpoint->txBytesPerSecond += endpoint.txBytesPerSecond;
+                existingEndpoint->packets += endpoint.packets;
+
+                if (existingEndpoint->domain.isEmpty() && !endpoint.domain.isEmpty())
+                    existingEndpoint->domain = endpoint.domain;
+                for (const QString &name : endpoint.domainNames) {
+                    if (!existingEndpoint->domainNames.contains(name, Qt::CaseInsensitive))
+                        existingEndpoint->domainNames.append(name);
+                }
+                for (const QString &evidence : endpoint.evidence) {
+                    if (!existingEndpoint->evidence.contains(evidence))
+                        existingEndpoint->evidence.append(evidence);
+                }
+
+                if (Connections::confidenceRank(endpoint.confidence)
+                    > Connections::confidenceRank(existingEndpoint->confidence)) {
+                    existingEndpoint->source = endpoint.source;
+                    existingEndpoint->confidence = endpoint.confidence;
+                }
+            } else {
+                row.endpoints.append(endpoint);
+            }
 
             if (!row.addresses.contains(address))
                 row.addresses.append(address);

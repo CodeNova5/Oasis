@@ -23,6 +23,7 @@
 #include <QFileDialog>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QGraphicsDropShadowEffect>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -33,6 +34,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPair>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -172,6 +174,10 @@ void clearLayout(QLayout *layout)
 // Metric tile
 // ============================================================================
 
+// ============================================================================
+// Metric tile
+// ============================================================================
+
 class MetricTile : public QFrame
 {
 public:
@@ -181,32 +187,46 @@ public:
         : QFrame(parent)
         , m_glyph(glyph)
     {
-        setProperty("uiRole", QStringLiteral("card"));
+        setObjectName(QStringLiteral("metricTile"));
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setAttribute(Qt::WA_Hover, true);
 
         auto *layout = new QVBoxLayout(this);
         layout->setContentsMargins(16, 14, 16, 14);
-        layout->setSpacing(4);
+        layout->setSpacing(6); // Tighter spacing to accommodate larger numbers
 
-        auto *labelRow = new QHBoxLayout;
-        labelRow->setContentsMargins(0, 0, 0, 0);
-        labelRow->setSpacing(5);
+        // Top row: uppercased label on left, tinted icon badge on right
+        auto *headerRow = new QHBoxLayout;
+        headerRow->setContentsMargins(0, 0, 0, 0);
+        headerRow->setSpacing(8);
 
-        m_icon = new QLabel(this);
-        m_icon->setFixedSize(13, 13);
         m_label = new QLabel(label, this);
-        m_label->setFont(uiFont(11, QFont::Medium));
-        labelRow->addWidget(m_icon, 0, Qt::AlignVCenter);
-        labelRow->addWidget(m_label, 0, Qt::AlignVCenter);
-        labelRow->addStretch(1);
+        QFont labelFont = uiFont(11, QFont::DemiBold);
+        labelFont.setCapitalization(QFont::AllUppercase);
+        labelFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
+        m_label->setFont(labelFont);
 
+        m_iconBadge = new QLabel(this);
+        m_iconBadge->setFixedSize(30, 30); // Slightly larger badge
+        m_iconBadge->setAlignment(Qt::AlignCenter);
+
+        headerRow->addWidget(m_label, 1, Qt::AlignVCenter);
+        headerRow->addWidget(m_iconBadge, 0, Qt::AlignVCenter);
+
+        // Middle: Increased metric value font size to 32px
         m_value = new QLabel(QStringLiteral("—"), this);
-        m_value->setFont(uiFont(26, QFont::DemiBold));
+        QFont valueFont = uiFont(32, QFont::Bold);
+        valueFont.setFeature(QFont::Tag("tnum"), 1); // Prevent horizontal jitter on live updates
+        m_value->setFont(valueFont);
+
+        // Bottom: secondary context / rate caption
         m_caption = new QLabel(this);
-        m_caption->setFont(uiFont(11, QFont::Normal));
+        QFont captionFont = uiFont(11, QFont::Medium);
+        captionFont.setFeature(QFont::Tag("tnum"), 1);
+        m_caption->setFont(captionFont);
         m_caption->setWordWrap(false);
 
-        layout->addLayout(labelRow);
+        layout->addLayout(headerRow);
         layout->addWidget(m_value);
         layout->addWidget(m_caption);
 
@@ -216,8 +236,10 @@ public:
     void setValue(const QString &value, Tone tone)
     {
         m_value->setText(value);
-        m_tone = tone;
-        applyTone();
+        if (m_tone != tone) {
+            m_tone = tone;
+            refreshTheme();
+        }
     }
 
     void setCaption(const QString &caption)
@@ -229,32 +251,94 @@ public:
     void refreshTheme()
     {
         const Theme::Palette pal = themePalette();
-        m_icon->setPixmap(ConnectionsUi::glyphPixmap(m_glyph, 13, token(pal.textSecondary), 2.0));
-        m_label->setStyleSheet(QStringLiteral("color: %1;").arg(pal.textSecondary));
-        m_caption->setStyleSheet(QStringLiteral("color: %1;").arg(pal.textMuted));
-        applyTone();
+        const QColor accent = toneColor(pal);
+
+        QColor badgeBg = accent;
+        badgeBg.setAlpha(28);
+        m_iconBadge->setStyleSheet(
+            QStringLiteral("background-color: rgba(%1, %2, %3, 28);"
+                           "border-radius: 8px;")
+                .arg(accent.red())
+                .arg(accent.green())
+                .arg(accent.blue()));
+        m_iconBadge->setPixmap(
+            ConnectionsUi::glyphPixmap(m_glyph, 15, accent, 2.0));
+
+        m_label->setStyleSheet(QStringLiteral("color: %1; background: transparent;")
+                                   .arg(pal.textSecondary));
+        m_value->setStyleSheet(QStringLiteral("color: %1; background: transparent;")
+                                   .arg(pal.textPrimary));
+        m_caption->setStyleSheet(QStringLiteral("color: %1; background: transparent;")
+                                     .arg(pal.textMuted));
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const Theme::Palette pal = themePalette();
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        const QRectF bounds = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        constexpr qreal radius = 10.0;
+
+        // Card surface
+        QPainterPath cardPath;
+        cardPath.addRoundedRect(bounds, radius, radius);
+        painter.fillPath(cardPath, token(pal.surfaceElevated));
+
+        // Subtle semantic top accent bar clipped to card corners
+        painter.save();
+        painter.setClipPath(cardPath);
+        QColor topBar = toneColor(pal);
+        topBar.setAlpha(m_hovered ? 220 : 140);
+        painter.fillRect(QRectF(bounds.left(), bounds.top(), bounds.width(), 3.0), topBar);
+        painter.restore();
+
+        // Crisp 1px border that brightens slightly on hover
+        QColor borderColor = token(pal.borderDefault);
+        if (m_hovered) {
+            borderColor = toneColor(pal);
+            borderColor.setAlpha(110);
+        }
+        painter.setPen(QPen(borderColor, 1.0));
+        painter.drawPath(cardPath);
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        m_hovered = true;
+        update();
+        QFrame::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        m_hovered = false;
+        update();
+        QFrame::leaveEvent(event);
     }
 
 private:
-    void applyTone()
+    QColor toneColor(const Theme::Palette &pal) const
     {
-        const Theme::Palette pal = themePalette();
-        QString value;
         switch (m_tone) {
-        case Tone::Accent:  value = pal.accentPrimary; break;
-        case Tone::Danger:  value = pal.semanticDanger; break;
-        case Tone::Success: value = pal.semanticSuccess; break;
-        case Tone::Warning: value = pal.semanticWarning; break;
+        case Tone::Accent:  return token(pal.accentPrimary);
+        case Tone::Danger:  return token(pal.semanticDanger);
+        case Tone::Success: return token(pal.semanticSuccess);
+        case Tone::Warning: return token(pal.semanticWarning);
         }
-        m_value->setStyleSheet(QStringLiteral("color: %1;").arg(value));
+        return token(pal.accentPrimary);
     }
 
     Glyph m_glyph;
-    QLabel *m_icon = nullptr;
+    QLabel *m_iconBadge = nullptr;
     QLabel *m_label = nullptr;
     QLabel *m_value = nullptr;
     QLabel *m_caption = nullptr;
     Tone m_tone = Tone::Accent;
+    bool m_hovered = false;
 };
 
 // ============================================================================
@@ -273,7 +357,7 @@ public:
         setCheckable(true);
         setCursor(Qt::PointingHandCursor);
         setFocusPolicy(Qt::NoFocus);
-        setFixedHeight(26);
+        setFixedHeight(28);
     }
 
     void setCount(const QString &count, CountTone tone = CountTone::Muted)
@@ -288,13 +372,13 @@ public:
 
     QSize sizeHint() const override
     {
-        const QFontMetrics metrics(uiFont(12, QFont::Medium));
-        int width = 24 + metrics.horizontalAdvance(m_label);
+        const QFontMetrics metrics(uiFont(12, QFont::DemiBold));
+        int width = 22 + metrics.horizontalAdvance(m_label);
         if (!m_count.isEmpty()) {
-            const QFontMetrics countMetrics(uiFont(11, QFont::Medium));
-            width += 5 + countMetrics.horizontalAdvance(m_count);
+            const QFontMetrics countMetrics(uiFont(10, QFont::DemiBold));
+            width += 8 + qMax(18, countMetrics.horizontalAdvance(m_count) + 10);
         }
-        return QSize(width, 26);
+        return QSize(width, 28);
     }
 
 protected:
@@ -303,36 +387,54 @@ protected:
         const Theme::Palette pal = themePalette();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF bounds = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
 
         if (isChecked()) {
             painter.setPen(QPen(token(pal.borderDefault), 1));
             painter.setBrush(token(pal.surfaceElevated));
-            painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 5, 5);
+            painter.drawRoundedRect(bounds, 6, 6);
         } else if (underMouse()) {
             painter.setPen(Qt::NoPen);
             painter.setBrush(token(pal.surfaceHover));
-            painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 5, 5);
+            painter.drawRoundedRect(bounds, 6, 6);
         }
 
         const QColor foreground = isChecked() || underMouse()
                                       ? token(pal.textPrimary)
                                       : token(pal.textSecondary);
-        const QFont font = uiFont(12, QFont::Medium);
+        const QFont font = uiFont(12, QFont::DemiBold);
         painter.setFont(font);
         painter.setPen(foreground);
-        const QRect textRect(12, 0, width() - 24, height());
-        painter.drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, m_label);
+        const int leftPad = 11;
+        painter.drawText(QRect(leftPad, 0, width() - leftPad, height()),
+                 Qt::AlignLeft | Qt::AlignVCenter, m_label);
 
         if (!m_count.isEmpty()) {
             QColor countColor;
             switch (m_tone) {
             case CountTone::Danger:  countColor = token(pal.semanticDanger); break;
             case CountTone::Warning: countColor = token(pal.semanticWarning); break;
-            case CountTone::Muted:   countColor = token(pal.textMuted); break;
+            case CountTone::Muted:   countColor = token(pal.textSecondary); break;
             }
-            painter.setFont(uiFont(11, QFont::Medium));
+
+            QFont countFont = uiFont(10, QFont::DemiBold);
+            countFont.setFeature(QFont::Tag("tnum"), 1);
+            const QFontMetrics fm(countFont);
+            const int badgeW = qMax(18, fm.horizontalAdvance(m_count) + 10);
+            const int badgeH = 18;
+            const QRectF badgeRect(width() - badgeW - 7,
+                                   (height() - badgeH) / 2.0,
+                                   badgeW, badgeH);
+
+            QColor badgeBg = countColor;
+            badgeBg.setAlpha(m_tone == CountTone::Muted ? 22 : 30);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(badgeBg);
+            painter.drawRoundedRect(badgeRect, 4, 4);
+
+            painter.setFont(countFont);
             painter.setPen(countColor);
-            painter.drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, m_count);
+            painter.drawText(badgeRect, Qt::AlignCenter, m_count);
         }
     }
 
@@ -440,14 +542,15 @@ void ConnectionsPage::buildToolbar(QVBoxLayout *root)
     m_search->setPlaceholderText(QStringLiteral("Filter by app, domain, IP, or port…"));
     m_search->setClearButtonEnabled(true);
     m_search->setFixedHeight(36);
-    m_search->setMinimumWidth(220);
-    m_search->setMaximumWidth(340);
+    m_search->setMinimumWidth(184);
+    m_search->setMaximumWidth(260);
     m_search->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_searchAction = m_search->addAction(QIcon(), QLineEdit::LeadingPosition);
     toolbar->addWidget(m_search);
 
     m_pillHost = new QFrame(this);
     m_pillHost->setObjectName(QStringLiteral("connectionFilterPills"));
+    m_pillHost->setFixedHeight(36);
     m_pillHost->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     auto *pillLayout = new QHBoxLayout(m_pillHost);
     pillLayout->setContentsMargins(3, 3, 3, 3);
@@ -481,6 +584,7 @@ void ConnectionsPage::buildToolbar(QVBoxLayout *root)
 
     m_groupButton = new QPushButton(QStringLiteral("Group by App"), this);
     m_groupButton->setFixedHeight(36);
+    m_groupButton->setFixedWidth(144);
     m_groupButton->setIconSize(QSize(14, 14));
     m_groupButton->setCursor(Qt::PointingHandCursor);
     m_groupButton->setToolTip(QStringLiteral(
@@ -494,6 +598,7 @@ void ConnectionsPage::buildToolbar(QVBoxLayout *root)
 
     m_rangeButton = new QPushButton(timeRangeLabel(m_timeRange), this);
     m_rangeButton->setFixedHeight(36);
+    m_rangeButton->setFixedWidth(124);
     m_rangeButton->setIconSize(QSize(14, 14));
     m_rangeButton->setCursor(Qt::PointingHandCursor);
     m_rangeButton->setToolTip(QStringLiteral(
@@ -560,6 +665,12 @@ void ConnectionsPage::buildInspector()
     m_inspector->setObjectName(QStringLiteral("connectionInspector"));
     m_inspector->setFixedWidth(320);
     m_inspector->hide();
+
+    auto *shadow = new QGraphicsDropShadowEffect(m_inspector);
+    shadow->setBlurRadius(24);
+    shadow->setOffset(-4, 0);
+    shadow->setColor(QColor(0, 0, 0, 55));
+    m_inspector->setGraphicsEffect(shadow);
 
     auto *layout = new QVBoxLayout(m_inspector);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -992,6 +1103,20 @@ void ConnectionsPage::refreshTheme()
                 .arg(pal.surfacePrimary, pal.borderDefault));
     }
 
+    if (m_search) {
+        m_search->setStyleSheet(
+            QStringLiteral("QLineEdit {"
+                           " background-color: %1;"
+                           " color: %2;"
+                           " border: 1px solid %3;"
+                           " border-radius: 8px;"
+                           " padding: 0 10px; }"
+                           "QLineEdit:focus {"
+                           " border: 1px solid %4; }")
+                .arg(pal.surfacePrimary, pal.textPrimary,
+                     pal.borderDefault, pal.accentPrimary));
+    }
+
     const QColor secondary = token(pal.textSecondary);
     if (m_searchAction)
         m_searchAction->setIcon(ConnectionsUi::glyphIcon(Glyph::Search, 15,
@@ -1001,7 +1126,8 @@ void ConnectionsPage::refreshTheme()
     if (m_groupButton)
         m_groupButton->setIcon(ConnectionsUi::glyphIcon(Glyph::GroupLines, 14, secondary, 2.0));
     if (m_rangeButton)
-        m_rangeButton->setIcon(ConnectionsUi::glyphIcon(Glyph::Clock, 14, secondary, 2.0));
+        m_rangeButton->setIcon(ConnectionsUi::glyphIcon(Glyph::ChevronDown, 14,
+                                secondary, 2.0));
 
     for (MetricTile *tile : {m_activeTile, m_blockedTile, m_outboundTile,
                              m_inboundTile, m_unknownTile}) {
