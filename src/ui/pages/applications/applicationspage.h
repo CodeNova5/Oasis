@@ -112,6 +112,8 @@ private:
     void showRuleMenuFor(quint32 pid, const QString &path, const QString &name,
                          const QString &rule, const QPoint &globalPos);
     void showContextMenu(const QPoint &pos);
+    /// Opens the details drawer for the row behind a proxy index.
+    void openDetailsAt(const QModelIndex &index);
     void closeDetails();
     void populateDetails();
     void applyDetailsRule(const QString &rule);

@@ -22,7 +22,6 @@
 #include <QTabWidget>
 #include <QHBoxLayout>
 #include <QHeaderView>
-#include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -32,13 +31,13 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QScrollBar>
+#include <QKeySequence>
+#include <QShortcut>
 #include <QSizePolicy>
 #include <QSortFilterProxyModel>
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QTableView>
-#include <QTimer>
 #include <QVBoxLayout>
 #include <QVector>
 
@@ -94,6 +93,28 @@ bool matchesFilter(const Applications::Row &row, Applications::Filter filter)
         return ruleToken(row) == QLatin1String("block");
     }
     return true;
+}
+
+/// Row identity across beats. A live pid keeps its row even while the
+/// executable metadata is still resolving; rows without an owner all share
+/// pid 0, so those fall back to the executable they point at.
+QString rowIdentity(const Applications::Row &row)
+{
+    if (row.pid != 0)
+        return QStringLiteral("pid:%1").arg(row.pid);
+    return QStringLiteral("no-pid:%1|%2").arg(row.name, row.path);
+}
+
+bool sameRow(const Applications::Row &a, const Applications::Row &b)
+{
+    return a.pid == b.pid && a.name == b.name && a.displayName == b.displayName
+           && a.publisher == b.publisher && a.path == b.path
+           && a.icon.cacheKey() == b.icon.cacheKey()
+           && a.rxBytesPerSecond == b.rxBytesPerSecond
+           && a.txBytesPerSecond == b.txBytesPerSecond && a.totalBytes == b.totalBytes
+           && a.activity == b.activity && a.policy == b.policy
+           && a.policyToken == b.policyToken && a.identity == b.identity
+           && a.rule == b.rule;
 }
 
 QString initialsFor(const QString &label)
@@ -375,10 +396,70 @@ public:
             history.insert(row.pid, samples);
         }
 
-        beginResetModel();
-        m_rows = rows;
+        // Diff the beat instead of resetting the model. A reset drops the
+        // current index, the hovered cell and keyboard focus, and forces the
+        // view to re-lay out, so the user loses their place while only
+        // watching the numbers move.
+        QHash<QString, QList<int>> available;
+        available.reserve(m_rows.size());
+        for (int i = 0; i < m_rows.size(); ++i)
+            available[rowIdentity(m_rows.at(i))].append(i);
+
+        const int previousCount = int(m_rows.size());
+        QVector<bool> kept(previousCount, false);
+        QList<QPair<int, Applications::Row>> matched;
+        QList<Applications::Row> added;
+        for (const Applications::Row &row : rows) {
+            QList<int> &candidates = available[rowIdentity(row)];
+            if (candidates.isEmpty()) {
+                added.append(row);
+                continue;
+            }
+            const int index = candidates.takeFirst();
+            kept[index] = true;
+            matched.append(qMakePair(index, row));
+        }
+
+        for (int i = previousCount - 1; i >= 0; --i) {
+            if (kept.at(i))
+                continue;
+            beginRemoveRows(QModelIndex(), i, i);
+            m_rows.removeAt(i);
+            endRemoveRows();
+        }
+
+        QVector<int> positions(previousCount, -1);
+        int next = 0;
+        for (int i = 0; i < previousCount; ++i) {
+            if (kept.at(i))
+                positions[i] = next++;
+        }
+
         m_history = history;
-        endResetModel();
+
+        // Leave unchanged rows out of the change set: an idle beat should not
+        // make the view repaint or the proxy re-sort every row.
+        int firstChanged = -1;
+        int lastChanged = -1;
+        for (const QPair<int, Applications::Row> &entry : matched) {
+            const int index = positions.at(entry.first);
+            if (sameRow(m_rows.at(index), entry.second))
+                continue;
+            m_rows[index] = entry.second;
+            if (firstChanged < 0)
+                firstChanged = index;
+            lastChanged = index;
+        }
+        if (firstChanged >= 0)
+            emit dataChanged(this->index(firstChanged, 0),
+                             this->index(lastChanged, ColumnCount - 1));
+
+        if (!added.isEmpty()) {
+            const int first = int(m_rows.size());
+            beginInsertRows(QModelIndex(), first, first + int(added.size()) - 1);
+            m_rows.append(added);
+            endInsertRows();
+        }
     }
 
     const Applications::Row &rowAt(int sourceRow) const { return m_rows.at(sourceRow); }
@@ -790,10 +871,10 @@ public:
         const int lineHeight = metrics.height();
         const int top = content.center().y() - lineHeight;
 
-        // Sparkline and the drawer affordance sit to the right of the rates.
-        const int chevronWidth = 8;
-        const int chevronX = content.right() - chevronWidth;
-        const int sparkLeft = chevronX - Theme::Dim::SpaceSm - kSparkWidth;
+        // The sparkline sits to the right of the rates. No disclosure chevron:
+        // a row has no inline expand control, and drawing one made a plain
+        // click look like a toggle.
+        const int sparkLeft = content.right() - kSparkWidth;
         const QRect spark(sparkLeft, content.center().y() - 13, kSparkWidth, 26);
 
         const int textLeft = content.left();
@@ -806,17 +887,6 @@ public:
                   true, tx > 0 ? active : idle, rateFont);
         paintSparkline(painter, spark, samples,
                        Theme::qcolor(palette.chartDownload), idle);
-
-        QPen chevron(Theme::qcolor(palette.textMuted), 1.4);
-        chevron.setCapStyle(Qt::RoundCap);
-        chevron.setJoinStyle(Qt::RoundJoin);
-        painter->save();
-        painter->setRenderHint(QPainter::Antialiasing, true);
-        painter->setPen(chevron);
-        const int cy = content.center().y();
-        painter->drawLine(QPointF(chevronX + 1, cy - 4), QPointF(chevronX + 5, cy));
-        painter->drawLine(QPointF(chevronX + 5, cy), QPointF(chevronX + 1, cy + 4));
-        painter->restore();
     }
 
     QSize sizeHint(const QStyleOptionViewItem &option,
@@ -1014,8 +1084,9 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
     m_table->setColumnWidth(ApplicationsPageTableModel::Rule, 148);
     m_table->setColumnWidth(ApplicationsPageTableModel::Activity, 220);
 
-    // Row actions live on the row: a right-click menu, a click that opens the
-    // details drawer, and a click on the rule that opens its menu.
+    // Row actions live on the row: a right-click menu, a click that selects,
+    // a double-click or Enter that opens the details drawer, and a click on the
+    // rule that opens its menu.
     m_table->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_table, &QTableView::customContextMenuRequested,
             this, &ApplicationsPage::showContextMenu);
@@ -1026,11 +1097,20 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
             showRuleMenu(index);
             return;
         }
+        // A click only selects. Opening the drawer here made selection
+        // impossible on its own and paid for a details query every time the
+        // user scanned the table. Once the drawer is up, though, the selection
+        // and the panel must not disagree about which application is shown.
         m_table->selectRow(index.row());
-        Applications::Row row;
-        if (rowForIndex(index, &row))
-            emit detailsRequested(row.pid, row.path, row.name);
+        if (m_detailsOpen)
+            openDetailsAt(index);
     });
+    connect(m_table, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
+        // The rule pill owns its column; the first click already opened a menu.
+        if (index.isValid() && index.column() != ApplicationsPageTableModel::Rule)
+            openDetailsAt(index);
+    });
+    connect(m_table, &QTableView::activated, this, &ApplicationsPage::openDetailsAt);
     layout->addWidget(m_table, 1);
 
     // ── Empty state ─────────────────────────────────────────────────────────
@@ -1061,6 +1141,14 @@ ApplicationsPage::ApplicationsPage(QWidget *parent)
     auto *drawer = buildDrawer();
     m_drawer->hide();
     rootLayout->addWidget(drawer);
+
+    // Escape gives the ✕ a keyboard equivalent whenever the drawer is up.
+    auto *escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    escape->setContext(Qt::WindowShortcut);
+    connect(escape, &QShortcut::activated, this, [this]() {
+        if (m_detailsOpen && m_drawer && m_drawer->isVisible())
+            closeDetails();
+    });
 
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this,
             [this](ThemeManager::Mode) {
@@ -1321,6 +1409,25 @@ void ApplicationsPage::showDetails(const Applications::Details &details)
         m_drawerTabs->setCurrentIndex(0);
     m_drawer->show();
     m_drawer->raise();
+    // Land focus inside the drawer so Tab walks its content instead of
+    // continuing through the page behind it.
+    if (m_drawerTabs)
+        m_drawerTabs->setFocus(Qt::TabFocusReason);
+}
+
+void ApplicationsPage::openDetailsAt(const QModelIndex &index)
+{
+    if (!index.isValid())
+        return;
+    m_table->selectRow(index.row());
+    Applications::Row row;
+    if (!rowForIndex(index, &row))
+        return;
+    // A double-click can arrive as both doubleClicked and activated, and the
+    // shell resolves details synchronously; ask once for the open drawer.
+    if (m_detailsOpen && m_details.pid == row.pid && m_details.path == row.path)
+        return;
+    emit detailsRequested(row.pid, row.path, row.name);
 }
 
 void ApplicationsPage::closeDetails()
@@ -1406,11 +1513,8 @@ void ApplicationsPage::applyDetailsRule(const QString &rule)
 
 void ApplicationsPage::setRows(const QList<Applications::Row> &rows)
 {
-    quint32 selectedPid = 0;
-    if (m_table->currentIndex().isValid())
-        selectedPid = m_table->currentIndex().data(ApplicationsPageTableModel::PidRole).toUInt();
-    const int scroll = m_table->verticalScrollBar()->value();
-
+    // The model diffs the beat in place, so selection, keyboard focus and the
+    // scroll offset stay where the user left them; nothing to restore here.
     m_rows = rows;
     m_model->setRows(rows);
 
@@ -1440,26 +1544,6 @@ void ApplicationsPage::setRows(const QList<Applications::Row> &rows)
             break;
         }
     }
-
-    if (selectedPid != 0) {
-        for (int row = 0; row < m_model->rowCount(); ++row) {
-            if (m_model->rowAt(row).pid != selectedPid)
-                continue;
-            const QModelIndex index = m_proxy->mapFromSource(m_model->index(row, 0));
-            if (index.isValid()) {
-                m_table->setCurrentIndex(index);
-                m_table->selectionModel()->select(
-                    index, QItemSelectionModel::ClearAndSelect
-                               | QItemSelectionModel::Rows);
-            }
-            break;
-        }
-    }
-
-    // A reset re-lays the view; restore the scroll offset once it has settled.
-    QTimer::singleShot(0, m_table, [this, scroll]() {
-        m_table->verticalScrollBar()->setValue(scroll);
-    });
 
     refreshFooter();
     refreshEmptyState();
@@ -1641,6 +1725,10 @@ void ApplicationsPage::showRuleMenu(const QModelIndex &index)
         return;
 
     m_table->selectRow(index.row());
+    // While the drawer is up it follows the selected row, including when the
+    // selection moved because the rule menu was opened from another row.
+    if (m_detailsOpen && m_details.pid != row.pid)
+        openDetailsAt(index);
     const QRect cell = m_table->visualRect(index);
     showRuleMenuFor(row.pid, row.path, row.name, ruleToken(row),
                     m_table->viewport()->mapToGlobal(cell.bottomLeft() + QPoint(0, 2)));
