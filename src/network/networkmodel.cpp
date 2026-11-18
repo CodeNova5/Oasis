@@ -8,6 +8,7 @@
 #include "networkmonitor.h"
 #include "identity/processlineage.h"
 #include "identity/processgroupmanager.h"
+#include "core/guitiming.h"
 #include <QFont>
 #include <QColor>
 #include <QBrush>
@@ -15,6 +16,9 @@
 #include <utility>
 
 namespace {
+
+// OASIS_DEBUG_TIMING: how long a tick spends recomputing every row.
+Oasis::GuiTiming::Probe tickProbe("NetworkTreeModel::onTick");
 
 // NG-011: one short, unambiguous phrase per Authenticode state.
 QString signerRowText(const ProcessNode &p)
@@ -507,6 +511,7 @@ void NetworkTreeModel::addPackets(const QList<CapturedPacketInfo> &batch)
 
 void NetworkTreeModel::onTick()
 {
+    Oasis::GuiTiming::Scope timing(tickProbe);
     const QDateTime now = QDateTime::currentDateTimeUtc();
     bool anyChanged = false;
     for (int pRow = 0; pRow < m_procs.size(); ++pRow) {

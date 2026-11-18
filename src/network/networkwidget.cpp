@@ -57,6 +57,7 @@
 #include <shellapi.h>
 #include <psapi.h>
 #include "core/windowsicon.h"
+#include "core/guitiming.h"
 #include "firewall/firewallmanager.h"
 
 namespace {
@@ -73,6 +74,12 @@ QString enforcementStatusName(EnforcementResult::Status status)
     }
     return QStringLiteral("unknown");
 }
+
+// OASIS_DEBUG_TIMING: one capture batch's work — model insert, destination
+// resolution, and the icon lookups it queues.
+Oasis::GuiTiming::Probe batchProbe("NetworkWidget::onPacketsCapturedBatch");
+// ...and the beat that rebuilds the dashboard and notifies the other pages.
+Oasis::GuiTiming::Probe dashboardProbe("NetworkWidget::refreshDashboard");
 
 } // namespace
 
@@ -1778,6 +1785,7 @@ void NetworkWidget::onCaptureStopped() {
 
 void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batch)
 {
+    Oasis::GuiTiming::Scope timing(batchProbe);
     m_bandwidthGuard->observe(batch);
     m_model->addPackets(batch);
     // Destination names come from the correlator the capture thread writes
@@ -1822,6 +1830,7 @@ void NetworkWidget::onSpeedUpdated(quint64 rxBps, quint64 txBps) {
 
 void NetworkWidget::refreshDashboard()
 {
+    Oasis::GuiTiming::Scope timing(dashboardProbe);
     if (!m_dashboard || !m_model) return;
 
     const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();

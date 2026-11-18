@@ -113,6 +113,7 @@ SOURCES += \
 HEADERS += \
     src/core/version.h \
     src/core/mainwindow.h \
+    src/core/guitiming.h \
     src/ui/theme/colors.h \
     src/ui/theme/typography.h \
     src/ui/theme/dimensions.h \
