@@ -58,6 +58,9 @@ SOURCES += \
     src/network/throttlepolicyid.cpp \
     src/network/networkmodel.cpp \
     src/network/networkwidget.cpp \
+    src/network/networkwidgettable.cpp \
+    src/network/networkwidgetpolicies.cpp \
+    src/network/networkwidgetinsights.cpp \
     src/network/connectionview.cpp \
     src/network/packetparser.cpp \
     src/network/testfixtures.cpp \
