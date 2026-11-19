@@ -1,6 +1,7 @@
 #include "throttlepolicymanager.h"
 
 #include "downloadthrottle.h"
+#include "throttlepolicyid.h"
 #include "windowsqosbackend.h"
 
 #include <QDebug>

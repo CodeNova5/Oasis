@@ -55,6 +55,7 @@ SOURCES += \
     src/network/windivertapi.cpp \
     src/network/downloadthrottle.cpp \
     src/network/throttlepolicymanager.cpp \
+    src/network/throttlepolicyid.cpp \
     src/network/networkmodel.cpp \
     src/network/networkwidget.cpp \
     src/network/connectionview.cpp \
@@ -143,6 +144,7 @@ HEADERS += \
     src/network/networkmonitor.h \
     src/network/bandwidthguard.h \
     src/network/throttlebackend.h \
+    src/network/throttlepolicyid.h \
     src/network/windowsqosbackend.h \
     src/network/windivertapi.h \
     src/network/downloadthrottle.h \

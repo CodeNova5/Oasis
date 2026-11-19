@@ -1,4 +1,5 @@
 #include "windowsqosbackend.h"
+#include "throttlepolicyid.h"
 
 #include <QFileInfo>
 #include <QOperatingSystemVersion>

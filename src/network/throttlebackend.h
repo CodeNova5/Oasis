@@ -1,7 +1,5 @@
 #pragma once
 
-#include <QCryptographicHash>
-#include <QDir>
 #include <QMetaType>
 #include <QString>
 #include <QStringList>
@@ -30,27 +28,6 @@ struct ThrottleResult
 };
 
 Q_DECLARE_METATYPE(ThrottleResult)
-
-// Every bandwidth policy the app installs is named from the executable path, so
-// the name can be recomputed wherever it is needed — apply, verification, and
-// the startup sweep — without a second source of truth. Windows matches policy
-// names case-insensitively.
-namespace ThrottlePolicyNames {
-inline const QString &prefix()
-{
-    static const QString prefix = QStringLiteral("Oasis-BW-");
-    return prefix;
-}
-
-inline QString forPath(const QString &executablePath)
-{
-    const QString normalized =
-        QDir::cleanPath(QDir::toNativeSeparators(executablePath.trimmed())).toLower();
-    const QByteArray digest =
-        QCryptographicHash::hash(normalized.toUtf8(), QCryptographicHash::Sha1);
-    return prefix() + QString::fromLatin1(digest.toHex().left(12));
-}
-}
 
 class ThrottleBackend
 {
