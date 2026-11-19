@@ -79,6 +79,7 @@ SOURCES += \
     src/network/enforcementcoordinator.cpp \
     src/network/policyschedule.cpp \
     src/network/policyeditordialog.cpp \
+    src/network/policyruleform.cpp \
     src/network/policyscope.cpp \
     src/network/topconsumers.cpp \
     src/network/dashboardpanel.cpp \
@@ -173,6 +174,9 @@ HEADERS += \
     src/network/enforcementcoordinator.h \
     src/network/policyschedule.h \
     src/network/policyeditordialog.h \
+    src/network/policyruleform.h \
+    src/network/policyeditorstyle.h \
+    src/network/policyeditorcontrols.h \
     src/network/policyscope.h \
     src/network/topconsumers.h \
     src/network/dashboardpanel.h \
