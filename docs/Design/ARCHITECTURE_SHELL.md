@@ -162,8 +162,14 @@ src/ui/
     ├── colors.h                     # Hex color constants
     ├── typography.h                 # Font size/weight helpers
     ├── dimensions.h                 # 4px spacing & widget size constants
-    ├── thememanager.h / .cpp        # Loads styles.qss & handles DPI scaling
-    └── styles.qss                   # Global Fluent dark stylesheet
+    ├── thememanager.h / .cpp        # Loads styles/ & handles DPI scaling
+    └── styles/                      # Global Fluent stylesheet, split by area
+        ├── base.qss                 # Reset, shell, typography roles
+        ├── controls.qss             # Navigation, buttons, inputs, checks, tabs
+        ├── data.qss                 # Cards, badges, tables, scrollbars
+        ├── overlays.qss             # Menus, group boxes, progress, sliders
+        ├── overview.qss             # Overview screen
+        └── activity.qss             # Activity screen
 ```
 
 ### 3.2 Layered Separation of Concerns

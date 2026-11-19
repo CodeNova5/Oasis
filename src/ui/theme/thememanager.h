@@ -2,7 +2,7 @@
  * @file    thememanager.h
  * @brief   Runtime theme owner for the Oasis UI.
  *
- * Resolves `@token` placeholders in styles.qss against the palette in colors.h
+ * Resolves `@token` placeholders in the styles/ partials against the palette in
  * plus the spacing/typography tokens, applies the resulting stylesheet, a
  * matching QPalette (so native menus/dialogs stay dark) and the application
  * font. All UI code asks this singleton for the current mode instead of

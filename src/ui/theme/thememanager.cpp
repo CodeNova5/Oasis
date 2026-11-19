@@ -22,7 +22,7 @@ QString px(int value)
     return QString::number(value) + QStringLiteral("px");
 }
 
-/// All tokens reachable from styles.qss, for one mode.
+/// All tokens reachable from the styles/ partials, for one mode.
 QHash<QString, QString> buildTokenMap(ThemeManager::Mode mode)
 {
     const bool dark = (mode == ThemeManager::Dark);
@@ -103,12 +103,25 @@ ThemeManager::ThemeManager(QObject *parent)
 
 QString ThemeManager::loadTemplate()
 {
-    QFile file(QStringLiteral(":/theme/styles.qss"));
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        qWarning() << "ThemeManager: cannot open :/theme/styles.qss";
-        return QString();
+    // The sheet is authored as ordered partials; Qt QSS has no @import, so the
+    // parts are concatenated here. Order matters: later rules win on a tie.
+    static const char *const parts[] = {
+        ":/theme/styles/base.qss",     ":/theme/styles/controls.qss",
+        ":/theme/styles/data.qss",     ":/theme/styles/overlays.qss",
+        ":/theme/styles/overview.qss", ":/theme/styles/activity.qss",
+    };
+
+    QString templ;
+    for (const char *path : parts) {
+        QFile file(QString::fromLatin1(path));
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            qWarning() << "ThemeManager: cannot open" << path;
+            continue;
+        }
+        templ += QString::fromUtf8(file.readAll());
+        templ += QLatin1Char('\n');
     }
-    return QString::fromUtf8(file.readAll());
+    return templ;
 }
 
 QString ThemeManager::resolveTokens(const QString &templ, Mode mode)

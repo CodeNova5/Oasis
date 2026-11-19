@@ -1,0 +1,197 @@
+/* ==========================================================================
+   Oasis — Global Fluent stylesheet: base
+   --------------------------------------------------------------------------
+   Authored against design tokens from src/ui/theme/*.h. Every `@token` is
+   substituted by ThemeManager for the active mode (dark / light).
+
+   The sheet is split into ordered partials under src/ui/theme/styles/ and
+   concatenated by ThemeManager::loadTemplate() in this order:
+     base.qss      reset, shell, typography roles
+     controls.qss  navigation, buttons, inputs, checks, tabs
+     data.qss      cards, badges, tables, scrollbars
+     overlays.qss  menus, group boxes, progress, sliders, splitters
+     overview.qss  Overview screen
+     activity.qss  Activity screen
+
+   Token groups:
+     @surface-* @border-* @accent-* @semantic-* @text-* @focus-ring
+     @space-* @radius-* @row-* @font-*
+   ========================================================================== */
+
+/* ── Global reset ───────────────────────────────────────────────────────── */
+* {
+    font-family: @font-family;
+    font-size: @font-size-body;
+    outline: none;
+}
+
+QWidget {
+    color: @text-primary;
+}
+
+QMainWindow, QDialog {
+    background-color: @surface-window;
+    color: @text-primary;
+}
+
+QWidget:disabled {
+    color: @text-muted;
+}
+
+QToolTip {
+    background-color: @tooltip-background;
+    color: @tooltip-text;
+    border: 1px solid @border-default;
+    border-radius: @radius-control;
+    padding: @space-sm @space-md;
+    font-size: @font-size-secondary;
+}
+
+/* ── Application shell ──────────────────────────────────────────────────── */
+QFrame#headerFrame {
+    background-color: @surface-window;
+    border: none;
+    min-height: @header-height;
+    max-height: @header-height;
+}
+
+QFrame#statusBar {
+    background-color: @surface-sidebar;
+    border: none;
+    border-top: 1px solid @border-default;
+    min-height: @statusbar-height;
+    max-height: @statusbar-height;
+}
+
+QFrame#AppSidebar {
+    background-color: @surface-sidebar;
+    border: none;
+    border-right: 1px solid @border-default;
+    min-width: @sidebar-width;
+    max-width: @sidebar-width;
+}
+
+QFrame#PageSurface {
+    background-color: @surface-window;
+    border: none;
+}
+
+QWidget#sidebarBrand {
+    background: transparent;
+    border: none;
+}
+
+/* ── Typography roles ───────────────────────────────────────────────────── */
+QLabel#appTitle {
+    font-size: 16px;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+QLabel#appSubtitle,
+QLabel#versionLabel {
+    font-size: @font-size-meta;
+    color: @text-muted;
+}
+
+QLabel[uiRole="pageTitle"] {
+    font-size: @font-size-page-title;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+QLabel[uiRole="sectionHeading"],
+QLabel#sectionHeading {
+    font-size: @font-size-section;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+QLabel[uiRole="cardHeading"],
+QLabel#cardTitle,
+QLabel#cardTitle2,
+QLabel#cardTitle3 {
+    font-size: @font-size-card;
+    font-weight: 600;
+    color: @text-secondary;
+}
+
+QLabel[uiRole="metricValue"],
+QLabel#lblPackets,
+QLabel#lblRxVal,
+QLabel#lblTxVal {
+    font-size: @font-size-metric;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+QLabel#lblRxVal { color: @chart-download; }
+QLabel#lblTxVal { color: @chart-upload; }
+
+QLabel[uiRole="secondary"],
+QLabel#subDetail,
+QLabel#statusMsg,
+QLabel#lblRxUnit,
+QLabel#lblTxUnit {
+    font-size: @font-size-secondary;
+    color: @text-secondary;
+}
+
+QLabel[uiRole="muted"],
+QLabel#groupLabel {
+    font-size: @font-size-meta;
+    color: @text-muted;
+}
+
+QLabel[uiRole="emptyTitle"] {
+    font-size: @font-size-section;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+QLabel[uiRole="emptyText"] {
+    font-size: @font-size-body;
+    color: @text-secondary;
+}
+
+/* Status bar: one compact line */
+QFrame#statusBar QLabel {
+    font-size: @font-size-meta;
+}
+QLabel#warningMsg {
+    color: @semantic-warning;
+    font-size: @font-size-meta;
+    font-weight: 600;
+}
+QLabel#warningMsg[severity="failed"] {
+    color: @semantic-danger;
+}
+
+QLabel#rxLabel { color: @chart-download; font-weight: 600; }
+QLabel#txLabel { color: @chart-upload; font-weight: 600; }
+QLabel#cpuLabel { color: @semantic-warning; font-weight: 600; }
+QLabel#ramLabel { color: @semantic-info; font-weight: 600; }
+
+QLabel#liveBadge {
+    background-color: @success-subtle;
+    color: @semantic-success;
+    border: 1px solid @semantic-success;
+    border-radius: @radius-control;
+    padding: @space-xs @space-sm;
+    font-size: @font-size-meta;
+    font-weight: 600;
+}
+
+QLabel#dropHint {
+    color: @text-muted;
+    background-color: @surface-window;
+    border: 2px dashed @border-default;
+    border-radius: @radius-card;
+    padding: @space-xl;
+    font-weight: 600;
+}
+QLabel#dropHint:hover {
+    border-color: @accent-primary;
+    color: @accent-primary;
+}
+

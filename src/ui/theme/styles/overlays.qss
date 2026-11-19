@@ -1,0 +1,96 @@
+/* ── Menus, context menus & tray ────────────────────────────────────────── */
+QMenu {
+    background-color: @surface-elevated;
+    color: @text-primary;
+    border: 1px solid @border-default;
+    border-radius: @radius-control;
+    padding: @space-xs 0;
+}
+QMenu::item {
+    padding: @space-sm @space-xl;
+    font-size: @font-size-body;
+}
+QMenu::item:selected {
+    background-color: @surface-hover;
+    color: @text-primary;
+}
+QMenu::item:disabled {
+    color: @text-muted;
+}
+QMenu::separator {
+    height: 1px;
+    background-color: @border-default;
+    margin: @space-xs 0;
+}
+QMenuBar {
+    background-color: @surface-sidebar;
+    color: @text-secondary;
+}
+QMenuBar::item:selected {
+    background-color: @surface-hover;
+    color: @text-primary;
+}
+
+/* ── Group boxes, progress, sliders ─────────────────────────────────────── */
+QGroupBox {
+    border: 1px solid @border-default;
+    border-radius: @radius-card;
+    margin-top: @space-md;
+    padding-top: @space-lg;
+    color: @text-secondary;
+    font-weight: 600;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: @space-md;
+    color: @text-secondary;
+}
+
+QProgressBar {
+    background-color: @surface-elevated;
+    border: none;
+    border-radius: 3px;
+    min-height: 6px;
+    max-height: 6px;
+    text-align: right;
+    color: @text-primary;
+}
+QProgressBar::chunk {
+    background-color: @accent-primary;
+    border-radius: 3px;
+}
+
+QSlider::groove:horizontal {
+    background-color: @surface-elevated;
+    border-radius: 2px;
+    height: 4px;
+}
+QSlider::handle:horizontal {
+    background-color: @accent-primary;
+    border: none;
+    border-radius: 6px;
+    width: 12px;
+    margin: -4px 0;
+}
+
+/* ── Splitter & empty states ────────────────────────────────────────────── */
+QSplitter::handle {
+    background-color: @border-default;
+}
+QSplitter::handle:hover {
+    background-color: @accent-primary;
+}
+
+QWidget[uiRole="emptyState"] {
+    background-color: @surface-primary;
+    border: 1px solid @border-default;
+    border-radius: @radius-card;
+}
+
+/* Scroll areas stay flush with the page surface */
+QScrollArea, QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+    border: none;
+}
+

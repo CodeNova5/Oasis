@@ -3,7 +3,7 @@
  * @brief   Color design tokens for the Oasis Fluent UI.
  *
  * Single source of truth for the palette in docs/Design/DESIGN_SYSTEM.md §2.
- * The X-macro keeps the C++ palette, the QSS token names (styles.qss) and the
+ * The X-macro keeps the C++ palette, the QSS token names (styles/*.qss) and the
  * light-theme counterpart in sync: every color exists in both modes and owns
  * exactly one token name.
  *

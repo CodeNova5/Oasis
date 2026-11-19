@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
     QApplication::setWindowIcon(appIcon);
 
     // -- Apply theme ----------------------------------------------------------
-    // Resolves design tokens (src/ui/theme) into styles.qss and installs the
+    // Resolves design tokens (src/ui/theme) into the styles/ partials and installs the
     // matching QPalette + Segoe UI Variable font.
     ThemeManager::instance().apply(&app);
 

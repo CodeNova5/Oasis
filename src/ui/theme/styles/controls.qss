@@ -1,0 +1,220 @@
+/* ── Sidebar navigation ─────────────────────────────────────────────────── */
+/* AppSidebar paints its rows itself (glyph/label spacing has to sit on the
+   design grid, which a styled QPushButton cannot express), so the sheet only
+   keeps the generic button chrome out of the way. */
+QPushButton[uiRole="navItem"],
+QPushButton[uiRole="navItem"]:hover,
+QPushButton[uiRole="navItem"]:pressed,
+QPushButton[uiRole="navItem"]:checked,
+QPushButton[uiRole="navItem"]:focus {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+QPushButton {
+    background-color: @surface-elevated;
+    color: @text-primary;
+    border: 1px solid @border-default;
+    border-radius: @radius-control;
+    min-height: @control-height;
+    padding: 0 @space-lg;
+    font-size: @font-size-body;
+    font-weight: 600;
+}
+QPushButton:hover {
+    background-color: @surface-hover;
+    border-color: @surface-hover;
+}
+QPushButton:pressed {
+    background-color: @surface-primary;
+}
+QPushButton:disabled {
+    background-color: @surface-primary;
+    border-color: @border-default;
+    color: @text-muted;
+}
+QPushButton:focus {
+    border-color: @focus-ring;
+}
+
+QPushButton[variant="primary"],
+QPushButton#btnStartStop {
+    background-color: @accent-primary;
+    color: @text-on-accent;
+    border: 1px solid @accent-primary;
+}
+QPushButton[variant="primary"]:hover,
+QPushButton#btnStartStop:hover {
+    background-color: @accent-hover;
+    border-color: @accent-hover;
+}
+QPushButton[variant="primary"]:pressed,
+QPushButton#btnStartStop:pressed {
+    background-color: @accent-primary;
+}
+QPushButton[variant="primary"]:disabled,
+QPushButton#btnStartStop:disabled {
+    background-color: @accent-subtle;
+    border-color: @accent-subtle;
+    color: @text-muted;
+}
+
+QPushButton[variant="ghost"],
+QPushButton#iconBtn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: @text-secondary;
+    padding: 0 @space-md;
+}
+QPushButton[variant="ghost"]:hover,
+QPushButton#iconBtn:hover {
+    background-color: @surface-hover;
+    color: @text-primary;
+}
+
+QPushButton[variant="danger"],
+QPushButton#dangerBtn,
+QPushButton#btnAddBlock {
+    background-color: @danger-subtle;
+    color: @semantic-danger;
+    border: 1px solid @semantic-danger;
+}
+QPushButton[variant="danger"]:hover,
+QPushButton#dangerBtn:hover,
+QPushButton#btnAddBlock:hover {
+    background-color: @semantic-danger;
+    color: @text-on-danger;
+    border-color: @semantic-danger;
+}
+
+QPushButton[variant="success"],
+QPushButton#successBtn,
+QPushButton#btnAddAllow {
+    background-color: @success-subtle;
+    color: @semantic-success;
+    border: 1px solid @semantic-success;
+}
+QPushButton[variant="success"]:hover,
+QPushButton#successBtn:hover,
+QPushButton#btnAddAllow:hover {
+    background-color: @semantic-success;
+    color: @text-on-accent;
+    border-color: @semantic-success;
+}
+
+/* ── Inputs ─────────────────────────────────────────────────────────────── */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit, QPlainTextEdit {
+    background-color: @surface-primary;
+    color: @text-primary;
+    border: 1px solid @border-default;
+    border-radius: @radius-control;
+    min-height: @input-height;
+    padding: 0 @space-md;
+    selection-background-color: @accent-primary;
+    selection-color: @text-on-accent;
+}
+QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover {
+    border-color: @surface-hover;
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus,
+QDoubleSpinBox:focus, QPlainTextEdit:focus {
+    border-color: @focus-ring;
+}
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {
+    background-color: @surface-window;
+    color: @text-muted;
+    border-color: @border-default;
+}
+QLineEdit::placeholder {
+    color: @text-muted;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: @space-2xl;
+}
+QComboBox QAbstractItemView {
+    background-color: @surface-elevated;
+    color: @text-primary;
+    border: 1px solid @border-default;
+    border-radius: @radius-control;
+    padding: @space-xs;
+    selection-background-color: @accent-primary;
+    selection-color: @text-on-accent;
+    outline: none;
+}
+
+QPlainTextEdit {
+    padding: @space-sm;
+}
+
+/* ── Checkboxes & radio buttons ─────────────────────────────────────────── */
+QCheckBox, QRadioButton {
+    spacing: @space-sm;
+    font-size: @font-size-body;
+    color: @text-primary;
+}
+QCheckBox::indicator, QRadioButton::indicator {
+    width: @inline-icon;
+    height: @inline-icon;
+    background-color: @surface-primary;
+    border: 1px solid @border-default;
+}
+QCheckBox::indicator { border-radius: 3px; }
+QRadioButton::indicator { border-radius: 8px; }
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: @accent-primary;
+}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: @accent-primary;
+    border-color: @accent-primary;
+}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+    background-color: @surface-window;
+    border-color: @border-default;
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────────────── */
+QTabWidget::pane {
+    border: none;
+    background-color: transparent;
+}
+QTabBar::tab {
+    background: transparent;
+    color: @text-secondary;
+    padding: @space-sm @space-lg;
+    font-size: @font-size-body;
+    font-weight: 600;
+    border-bottom: 2px solid transparent;
+}
+QTabBar::tab:hover:!selected {
+    color: @text-primary;
+    border-bottom-color: @surface-hover;
+}
+QTabBar::tab:selected {
+    color: @accent-primary;
+    border-bottom-color: @accent-primary;
+}
+
+QTabWidget#subTabs::pane {
+    background-color: @surface-primary;
+    border: 1px solid @border-default;
+    border-radius: @radius-card;
+    top: -1px;
+}
+QTabWidget#subTabs > QTabBar::tab {
+    background-color: @surface-window;
+    border: 1px solid @border-default;
+    border-bottom: none;
+    border-top-left-radius: @radius-control;
+    border-top-right-radius: @radius-control;
+    margin-right: 2px;
+}
+QTabWidget#subTabs > QTabBar::tab:selected {
+    background-color: @surface-primary;
+    color: @text-primary;
+    border-top: 2px solid @accent-primary;
+}
+
