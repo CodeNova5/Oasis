@@ -45,7 +45,7 @@ inline constexpr int InputHeight = 38;
 inline constexpr int FilterPillHeight = 32;
 inline constexpr int BadgeHeight = 22;
 inline constexpr int StatusDot = 6;
-inline constexpr int NavIcon = 18;
+inline constexpr int NavIcon = 20;
 inline constexpr int InlineIcon = 16;
 
 // ── Tables ──────────────────────────────────────────────────────────────────

@@ -68,9 +68,14 @@ QFrame#PageSurface {
     border: none;
 }
 
+QWidget#sidebarBrand {
+    background: transparent;
+    border: none;
+}
+
 /* ── Typography roles ───────────────────────────────────────────────────── */
 QLabel#appTitle {
-    font-size: @font-size-card;
+    font-size: 16px;
     font-weight: 600;
     color: @text-primary;
 }
@@ -182,35 +187,18 @@ QLabel#dropHint:hover {
     color: @accent-primary;
 }
 
-/* ── Sidebar navigation (used from Phase 2 on) ──────────────────────────── */
-QPushButton[uiRole="navItem"] {
+/* ── Sidebar navigation ─────────────────────────────────────────────────── */
+/* AppSidebar paints its rows itself (glyph/label spacing has to sit on the
+   design grid, which a styled QPushButton cannot express), so the sheet only
+   keeps the generic button chrome out of the way. */
+QPushButton[uiRole="navItem"],
+QPushButton[uiRole="navItem"]:hover,
+QPushButton[uiRole="navItem"]:pressed,
+QPushButton[uiRole="navItem"]:checked,
+QPushButton[uiRole="navItem"]:focus {
     background: transparent;
     border: none;
-    border-left: 3px solid transparent;
-    border-radius: @radius-control;
-    color: @text-secondary;
-    font-size: @font-size-body;
-    font-weight: 400;
-    min-height: 40px;
-    padding: 0 9px;
-    text-align: left;
-}
-QPushButton[uiRole="navItem"]:hover {
-    background-color: @surface-hover;
-    color: @text-primary;
-}
-QPushButton[uiRole="navItem"]:checked {
-    background-color: @accent-subtle;
-    border-left-color: @accent-primary;
-    color: @text-primary;
-    font-weight: 600;
-}
-
-QLabel[uiRole="navSection"] {
-    font-size: @font-size-meta;
-    font-weight: 600;
-    color: @text-muted;
-    padding: @space-md @space-md @space-xs @space-md;
+    padding: 0;
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */

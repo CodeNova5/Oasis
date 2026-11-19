@@ -15,7 +15,7 @@
 namespace Theme {
 namespace Type {
 
-inline constexpr const char *FamilyPrimary  = "Segoe UI Variable";
+inline constexpr const char *FamilyPrimary  = "Inter";
 inline constexpr const char *FamilyFallback = "Segoe UI";
 
 /// Type scale (px).

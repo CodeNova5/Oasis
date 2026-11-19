@@ -6,7 +6,7 @@
 ##############################################################################
 
 
-QT += core gui widgets network concurrent
+QT += core gui widgets network concurrent svg
 
 greaterThan(QT_MAJOR_VERSION, 4): lessThan(QT_MAJOR_VERSION, 6) {
     QT += winextras

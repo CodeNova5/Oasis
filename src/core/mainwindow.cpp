@@ -1268,8 +1268,6 @@ void MainWindow::buildShell()
         m_screenSubtitles << subtitle;
     };
 
-    m_sidebar->addSection(QStringLiteral("Monitor"));
-
     // NG-054 → Screen 01: the redesigned Overview owns the landing screen.
     // The legacy network tab is never added to the stack; it stays alive only
     // as the hidden host of NetworkWidget's capture and policy services.
@@ -1296,7 +1294,6 @@ void MainWindow::buildShell()
               QStringLiteral("Domains, IPs and evidence"));
     m_connectionsIndex = m_screenTitles.size() - 1;
 
-    m_sidebar->addSection(QStringLiteral("Control"));
     // The legacy tabs behind these destinations (Policies, Data Saver, History,
     // Hardware, Settings) are detached and excluded from the build. Their
     // services keep running; only the screens are gone until each is rebuilt.
@@ -1307,12 +1304,6 @@ void MainWindow::buildShell()
               QStringLiteral("Policies"),
               QStringLiteral("Rules and enforcement status"));
     m_policiesIndex = m_screenTitles.size() - 1;
-    addScreen(QStringLiteral("Data Saver"),
-              makePlaceholderPage(QStringLiteral("Data Saver"),
-                  QStringLiteral("The detection list is being rebuilt as a dedicated screen. "
-                                 "Current process activity is available on Overview.")),
-              QStringLiteral("Data Saver"),
-              QStringLiteral("Detected high-bandwidth processes"));
     addScreen(QStringLiteral("Insights"),
               makePlaceholderPage(QStringLiteral("Insights"),
                   QStringLiteral("Recommendations are being rebuilt as a dedicated "
@@ -1320,27 +1311,13 @@ void MainWindow::buildShell()
               QStringLiteral("Insights"),
               QStringLiteral("Anomalies and recommendations"));
 
-    m_sidebar->addSection(QStringLiteral("History"));
-    addScreen(QStringLiteral("History"),
-              makePlaceholderPage(QStringLiteral("History"),
-                  QStringLiteral("Stored traffic by day is being rebuilt as a dedicated "
-                                 "screen. Daily totals keep being recorded in the meantime.")),
-              QStringLiteral("History"),
-              QStringLiteral("Stored traffic by day and application"));
-    addScreen(QStringLiteral("Audit & Reports"),
-              makePlaceholderPage(QStringLiteral("Audit & Reports"),
+    addScreen(QStringLiteral("Reports"),
+              makePlaceholderPage(QStringLiteral("Reports"),
                   QStringLiteral("The audit log and its exports are being rebuilt as a "
                                  "dedicated screen. Events are still recorded locally.")),
-              QStringLiteral("Audit & Reports"),
+              QStringLiteral("Reports"),
               QStringLiteral("Event traceability and exports"));
 
-    m_sidebar->addPinnedSection(QStringLiteral("System"));
-    addScreen(QStringLiteral("Hardware"),
-              makePlaceholderPage(QStringLiteral("Hardware"),
-                  QStringLiteral("CPU, memory and temperature history is being rebuilt as a "
-                                 "dedicated screen. Live figures remain in the status bar.")),
-              QStringLiteral("Hardware"),
-              QStringLiteral("CPU, memory, GPU and temperatures"));
     // Settings is now a real screen: its first section is the detection
     // profile, which the host applies to the live detector below.
     const Activity::DetectionProfile storedProfile =

@@ -10,6 +10,7 @@
 class QVBoxLayout;
 class QButtonGroup;
 class QPushButton;
+class QPaintEvent;
 
 class AppSidebar : public QFrame
 {
@@ -17,12 +18,9 @@ class AppSidebar : public QFrame
 public:
     explicit AppSidebar(QWidget *parent = nullptr);
 
-    /// Add a section header to the scrolling top group. Returns its index.
-    void addSection(const QString &title);
     /// Add a nav item; returns the index used by itemActivated().
     int addItem(const QString &label);
-    /// Add a section header in the pinned bottom group (Settings, Help).
-    void addPinnedSection(const QString &title);
+    /// Add a nav item in the pinned bottom group (Settings).
     int addPinnedItem(const QString &label);
 
     int count() const { return m_items.size(); }
@@ -31,6 +29,9 @@ public:
 
 signals:
     void itemActivated(int index);
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     QPushButton *createItem(const QString &label, int index);
