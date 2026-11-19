@@ -3,7 +3,7 @@
 #include "downloadthrottle.h"
 #include "windowsqosbackend.h"
 
-#include <QCryptographicHash>
+#include <QDebug>
 #include <QDir>
 #include <QSettings>
 #include <QThread>
@@ -92,6 +92,13 @@ void ThrottleWorker::verifyRequest(const QVariantMap &policies)
     emit verified(existing);
 }
 
+void ThrottleWorker::pruneOrphansRequest(const QStringList &knownPolicyIds)
+{
+    QStringList removed;
+    const ThrottleResult result = m_backend->pruneOrphans(knownPolicyIds, &removed);
+    emit orphansPruned(result, removed);
+}
+
 // ── Manager ──────────────────────────────────────────────────────────────────
 
 ThrottlePolicyManager::ThrottlePolicyManager(QObject *parent)
@@ -128,6 +135,8 @@ ThrottlePolicyManager::ThrottlePolicyManager(QObject *parent)
             m_worker, &ThrottleWorker::restoreAllRequest);
     connect(this, &ThrottlePolicyManager::verifyRequested,
             m_worker, &ThrottleWorker::verifyRequest);
+    connect(this, &ThrottlePolicyManager::pruneOrphansRequested,
+            m_worker, &ThrottleWorker::pruneOrphansRequest);
 
     connect(m_worker, &ThrottleWorker::applied,
             this, &ThrottlePolicyManager::onWorkerApplied);
@@ -137,6 +146,8 @@ ThrottlePolicyManager::ThrottlePolicyManager(QObject *parent)
             this, &ThrottlePolicyManager::onWorkerRestored);
     connect(m_worker, &ThrottleWorker::verified,
             this, &ThrottlePolicyManager::onWorkerVerified);
+    connect(m_worker, &ThrottleWorker::orphansPruned,
+            this, &ThrottlePolicyManager::onWorkerOrphansPruned);
 
     m_thread->start();
 
@@ -144,6 +155,13 @@ ThrottlePolicyManager::ThrottlePolicyManager(QObject *parent)
     // GUI thread so a long policy list cannot stall startup.
     if (!m_activePolicies.isEmpty())
         emit verifyRequested(policySnapshot());
+
+    // One-time startup sweep. A QoS policy outlives the process that created
+    // it, so a crash, a settings reset, or an older build can leave limits
+    // shaping traffic that nothing tracks any more. The persisted set is the
+    // only thing that may keep a policy alive; verification only drops ids that
+    // are already gone from the store, so they cannot shield an orphan.
+    emit pruneOrphansRequested(QStringList(m_activePolicies.cbegin(), m_activePolicies.cend()));
 }
 
 ThrottlePolicyManager::~ThrottlePolicyManager()
@@ -205,7 +223,7 @@ void ThrottlePolicyManager::applyInternal(const QString &path, const QString &po
         pushDownloadLimits();
     }
 
-    emit applyRequested(path, policyIdForPath(path), DefaultLimitBitsPerSecond);
+    emit applyRequested(path, ThrottlePolicyNames::forPath(path), DefaultLimitBitsPerSecond);
 }
 
 void ThrottlePolicyManager::remove(const QString &executablePath)
@@ -217,7 +235,7 @@ void ThrottlePolicyManager::remove(const QString &executablePath)
     if (m_downloadLimits.remove(path) > 0)
         pushDownloadLimits();
 
-    const QString policyId = m_activePolicies.value(path, policyIdForPath(path));
+    const QString policyId = m_activePolicies.value(path, ThrottlePolicyNames::forPath(path));
     emit removeRequested(path, policyId);
 }
 
@@ -275,12 +293,6 @@ QString ThrottlePolicyManager::normalizePath(const QString &path)
     return QDir::cleanPath(QDir::toNativeSeparators(path.trimmed())).toLower();
 }
 
-QString ThrottlePolicyManager::policyIdForPath(const QString &path)
-{
-    const QByteArray digest = QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1);
-    return QString("Oasis-BW-%1").arg(QString::fromLatin1(digest.toHex().left(12)));
-}
-
 QVariantMap ThrottlePolicyManager::policySnapshot() const
 {
     QVariantMap policies;
@@ -299,7 +311,7 @@ void ThrottlePolicyManager::onWorkerApplied(const QString &executablePath,
     ThrottleResult outcome = result;
     if (result.status == ThrottleStatus::Applied) {
         m_activePolicies.insert(executablePath, result.policyId.isEmpty()
-                                                    ? policyIdForPath(executablePath)
+                                                    ? ThrottlePolicyNames::forPath(executablePath)
                                                     : result.policyId);
         // A user-applied limit always wins over an automatic one.
         if (automatic)
@@ -372,6 +384,17 @@ void ThrottlePolicyManager::onWorkerVerified(const QStringList &existingPolicyId
     if (changed) save();
     // Whatever survived the check is still limited on the way down.
     rebuildDownloadLimits();
+}
+
+void ThrottlePolicyManager::onWorkerOrphansPruned(const ThrottleResult &result,
+                                                  const QStringList &removedPolicyIds)
+{
+    if (result.status == ThrottleStatus::Failed)
+        qWarning().noquote() << "ThrottlePolicyManager: orphaned QoS cleanup failed:"
+                             << result.message;
+    else if (!removedPolicyIds.isEmpty())
+        qInfo().noquote() << "ThrottlePolicyManager: removed orphaned QoS policies"
+                          << removedPolicyIds;
 }
 
 void ThrottlePolicyManager::rebuildDownloadLimits()

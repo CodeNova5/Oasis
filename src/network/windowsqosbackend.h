@@ -8,6 +8,8 @@ public:
     ThrottleResult apply(const ThrottleRequest &request) override;
     ThrottleResult remove(const QString &policyId) override;
     bool isApplied(const QString &policyId) const override;
+    ThrottleResult pruneOrphans(const QStringList &knownPolicyIds,
+                                QStringList *removedPolicyIds) override;
 
 private:
     static QString makePolicyName(const ThrottleRequest &request);

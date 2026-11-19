@@ -28,12 +28,14 @@ public slots:
     void removeRequest(const QString &executablePath, const QString &policyId);
     void restoreAllRequest(const QVariantMap &policies);
     void verifyRequest(const QVariantMap &policies);
+    void pruneOrphansRequest(const QStringList &knownPolicyIds);
 
 signals:
     void applied(const QString &executablePath, const ThrottleResult &result);
     void removed(const QString &executablePath, const ThrottleResult &result);
     void restored(const ThrottleResult &result, const QStringList &remainingPolicyIds);
     void verified(const QStringList &existingPolicyIds);
+    void orphansPruned(const ThrottleResult &result, const QStringList &removedPolicyIds);
 
 private:
     ThrottleBackend *m_backend = nullptr;
@@ -100,16 +102,17 @@ signals:
     void removeRequested(const QString &executablePath, const QString &policyId);
     void restoreAllRequested(const QVariantMap &policies);
     void verifyRequested(const QVariantMap &policies);
+    void pruneOrphansRequested(const QStringList &knownPolicyIds);
 
 private slots:
     void onWorkerApplied(const QString &executablePath, const ThrottleResult &result);
     void onWorkerRemoved(const QString &executablePath, const ThrottleResult &result);
     void onWorkerRestored(const ThrottleResult &result, const QStringList &remainingPolicyIds);
     void onWorkerVerified(const QStringList &existingPolicyIds);
+    void onWorkerOrphansPruned(const ThrottleResult &result, const QStringList &removedPolicyIds);
 
 private:
     void applyInternal(const QString &path, const QString &policyId, bool automatic);
-    static QString policyIdForPath(const QString &path);
     QVariantMap policySnapshot() const;
     void load();
     void save() const;
