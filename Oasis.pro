@@ -27,6 +27,9 @@ RC_FILE  = appicon.rc
 SOURCES += \
     src/main.cpp \
     src/core/mainwindow.cpp \
+    src/core/mainwindowpages.cpp \
+    src/core/mainwindowpanels.cpp \
+    src/core/mainwindowtray.cpp \
     src/ui/theme/thememanager.cpp \
     src/ui/shell/appsidebar.cpp \
     src/ui/shell/appheader.cpp \
