@@ -164,6 +164,150 @@ void NetworkWidget::createPolicyForTarget(const PolicyTarget &target)
     // The scheduler has not seen this policy yet, so this counts as an
     // activation change and applies it now when it is in force.
     m_policyScheduler->evaluateNow();
+    emit policiesChanged();
+}
+
+void NetworkWidget::createPolicy()
+{
+    // No prefill: the editor's target field is where the user types or pastes
+    // the executable path. The Policies page uses this, its own rows already
+    // describe the policies that exist.
+    createPolicyForTarget(PolicyTarget());
+}
+
+void NetworkWidget::verifyPolicies()
+{
+    if (!m_policyReconciler)
+        return;
+
+    if (!m_firewall || !m_firewall->isInitialized()) {
+        // Verification needs the COM rule collection. Reporting the failure is
+        // better than a button that appears to do nothing.
+        ReconciliationReport report;
+        ++report.failed;
+        ReconciliationAction action;
+        action.kind = ReconciliationAction::Kind::Report;
+        action.message = QStringLiteral(
+            "Windows Firewall is not available in this session, so the stored "
+            "policies were not verified. Run Oasis elevated and try again.");
+        report.actions << action;
+        ui->lblStatus->setText(report.summary());
+        emit policyReconciliationFinished(report);
+        return;
+    }
+
+    ui->lblStatus->setText(QStringLiteral("Verifying policy rules..."));
+    m_policyReconciler->requestReconciliation(m_runningGroupPaths);
+}
+
+void NetworkWidget::setPolicyEnabled(const QString &policyId, bool enabled)
+{
+    if (policyId.isEmpty())
+        return;
+
+    QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    int index = -1;
+    for (int i = 0; i < policies.size(); ++i) {
+        if (policies.at(i).id == policyId) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) {
+        emit policiesChanged();
+        return;
+    }
+    if (policies.at(index).enabled == enabled) {
+        // Already in that state (a stale row, most likely); re-read so the
+        // screen shows what the store actually holds.
+        emit policiesChanged();
+        return;
+    }
+
+    policies[index].enabled = enabled;
+    if (!PolicyStore::savePolicies(policies)) {
+        QMessageBox::warning(this, QStringLiteral("Policies"),
+                             QStringLiteral("The policy could not be %1.")
+                                 .arg(enabled ? QStringLiteral("enabled")
+                                              : QStringLiteral("paused")));
+        emit policiesChanged();
+        return;
+    }
+
+    const NetworkPolicy &policy = policies.at(index);
+    AuditEvent audit;
+    audit.type = AuditEvent::EventType::PolicyChange;
+    audit.scope = policy.targetId;
+    audit.reason = enabled ? QStringLiteral("user enabled a policy")
+                           : QStringLiteral("user paused a policy");
+    audit.result = QStringLiteral("saved");
+    audit.relatedPolicyId = policy.id;
+    audit.details = policy.description;
+    m_auditStore.append(audit);
+
+    ui->lblStatus->setText(enabled ? QStringLiteral("Policy enabled.")
+                                   : QStringLiteral("Policy paused."));
+    // Enabling applies the policy at once; pausing reports a left state, which
+    // is what withdraws the rules attributed to it.
+    m_policyScheduler->evaluateNow();
+    schedulePolicyReconciliation();
+    emit policiesChanged();
+}
+
+void NetworkWidget::deletePolicy(const QString &policyId)
+{
+    if (policyId.isEmpty())
+        return;
+
+    QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    int index = -1;
+    for (int i = 0; i < policies.size(); ++i) {
+        if (policies.at(i).id == policyId) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) {
+        emit policiesChanged();
+        return;
+    }
+
+    const NetworkPolicy policy = policies.at(index);
+    const QString target = policy.targetId.trimmed().isEmpty()
+        ? policy.id
+        : policy.targetId;
+    const QMessageBox::StandardButton answer = QMessageBox::question(
+        this, QStringLiteral("Delete policy"),
+        QStringLiteral("Delete this policy for %1?\n\nThe rules attributed to it "
+                       "are withdrawn. This cannot be undone.")
+            .arg(target),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    policies.removeAt(index);
+    if (!PolicyStore::savePolicies(policies)) {
+        QMessageBox::warning(this, QStringLiteral("Policies"),
+                             QStringLiteral("The policy could not be deleted."));
+        emit policiesChanged();
+        return;
+    }
+
+    AuditEvent audit;
+    audit.type = AuditEvent::EventType::PolicyChange;
+    audit.scope = policy.targetId;
+    audit.reason = QStringLiteral("user deleted a policy");
+    audit.result = QStringLiteral("removed");
+    audit.relatedPolicyId = policy.id;
+    audit.details = policy.description;
+    m_auditStore.append(audit);
+
+    ui->lblStatus->setText(QStringLiteral("Policy deleted."));
+    m_policyScheduler->evaluateNow();
+    // A deleted policy is no longer in the store, so no activation change is
+    // emitted for it; the pass is what withdraws its rules.
+    schedulePolicyReconciliation();
+    emit policiesChanged();
 }
 
 void NetworkWidget::showRecommendationFor(quint32 pid, const QString &processName,
@@ -825,6 +969,10 @@ void NetworkWidget::onPolicyReconciliationFinished(const ReconciliationReport &r
 {
     if (report.repaired > 0 || report.removed > 0 || !report.ok())
         ui->lblStatus->setText(report.summary());
+
+    // The explicit Verify action and the background pass share this result; the
+    // host decides whether an unprompted pass should interrupt the user.
+    emit policyReconciliationFinished(report);
 
     if (!m_verifyDialog) return;
 

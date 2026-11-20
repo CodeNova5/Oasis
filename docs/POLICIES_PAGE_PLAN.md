@@ -4,9 +4,10 @@ Plan for building the redesigned Policies screen from `Policies Page.html` on
 top of the existing policy backend. Every capability below was checked against
 the source; line numbers are approximate and refer to this revision.
 
-Status: **Phases 1, 2 and 3 are implemented.** Phase 1 is the Policies screen
-skeleton, Phase 2 the read-only table with filters and search, Phase 3 the
-configurable throttle rate. Phases 4 and 5 have not been started.
+Status: **Phases 1-4 are implemented.** Phase 1 is the Policies screen skeleton,
+Phase 2 the table with filters and search, Phase 3 the configurable throttle
+rate, Phase 4 the Verify/Create/toggle/delete wiring. Phase 5 has not been
+started.
 
 ---
 
@@ -34,9 +35,9 @@ configurable throttle rate. Phases 4 and 5 have not been started.
 | Expiration and notes | `NetworkPolicy::expiration`, `description` | Ready |
 | Throttle / Block / Allow, direction, rate | `NetworkPolicy` + `EnforcementCoordinator` | Ready except fixed rate (§3) |
 | Edit policy | `PolicyEditorDialog(const NetworkPolicy &)` | Ready to reuse |
-| Delete with confirmation | Implemented inside `PolicyListDialog` | Logic exists, needs a page-callable API |
-| Verify rules | `PolicyReconciler` produces `ReconciliationReport` | Needs exposing |
-| Per-row enable toggle | No API; only Edit → State | Missing |
+| Delete with confirmation | `NetworkWidget::deletePolicy()` (Phase 4) | Ready |
+| Verify rules | `NetworkWidget::verifyPolicies()` + `policyReconciliationFinished` | Ready |
+| Per-row enable toggle | `NetworkWidget::setPolicyEnabled()` | Ready |
 | Channel readiness (firewall, QoS, elevated) | `FirewallManager::isInitialized()`, `downloadLimiterStatus()`, no elevation check | Missing accessor |
 | App list for "pick an app" | `NetworkWidget::applicationSnapshots()` (name, displayName, icon, path, publisher) | Ready — real data replaces the mock's fake list |
 | Toast container | Only `SystemStatusBar::setMessage` | Missing; use the status bar |
@@ -159,24 +160,38 @@ failures), and new checks cover the rate on the plan and a rate change forcing
 re-application. End-to-end enforcement against a live elevated system was not
 run from this environment.
 
-### Phase 4 — Actions and Verify
+### Phase 4 — Actions and Verify — DONE
 
-- New `NetworkWidget` API: `policiesChanged()`, `verifyPolicies()`,
-  `reconciliationFinished(report)`, `setPolicyEnabled(id, bool)`,
-  `deletePolicy(id)`, `enforcementChannels()`.
-- Wire the row enable toggle, edit, delete confirmation, Verify banner,
-  last-verified timestamp in QSettings, Create via `showPolicyEditorFor()`.
-- Sidebar/summary channel readiness uses the new accessor; drop or implement the
-  "Elevated" label.
+- `NetworkWidget` gained `createPolicy()`, `verifyPolicies()`,
+  `setPolicyEnabled(id, bool)`, `deletePolicy(id)`, and the signals
+  `policiesChanged()` and `policyReconciliationFinished(report)`.
+- The page's Verify and Create buttons are enabled. Create opens the existing
+  `PolicyEditorDialog` with an empty target; Verify runs one reconciliation pass
+  and reports a failed pass when the firewall is unavailable instead of doing
+  nothing.
+- Row switch and Delete are wired through the shell into NetworkWidget, so the
+  store write, audit event and `PolicyScheduler::evaluateNow()` stay in one
+  place. Delete confirms first, in NetworkWidget, and then schedules the
+  withdrawal of the policy's attributed rules.
+- The page shows the report in a dismissible banner (success or danger) and a
+  `Last verified ...` label. The timestamp is persisted as
+  `Oasis/Policies/LastVerified`; a background pass updates it without opening a
+  banner the user did not ask for.
+- Styling added: `QFrame[uiRole="banner"][severity="success"]` and
+  `QToolButton[uiRole="rowAction"]` in `data.qss`.
 
-*Done when:* every row action round-trips through the store, audit log,
-scheduler and reconciler.
+*Done:* every write round-trips through NetworkWidget and the page re-reads the
+store from `policiesChanged()`. Not compiled or run in this environment at the
+author's request.
+
+Not built in this phase: the sidebar `enforcementChannels()` readiness card and
+per-row editing (Edit still lives in the legacy Policies dialog).
 
 ### Phase 5 — Polish
 
 - `src/ui/theme/styles/policies.qss`, registered in
-  `ThemeManager::loadTemplate()` and `resources.qrc`.
-- "No matching policies" state distinct from the empty state.
+  `ThemeManager::loadTemplate()` and `resources.qrc` (the two Phase 4 rules are
+  currently in `data.qss`).
 - Status-bar feedback instead of the mock's toast container.
 - Update `docs/CREATE_POLICY.md`, `docs/Design/SCREENS_SPEC.md`.
 - Harness checks for status bucketing, counts and search/filter.

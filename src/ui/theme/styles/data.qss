@@ -37,6 +37,11 @@ QFrame[uiRole="banner"][severity="info"] {
     border: 1px solid @semantic-info;
     border-radius: @radius-control;
 }
+QFrame[uiRole="banner"][severity="success"] {
+    background-color: @success-subtle;
+    border: 1px solid @semantic-success;
+    border-radius: @radius-control;
+}
 
 /* ── Status badges ──────────────────────────────────────────────────────── */
 QLabel[uiRole="badge"] {
@@ -90,6 +95,26 @@ QToolButton[uiRole="filterPill"]:checked {
     background-color: @surface-elevated;
     border-color: @accent-primary;
     color: @text-primary;
+}
+
+/* Flat row actions (Policies table) */
+QToolButton[uiRole="rowAction"] {
+    background: transparent;
+    border: none;
+    border-radius: @radius-control;
+    color: @text-secondary;
+    padding: 0 @space-sm;
+    min-height: 24px;
+    font-size: @font-size-secondary;
+    font-weight: 600;
+}
+QToolButton[uiRole="rowAction"]:hover {
+    background-color: @surface-hover;
+    color: @text-primary;
+}
+QToolButton[uiRole="rowAction"][tone="danger"]:hover {
+    background-color: @danger-subtle;
+    color: @semantic-danger;
 }
 
 /* Applications details drawer */

@@ -21,6 +21,7 @@
  */
 #pragma once
 
+#include <QDateTime>
 #include <QIcon>
 #include <QList>
 #include <QString>
@@ -76,6 +77,7 @@ struct Row
     QString expires;       // "No expiration" or the countdown
     Status status = Status::Active;
     QString statusReason;  // why the row reads the way it does
+    bool enabled = true;   // the user's switch, independent of the state above
 };
 
 } // namespace Policies
@@ -91,14 +93,27 @@ public:
     /// rows here, so the strip and the table can never disagree.
     void setRows(const QList<Policies::Row> &rows);
 
+    /// Shows the outcome of one reconciliation pass. `details` is the report's
+    /// per-action lines; the page only lays them out.
+    void showVerificationResult(bool ok, const QString &summary,
+                                const QString &details);
+    /// "Last verified ..." in the toolbar. An invalid time reads "Not verified
+    /// yet", so a fresh profile never implies a pass that did not run.
+    void setLastVerified(const QDateTime &when);
+
 signals:
     /// Emitted by the page-body toolbar. The buttons are still disabled; the
     /// shell wires these when the actions exist.
     void verifyRequested();
     void createRequested();
+    /// A row's switch was flipped, or its delete action was used. The shell
+    /// routes both through NetworkWidget, which owns the store and enforcement.
+    void policyEnabledChangeRequested(const QString &policyId, bool enabled);
+    void policyDeleteRequested(const QString &policyId);
 
 private:
     void buildToolbar(QVBoxLayout *root);
+    void buildBanner(QVBoxLayout *root);
     void buildMetrics(QVBoxLayout *root);
     void buildFilterBar(QVBoxLayout *root);
     void buildTable(QVBoxLayout *root);
@@ -114,6 +129,7 @@ private:
     void populateTable(const QList<Policies::Row> &rows);
     QWidget *applicationCell(const Policies::Row &row);
     QWidget *statusCell(const Policies::Row &row);
+    QWidget *actionsCell(const Policies::Row &row);
     static QWidget *textCell(const QString &primary, const QString &secondary,
                              const QString &tooltip);
 
@@ -123,6 +139,13 @@ private:
 
     QPushButton *m_verifyButton = nullptr;
     QPushButton *m_createButton = nullptr;
+    QLabel *m_verifiedLabel = nullptr;
+
+    QFrame *m_banner = nullptr;
+    QLabel *m_bannerTitle = nullptr;
+    QLabel *m_bannerDetail = nullptr;
+    QPushButton *m_bannerDismiss = nullptr;
+    QDateTime m_lastVerified;
 
     QWidget *m_filterBar = nullptr;
     QLineEdit *m_search = nullptr;

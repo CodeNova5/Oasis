@@ -11,6 +11,8 @@
 #include "ui/theme/typography.h"
 
 #include <QButtonGroup>
+#include <QCheckBox>
+#include <QDateTime>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -118,6 +120,7 @@ PoliciesPage::PoliciesPage(QWidget *parent)
     // The mock puts Verify and Create in the page header; the shell keeps the
     // header for the title, so this page hosts them in its own body toolbar.
     buildToolbar(root);
+    buildBanner(root);
     buildMetrics(root);
     buildFilterBar(root);
     buildTable(root);
@@ -132,21 +135,29 @@ void PoliciesPage::buildToolbar(QVBoxLayout *root)
     toolbar->setContentsMargins(0, 0, 0, 0);
     toolbar->setSpacing(Theme::Dim::SpaceSm);
 
+    // The last-pass time sits beside the actions so the Verify button's result
+    // is still readable after the banner is dismissed.
+    m_verifiedLabel = new QLabel(this);
+    m_verifiedLabel->setProperty("uiRole", QStringLiteral("muted"));
+    toolbar->addWidget(m_verifiedLabel);
+    setLastVerified(QDateTime());
+
     toolbar->addStretch(1);
 
     m_verifyButton = new QPushButton(QStringLiteral("Verify rules"), this);
     m_verifyButton->setFixedHeight(Theme::Dim::ButtonHeight);
     m_verifyButton->setCursor(Qt::PointingHandCursor);
-    m_verifyButton->setEnabled(false);
-    m_verifyButton->setToolTip(QStringLiteral("Not available yet."));
+    m_verifyButton->setToolTip(QStringLiteral(
+        "Compare the stored policies with the rules and limits Windows is "
+        "enforcing."));
     toolbar->addWidget(m_verifyButton);
 
     m_createButton = new QPushButton(QStringLiteral("Create policy"), this);
     m_createButton->setProperty("variant", QStringLiteral("primary"));
     m_createButton->setFixedHeight(Theme::Dim::ButtonHeight);
     m_createButton->setCursor(Qt::PointingHandCursor);
-    m_createButton->setEnabled(false);
-    m_createButton->setToolTip(QStringLiteral("Not available yet."));
+    m_createButton->setToolTip(QStringLiteral(
+        "Create a policy for an application."));
     toolbar->addWidget(m_createButton);
 
     connect(m_verifyButton, &QPushButton::clicked,
@@ -155,6 +166,42 @@ void PoliciesPage::buildToolbar(QVBoxLayout *root)
             this, &PoliciesPage::createRequested);
 
     root->addLayout(toolbar);
+}
+
+void PoliciesPage::buildBanner(QVBoxLayout *root)
+{
+    m_banner = new QFrame(this);
+    m_banner->setProperty("uiRole", QStringLiteral("banner"));
+    m_banner->setProperty("severity", QStringLiteral("success"));
+
+    auto *layout = new QHBoxLayout(m_banner);
+    layout->setContentsMargins(Theme::Dim::SpaceMd, Theme::Dim::SpaceSm,
+                               Theme::Dim::SpaceMd, Theme::Dim::SpaceSm);
+    layout->setSpacing(Theme::Dim::SpaceSm);
+
+    auto *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+
+    m_bannerTitle = new QLabel(m_banner);
+    m_bannerTitle->setProperty("uiRole", QStringLiteral("cardHeading"));
+
+    m_bannerDetail = new QLabel(m_banner);
+    m_bannerDetail->setProperty("uiRole", QStringLiteral("secondary"));
+    m_bannerDetail->setWordWrap(true);
+
+    text->addWidget(m_bannerTitle);
+    text->addWidget(m_bannerDetail);
+    layout->addLayout(text, 1);
+
+    m_bannerDismiss = new QPushButton(QStringLiteral("Dismiss"), m_banner);
+    m_bannerDismiss->setCursor(Qt::PointingHandCursor);
+    layout->addWidget(m_bannerDismiss, 0, Qt::AlignTop);
+
+    connect(m_bannerDismiss, &QPushButton::clicked, m_banner, &QWidget::hide);
+
+    m_banner->hide();
+    root->addWidget(m_banner);
 }
 
 void PoliciesPage::buildMetrics(QVBoxLayout *root)
@@ -278,7 +325,7 @@ void PoliciesPage::buildTable(QVBoxLayout *root)
     header->setSectionResizeMode(3, QHeaderView::Stretch);
     header->setSectionResizeMode(4, QHeaderView::Stretch);
     header->setSectionResizeMode(kActionColumn, QHeaderView::Fixed);
-    header->resizeSection(kActionColumn, 64);
+    header->resizeSection(kActionColumn, 148);
     header->setStretchLastSection(false);
 
     root->addWidget(m_table, 1);
@@ -316,6 +363,42 @@ void PoliciesPage::buildEmptyStates(QVBoxLayout *root)
 
     root->addWidget(m_emptyHost, 1);
     root->addWidget(m_noMatchHost, 1);
+}
+
+void PoliciesPage::showVerificationResult(bool ok, const QString &summary,
+                                          const QString &details)
+{
+    if (!m_banner)
+        return;
+
+    m_banner->setProperty("severity", ok ? QStringLiteral("success")
+                                          : QStringLiteral("danger"));
+    if (m_banner->style()) {
+        m_banner->style()->unpolish(m_banner);
+        m_banner->style()->polish(m_banner);
+    }
+
+    m_bannerTitle->setText(ok
+        ? QStringLiteral("Verification complete — Windows rules in sync")
+        : QStringLiteral("Verification needs attention"));
+
+    const QString trimmed = details.trimmed();
+    m_bannerDetail->setText(trimmed.isEmpty()
+                                ? summary
+                                : summary + QLatin1Char('\n') + trimmed);
+    m_banner->show();
+}
+
+void PoliciesPage::setLastVerified(const QDateTime &when)
+{
+    m_lastVerified = when;
+    if (!m_verifiedLabel)
+        return;
+
+    m_verifiedLabel->setText(when.isValid()
+        ? QStringLiteral("Last verified %1")
+              .arg(when.toString(QStringLiteral("yyyy-MM-dd HH:mm")))
+        : QStringLiteral("Not verified yet"));
 }
 
 void PoliciesPage::setRows(const QList<Policies::Row> &rows)
@@ -456,15 +539,7 @@ void PoliciesPage::populateTable(const QList<Policies::Row> &rows)
                                textCell(row.window, row.expires, row.tooltip));
         m_table->setCellWidget(rowIndex, 4, statusCell(row));
 
-        auto *actions = new QWidget;
-        auto *actionsLayout = cellLayout(actions);
-        auto *dash = cellLabel(QStringLiteral("—"), actions);
-        dash->setProperty("uiRole", QStringLiteral("muted"));
-        dash->setAlignment(Qt::AlignCenter);
-        actions->setToolTip(QStringLiteral(
-            "Editing and toggling are being rebuilt on this screen."));
-        actionsLayout->addWidget(dash, 0, Qt::AlignCenter);
-        m_table->setCellWidget(rowIndex, kActionColumn, actions);
+        m_table->setCellWidget(rowIndex, kActionColumn, actionsCell(row));
     }
 
     m_table->setUpdatesEnabled(true);
@@ -486,6 +561,42 @@ QWidget *PoliciesPage::applicationCell(const Policies::Row &row)
     layout->addWidget(name);
     layout->addWidget(subtitle);
     cell->setToolTip(row.tooltip);
+    return cell;
+}
+
+QWidget *PoliciesPage::actionsCell(const Policies::Row &row)
+{
+    auto *cell = new QWidget;
+    auto *layout = new QHBoxLayout(cell);
+    layout->setContentsMargins(Theme::Dim::SpaceSm, 0, Theme::Dim::SpaceSm, 0);
+    layout->setSpacing(Theme::Dim::SpaceSm);
+    layout->addStretch(1);
+
+    // The switch is the stored `enabled` flag, not the derived state: a
+    // scheduled policy is still enabled while it is outside its window.
+    auto *toggle = new QCheckBox(cell);
+    toggle->setChecked(row.enabled);
+    toggle->setToolTip(row.enabled
+        ? QStringLiteral("Enabled — uncheck to pause this policy")
+        : QStringLiteral("Paused — check to enable this policy"));
+    connect(toggle, &QCheckBox::toggled, this, [this, id = row.id](bool enabled) {
+        emit policyEnabledChangeRequested(id, enabled);
+    });
+    layout->addWidget(toggle);
+
+    auto *remove = new QToolButton(cell);
+    remove->setText(QStringLiteral("Delete"));
+    remove->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    remove->setProperty("uiRole", QStringLiteral("rowAction"));
+    remove->setProperty("tone", QStringLiteral("danger"));
+    remove->setCursor(Qt::PointingHandCursor);
+    remove->setToolTip(QStringLiteral(
+        "Delete this policy and withdraw the rules attributed to it"));
+    connect(remove, &QToolButton::clicked, this, [this, id = row.id]() {
+        emit policyDeleteRequested(id);
+    });
+    layout->addWidget(remove);
+
     return cell;
 }
 

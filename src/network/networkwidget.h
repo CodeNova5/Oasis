@@ -84,6 +84,12 @@ signals:
     // notification coordinator never rate-limits it away.
     void enforcementFailed(const QString &policyId, const QString &executablePath,
                            const QString &message);
+    // Screen — Policies: a write through this widget changed the stored set, so
+    // a host screen can re-read it instead of guessing what happened.
+    void policiesChanged();
+    // Screen — Policies: one reconciliation pass finished, whether it was asked
+    // for (Verify) or triggered by a policy change.
+    void policyReconciliationFinished(const ReconciliationReport &report);
 
 private slots:
     void onAdapterChanged(int idx);
@@ -172,6 +178,20 @@ public:
     void showPolicyEditorFor(quint32 pid, const QString &executablePath,
                              const QString &processName = QString());
     void showPolicies();
+
+    // Screen — Policies (docs/POLICIES_PAGE_PLAN.md, Phase 4). Every write the
+    // page performs goes through one of these, so the store, audit log,
+    // scheduler and reconciliation stay the only path a policy change takes.
+    void createPolicy();
+    // Compares the stored policies with what Windows enforces. A session whose
+    // firewall is unavailable gets a failure report rather than a silent no-op.
+    void verifyPolicies();
+    // Enables or pauses one stored policy. Emits policiesChanged() even when the
+    // write fails, so a screen renders the state that was actually saved.
+    void setPolicyEnabled(const QString &policyId, bool enabled);
+    // Confirms, then deletes one stored policy and schedules the withdrawal of
+    // the rules attributed to it.
+    void deletePolicy(const QString &policyId);
     // Most recent DNS/SNI name observed for the process, when one exists. The
     // out parameter receives its plain confidence label (Confirmed/Likely/...).
     QString primaryDestinationForPid(quint32 pid,

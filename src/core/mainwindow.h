@@ -204,6 +204,9 @@ private:
     ApplicationsPage  *m_applications = nullptr;
     ConnectionsPage   *m_connections = nullptr;
     PoliciesPage      *m_policies = nullptr;
+    // True between a user pressing Verify and that pass reporting, so a
+    // background reconciliation pass does not open a banner nobody asked for.
+    bool               m_policyVerifyRequested = false;
     quint64            m_overviewRxRate = 0;
     quint64            m_overviewTxRate = 0;
     bool               m_overviewHasData = false;

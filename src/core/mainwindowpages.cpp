@@ -293,6 +293,52 @@ void MainWindow::setupPolicies()
     if (!m_policies)
         return;
 
+    if (m_netWidget) {
+        connect(m_policies, &PoliciesPage::verifyRequested, this, [this]() {
+            m_policyVerifyRequested = true;
+            m_netWidget->verifyPolicies();
+        });
+        connect(m_policies, &PoliciesPage::createRequested, this, [this]() {
+            m_netWidget->createPolicy();
+        });
+        connect(m_policies, &PoliciesPage::policyEnabledChangeRequested, this,
+                [this](const QString &policyId, bool enabled) {
+            m_netWidget->setPolicyEnabled(policyId, enabled);
+        });
+        connect(m_policies, &PoliciesPage::policyDeleteRequested, this,
+                [this](const QString &policyId) {
+            m_netWidget->deletePolicy(policyId);
+        });
+
+        // A write through NetworkWidget is the only thing that changes the
+        // stored set, so its signal is what keeps this screen current.
+        connect(m_netWidget, &NetworkWidget::policiesChanged,
+                this, &MainWindow::refreshPolicies);
+
+        connect(m_netWidget, &NetworkWidget::policyReconciliationFinished, this,
+                [this](const ReconciliationReport &report) {
+            const QDateTime when = QDateTime::currentDateTime();
+            QSettings().setValue(QStringLiteral("Oasis/Policies/LastVerified"),
+                                 when.toString(Qt::ISODate));
+            m_policies->setLastVerified(when);
+
+            // An explicit Verify explains itself; a pass triggered by a policy
+            // change only updates the timestamp.
+            if (m_policyVerifyRequested) {
+                m_policyVerifyRequested = false;
+                m_policies->showVerificationResult(
+                    report.ok(), report.summary(),
+                    report.lines().join(QLatin1Char('\n')));
+            }
+            refreshPolicies();
+        });
+    }
+
+    const QDateTime lastVerified = QDateTime::fromString(
+        QSettings().value(QStringLiteral("Oasis/Policies/LastVerified")).toString(),
+        Qt::ISODate);
+    m_policies->setLastVerified(lastVerified);
+
     // Navigation refreshes the page, so the counts are derived from the store
     // each time it is shown. The page owns no store read of its own.
     refreshPolicies();
@@ -320,6 +366,7 @@ void MainWindow::refreshPolicies()
 
         Policies::Row row;
         row.id = policy.id;
+        row.enabled = policy.enabled;
         // The shell icon cache resolves once per executable path, so a policy
         // whose app is not running still shows the app's own icon.
         if (m_netWidget)
