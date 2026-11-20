@@ -234,7 +234,21 @@ NetworkWidget::NetworkWidget(QWidget *parent)
             this, &NetworkWidget::onPolicyReconciliationFinished);
     if (m_firewall->isInitialized()) {
         QTimer::singleShot(8000, this, [this]() {
-            m_policyReconciler->requestReconciliation(m_runningGroupPaths);
+            // Verification of the persisted set runs a PowerShell round trip on
+            // the throttle worker, so it can still be in flight here. Reconciling
+            // against the set it is about to correct would miss a limit that then
+            // needs re-applying, so the pass starts only after that result lands.
+            // The timer stays as the minimum settle delay; it is not a deadline.
+            if (!m_throttlePolicies->startupVerificationPending()) {
+                m_policyReconciler->requestReconciliation(m_runningGroupPaths);
+                return;
+            }
+            connect(m_throttlePolicies,
+                    &ThrottlePolicyManager::startupVerificationFinished,
+                    this, [this]() {
+                        m_policyReconciler->requestReconciliation(m_runningGroupPaths);
+                    },
+                    Qt::SingleShotConnection);
         });
     }
 

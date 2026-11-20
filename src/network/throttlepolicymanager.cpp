@@ -153,9 +153,13 @@ ThrottlePolicyManager::ThrottlePolicyManager(QObject *parent)
     m_thread->start();
 
     // Drop persisted policies that no longer exist in Windows — queried off the
-    // GUI thread so a long policy list cannot stall startup.
-    if (!m_activePolicies.isEmpty())
+    // GUI thread so a long policy list cannot stall startup. The flag is cleared
+    // when that result arrives, so reconciliation can wait for this set to settle
+    // instead of planning against state that is about to be corrected.
+    if (!m_activePolicies.isEmpty()) {
+        m_startupVerifyPending = true;
         emit verifyRequested(policySnapshot());
+    }
 
     // One-time startup sweep. A QoS policy outlives the process that created
     // it, so a crash, a settings reset, or an older build can leave limits
@@ -405,6 +409,11 @@ void ThrottlePolicyManager::onWorkerVerified(const QStringList &existingPolicyId
     if (changed) save();
     // Whatever survived the check is still limited on the way down.
     rebuildDownloadLimits();
+
+    if (m_startupVerifyPending) {
+        m_startupVerifyPending = false;
+        emit startupVerificationFinished();
+    }
 }
 
 void ThrottlePolicyManager::onWorkerOrphansPruned(const ThrottleResult &result,

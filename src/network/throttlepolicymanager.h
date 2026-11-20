@@ -76,6 +76,11 @@ public:
     // Purely a cache lookup, no PowerShell involved.
     bool isThrottled(const QString &executablePath) const;
 
+    // True until the startup verification of the persisted set has reported.
+    // Policy reconciliation waits for it, so a pass never plans against an
+    // active set that verification is about to correct.
+    bool startupVerificationPending() const { return m_startupVerifyPending; }
+
     // Read-only views for policy reconciliation (NG-024). Paths are normalized
     // the same way as isThrottled(); the auto-applied set is the subset the
     // product may take back without touching a user-requested limit.
@@ -100,6 +105,9 @@ public:
 
 signals:
     void throttleApplied(const QString &executablePath, const ThrottleResult &result);
+    // The startup verification of the persisted set has finished, whether or not
+    // it changed anything.
+    void startupVerificationFinished();
     void throttleRemoved(const QString &executablePath, const ThrottleResult &result);
     void throttlesRestored(const ThrottleResult &result);
     // The WinDivert download shaper could not start, or stopped working.
@@ -143,6 +151,7 @@ private:
     // still reports its own result.
     QSet<QString> m_inFlight;
     bool m_restoreInFlight = false;
+    bool m_startupVerifyPending = false;
     QStringList m_restoringPaths;
     QThread *m_thread = nullptr;
     ThrottleWorker *m_worker = nullptr;

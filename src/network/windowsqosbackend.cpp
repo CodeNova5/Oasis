@@ -72,19 +72,30 @@ ThrottleResult WindowsQosThrottleBackend::apply(const ThrottleRequest &request)
     }
 
     const QString policyName = makePolicyName(request);
-    // Applying a limit is idempotent: a policy with this name can already exist
-    // from an earlier session or a previous apply, and New-NetQosPolicy refuses
-    // to create a duplicate. Replace it so the new rate always takes effect.
+    // A limit is installed without -PolicyStore, which writes it to the local
+    // computer's persistent policy store. ActiveStore is in-memory and is gone
+    // after a reboot (Microsoft: "If a policy is stored in ActiveStore, then the
+    // policy does not persist after restart"), so a persisted limit is what keeps
+    // enforcement in place across a restart instead of relying on reconciliation
+    // to re-create it.
+    //
+    // Applying is idempotent: a policy with this name can already exist from an
+    // earlier session or a previous apply, and New-NetQosPolicy refuses to create
+    // a duplicate. Replace it so the new rate always takes effect, and drop a
+    // copy an older build left in ActiveStore so the two cannot both match.
     const QString script = QString(
         "$ErrorActionPreference = 'Stop'; "
         "$name = %1; "
-        "$existing = Get-NetQosPolicy -Name $name -PolicyStore ActiveStore "
+        "$persisted = Get-NetQosPolicy -Name $name -ErrorAction SilentlyContinue; "
+        "if ($null -ne $persisted) { "
+        "Remove-NetQosPolicy -Name $name -Confirm:$false | Out-Null }; "
+        "$legacy = Get-NetQosPolicy -Name $name -PolicyStore ActiveStore "
         "-ErrorAction SilentlyContinue; "
-        "if ($null -ne $existing) { "
+        "if ($null -ne $legacy) { "
         "Remove-NetQosPolicy -Name $name -PolicyStore ActiveStore "
         "-Confirm:$false | Out-Null }; "
         "New-NetQosPolicy -Name $name -AppPathNameMatchCondition %2 "
-        "-ThrottleRateActionBitsPerSecond %3 -PolicyStore ActiveStore | Out-Null")
+        "-ThrottleRateActionBitsPerSecond %3 | Out-Null")
         .arg(quotePowerShell(policyName))
         .arg(quotePowerShell(executable.absoluteFilePath()))
         .arg(request.limitBitsPerSecond);
@@ -100,9 +111,25 @@ ThrottleResult WindowsQosThrottleBackend::remove(const QString &policyId)
         return {ThrottleStatus::NotApplied, policyId, "No policy identifier was supplied.", true};
     }
 
+    // Remove whichever copy holds this name: the persistent one this build
+    // installs, or the in-memory ActiveStore one an older build left behind.
+    // Removing a name that is already gone is not a failure, so a retried or
+    // repeated removal reports the same result.
     const QString script = QString(
         "$ErrorActionPreference = 'Stop'; "
-        "Remove-NetQosPolicy -Name %1 -PolicyStore ActiveStore -Confirm:$false")
+        "$name = %1; "
+        "$removed = $false; "
+        "$persisted = Get-NetQosPolicy -Name $name -ErrorAction SilentlyContinue; "
+        "if ($null -ne $persisted) { "
+        "Remove-NetQosPolicy -Name $name -Confirm:$false | Out-Null; "
+        "$removed = $true }; "
+        "$legacy = Get-NetQosPolicy -Name $name -PolicyStore ActiveStore "
+        "-ErrorAction SilentlyContinue; "
+        "if ($null -ne $legacy) { "
+        "Remove-NetQosPolicy -Name $name -PolicyStore ActiveStore "
+        "-Confirm:$false | Out-Null; "
+        "$removed = $true }; "
+        "if ($removed) { 'QoS policy removed.' } else { 'No QoS policy was present.' }")
         .arg(quotePowerShell(policyId));
     return runPowerShell(script, ThrottleStatus::Removed, policyId);
 }
@@ -111,10 +138,16 @@ bool WindowsQosThrottleBackend::isApplied(const QString &policyId) const
 {
     if (policyId.isEmpty()) return false;
 
+    // The persistent store is asked first, then ActiveStore, so a limit an older
+    // build left in memory is still recognised (and not needlessly re-applied)
+    // during the first launch after the upgrade.
     const QString script = QString(
         "$ErrorActionPreference = 'Stop'; "
-        "$policy = Get-NetQosPolicy -Name %1 -PolicyStore ActiveStore "
-        "-ErrorAction SilentlyContinue; "
+        "$name = %1; "
+        "$policy = Get-NetQosPolicy -Name $name -ErrorAction SilentlyContinue; "
+        "if ($null -eq $policy) { "
+        "$policy = Get-NetQosPolicy -Name $name -PolicyStore ActiveStore "
+        "-ErrorAction SilentlyContinue }; "
         "if ($null -ne $policy) { $policy.Name }")
         .arg(quotePowerShell(policyId));
     const ThrottleResult result = runPowerShell(script, ThrottleStatus::Applied, policyId);
@@ -140,6 +173,9 @@ ThrottleResult WindowsQosThrottleBackend::pruneOrphans(const QStringList &knownP
         return result;
     }
 
+    // ActiveStore is the effective view, so this sweep sees both the persistent
+    // policies this build installs and anything an older build left in memory.
+    // remove() targets whichever store actually holds each name.
     const QString script = QString(
         "$ErrorActionPreference = 'Stop'; "
         "Get-NetQosPolicy -PolicyStore ActiveStore -ErrorAction SilentlyContinue | "

@@ -452,7 +452,13 @@ void PolicyEditorDialog::buildUi()
         - m_scroll->sizeHint().height() + 2 * 28;
     const QRect available = screen() ? screen()->availableGeometry()
                                      : QRect(0, 0, 1080, 720);
-    m_scroll->setMaximumHeight(qMax(240, available.height() - chrome - 8));
+    const int cap = qMax(240, available.height() - chrome - 8);
+    m_scroll->setMaximumHeight(cap);
+    // A wizard step holds one section, so without a floor the card collapses to
+    // the height of two fields and the chrome dominates it. The floor also
+    // stops the dialog jumping every time the step changes.
+    if (!m_editing)
+        m_scroll->setMinimumHeight(qMin(320, cap));
 }
 
 QString PolicyEditorDialog::processBadgeText() const
