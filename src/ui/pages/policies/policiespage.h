@@ -1,40 +1,79 @@
 /**
  * @file    policiespage.h
- * @brief   Screen — Policies (docs/POLICIES_PAGE_PLAN.md, Phase 1).
+ * @brief   Screen — Policies (docs/POLICIES_PAGE_PLAN.md, Phases 1-2).
  *
- * The skeleton of the Policies screen: the page-body toolbar, the KPI row and
- * the empty state. The shell derives the counts from `PolicyStore` and the
- * activation rules and hands them over; the page itself never reads the store,
- * applies a policy or reconciles anything, so it cannot become a second
- * enforcement path.
+ * The KPI row, the filter bar and a read-only policy table. The shell derives
+ * every cell from `PolicyStore`, the activation rules and the scope helpers and
+ * hands display-ready rows over; the page itself never reads the store, applies
+ * a policy or reconciles anything, so it cannot become a second enforcement
+ * path.
  *
- * Phase 1 deliberately has no table and no working actions. The buttons are
- * disabled until the row actions and Verify wiring land in a later phase; the
- * signals are declared here so that phase only has to enable them.
+ * The status shown per row is deliberately one of six states rather than the
+ * raw scheduler state: a scheduled policy reads `Scheduled` whether or not its
+ * window is open, and the reason line says which. `Stored only` and
+ * `Unsupported` are separate states so neither is silently merged into another
+ * bucket.
+ *
+ * Editing, toggling and verification arrive in a later phase; the toolbar and
+ * the actions column are present but inert.
  *
  * @author  Oasis
  */
 #pragma once
 
+#include <QList>
+#include <QString>
 #include <QWidget>
 
 class EmptyStateWidget;
 class MetricCard;
+class QButtonGroup;
 class QFrame;
 class QLabel;
+class QLineEdit;
 class QPushButton;
+class QTableWidget;
+class QToolButton;
 class QVBoxLayout;
 
 namespace Policies {
 
-/// What the KPI strip shows. Counted by the shell, which is the only place
-/// that knows how a stored policy maps to a live state.
-struct Summary
+/// How a row reads in the table. Derived by the shell, not by the page.
+enum class Status {
+    Active,       // enforced now, no window
+    Scheduled,    // has a recurring window; the reason says if it is open
+    Disabled,     // the user's switch is off
+    StoredOnly,   // saved, but this build cannot enforce the scope
+    Expired,      // its expiration has passed
+    Unsupported   // the window cannot be parsed
+};
+
+enum class Filter {
+    All,
+    Active,
+    Scheduled,
+    Disabled,
+    StoredOnly,
+    Expired,
+    Unsupported
+};
+
+QString statusLabel(Status status);
+QString filterLabel(Filter filter);
+Filter filterFor(Status status);
+
+/// A display-ready policy row. Every string is final; the page only lays out.
+struct Row
 {
-    int active = 0;           // enforced right now
-    int scheduledPaused = 0;  // in a window, disabled, or expired
-    int storedOnly = 0;       // active, but this build cannot enforce the scope
-    int total = 0;            // every stored policy
+    QString id;
+    QString name;          // executable name, group, publisher, service or PID
+    QString subtitle;      // stored note, or what the target is
+    QString tooltip;       // full target and note
+    QString effect;        // "Throttle to 0.40 Mbit/s, both directions"
+    QString window;        // "Always" or the stored window
+    QString expires;       // "No expiration" or the countdown
+    Status status = Status::Active;
+    QString statusReason;  // why the row reads the way it does
 };
 
 } // namespace Policies
@@ -46,21 +85,35 @@ class PoliciesPage : public QWidget
 public:
     explicit PoliciesPage(QWidget *parent = nullptr);
 
-    /// Replaces the KPI counts and switches between the empty state and the
-    /// "list is being rebuilt" card.
-    void setSummary(const Policies::Summary &summary);
+    /// Replaces every row. KPI counts and pill counts are derived from the
+    /// rows here, so the strip and the table can never disagree.
+    void setRows(const QList<Policies::Row> &rows);
 
 signals:
-    /// Emitted by the page-body toolbar. Unused in Phase 1 because both
-    /// buttons are disabled; the shell wires them when the actions exist.
+    /// Emitted by the page-body toolbar. The buttons are still disabled; the
+    /// shell wires these when the actions exist.
     void verifyRequested();
     void createRequested();
 
 private:
     void buildToolbar(QVBoxLayout *root);
     void buildMetrics(QVBoxLayout *root);
-    void buildContent(QVBoxLayout *root);
+    void buildFilterBar(QVBoxLayout *root);
+    void buildTable(QVBoxLayout *root);
+    void buildEmptyStates(QVBoxLayout *root);
+
+    void setFilter(Policies::Filter filter);
+    void applyFilters();
+    void refreshPills();
     void refreshContent();
+    void refreshCounts();
+    int countFor(Policies::Filter filter) const;
+
+    void populateTable(const QList<Policies::Row> &rows);
+    QWidget *applicationCell(const Policies::Row &row);
+    QWidget *statusCell(const Policies::Row &row);
+    static QWidget *textCell(const QString &primary, const QString &secondary,
+                             const QString &tooltip);
 
     MetricCard *m_activeCard = nullptr;
     MetricCard *m_scheduledCard = nullptr;
@@ -69,12 +122,19 @@ private:
     QPushButton *m_verifyButton = nullptr;
     QPushButton *m_createButton = nullptr;
 
+    QWidget *m_filterBar = nullptr;
+    QLineEdit *m_search = nullptr;
+    QButtonGroup *m_pillGroup = nullptr;
+    // Indexed by Policies::Filter, so a pill is found from the filter it sets.
+    QList<QToolButton *> m_pills;
+
+    QTableWidget *m_table = nullptr;
     QWidget *m_emptyHost = nullptr;
     EmptyStateWidget *m_empty = nullptr;
-    QWidget *m_storedCardHost = nullptr;
-    QFrame *m_storedCard = nullptr;
-    QLabel *m_storedTitle = nullptr;
-    QLabel *m_storedDetail = nullptr;
+    QWidget *m_noMatchHost = nullptr;
+    EmptyStateWidget *m_noMatch = nullptr;
 
-    Policies::Summary m_summary;
+    QList<Policies::Row> m_rows;
+    Policies::Filter m_filter = Policies::Filter::All;
+    QString m_query;
 };

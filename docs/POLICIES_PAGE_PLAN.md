@@ -4,9 +4,9 @@ Plan for building the redesigned Policies screen from `Policies Page.html` on
 top of the existing policy backend. Every capability below was checked against
 the source; line numbers are approximate and refer to this revision.
 
-Status: **Phases 1 and 3 are implemented.** Phase 1 is the Policies screen
-skeleton; Phase 3 is the configurable throttle rate. Phases 2, 4 and 5 have not
-been started.
+Status: **Phases 1, 2 and 3 are implemented.** Phase 1 is the Policies screen
+skeleton, Phase 2 the read-only table with filters and search, Phase 3 the
+configurable throttle rate. Phases 4 and 5 have not been started.
 
 ---
 
@@ -125,16 +125,23 @@ Each phase compiles and runs on its own.
 counts, the page-body toolbar (buttons disabled until Phase 4) and the empty
 state. Not compiled in this environment at the author's request.
 
-### Phase 2 — Read-only table
+### Phase 2 — Read-only table — DONE
 
-- `policiespage_models.{h,cpp}` following the `applicationspage_models` pattern.
 - Columns: Application, Action & Limit, Window/Expires, Status & reason,
-  Actions (read-only in this phase).
-- Filter pills with counts and search over name, target, description, scope.
-- Stored-only and unsupported states get their own labels; no silent merging.
+  Actions (a dash in this phase).
+- Filter pills with counts and search over name, note, effect, window, expiry
+  and status; the Unsupported pill appears only when a policy is in that state.
+- The KPI cards set the matching filter when clicked.
+- Stored-only and unsupported states get their own badges and reasons; no
+  silent merging. Six row states: Active, Scheduled, Disabled, Stored only,
+  Expired, Unsupported.
+- The table is built in `policiespage.cpp` with `QTableWidget` cell widgets,
+  so `policiespage_models` was not needed; the badge tint comes from the shared
+  `StatusBadge` component.
 
-*Done when:* every stored policy renders with the correct derived state and
-search/filter behave.
+*Done:* rows are derived by the shell in `MainWindow::refreshPolicies()` and
+rendered by the page; counts, pills and table all read from the same row list.
+Not compiled in this environment at the author's request.
 
 ### Phase 3 — Real throttle rates (backend, independent of the UI) — DONE
 

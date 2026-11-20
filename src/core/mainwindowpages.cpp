@@ -12,6 +12,8 @@
  */
 #include "mainwindow_p.h"
 
+#include <algorithm>
+
 void MainWindow::setupWidgets()
 {
     m_netWidget = new NetworkWidget(this);
@@ -301,27 +303,97 @@ void MainWindow::refreshPolicies()
     if (!m_policies)
         return;
 
-    // A policy counts as active only while it is in force: the scheduler's own
-    // evaluation decides that, so a window boundary or an expiry is reflected
-    // without the page knowing anything about time.
-    Policies::Summary summary;
     const QDateTime now = QDateTime::currentDateTime();
     const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
-    summary.total = policies.size();
+
+    QList<Policies::Row> rows;
+    rows.reserve(policies.size());
 
     for (const NetworkPolicy &policy : policies) {
-        if (policyActivationAt(policy, now) != PolicyActivationState::Active) {
-            ++summary.scheduledPaused;
-            continue;
+        const PolicyActivationState state = policyActivationAt(policy, now);
+        const QString target = policy.targetId.trimmed();
+        const QString scope = policy.scope.trimmed().toLower();
+        const QString note = policy.description.trimmed();
+        const bool storedOnly = policyEnforcementSummary(policy)
+                                    .startsWith(QStringLiteral("Stored only"),
+                                                Qt::CaseInsensitive);
+
+        Policies::Row row;
+        row.id = policy.id;
+
+        // Name the target the way the scope reads, so a user never has to parse
+        // a path to tell what the policy covers.
+        QString targetDetail;
+        if (scope == QLatin1String("path") || scope == QLatin1String("executable")) {
+            row.name = QFileInfo(target).fileName();
+            targetDetail = target;
+        } else if (scope == QLatin1String("pid")) {
+            row.name = QStringLiteral("PID %1").arg(target);
+            targetDetail = QStringLiteral("This process instance");
+        } else if (scope == QLatin1String("service")) {
+            row.name = target;
+            targetDetail = QStringLiteral("Windows service");
+        } else if (scope == QLatin1String("publisher")) {
+            row.name = target;
+            targetDetail = QStringLiteral("Publisher");
+        } else if (scope == QLatin1String("group")) {
+            row.name = target;
+            targetDetail = QStringLiteral("Application group");
+        } else {
+            row.name = target;
+            targetDetail = scope;
         }
-        if (policyEnforcementSummary(policy).startsWith(QStringLiteral("Stored only"),
-                                                       Qt::CaseInsensitive))
-            ++summary.storedOnly;
-        else
-            ++summary.active;
+        if (row.name.isEmpty())
+            row.name = QStringLiteral("Unnamed policy");
+
+        row.subtitle = note.isEmpty() ? targetDetail : note;
+        row.tooltip = target;
+        if (!note.isEmpty() && note != target)
+            row.tooltip += QLatin1Char('\n') + note;
+
+        row.effect = policyEffectSummary(policy.action, policy.direction,
+                                         policy.rateBitsPerSecond);
+        row.window = policy.schedule.trimmed().isEmpty()
+                         ? QStringLiteral("Always")
+                         : policy.schedule.trimmed();
+        row.expires = policyExpirationSummary(policy.expiration, now);
+
+        // The status is one of six readable states. Disabled wins because the
+        // user switch is the clearest fact, then an unenforceable scope, then
+        // the time-based states.
+        if (state == PolicyActivationState::Disabled) {
+            row.status = Policies::Status::Disabled;
+            row.statusReason = QStringLiteral("Policy switch is off — no rules enforced");
+        } else if (storedOnly) {
+            row.status = Policies::Status::StoredOnly;
+            row.statusReason = policyEnforcementSummary(policy);
+        } else if (state == PolicyActivationState::Expired) {
+            row.status = Policies::Status::Expired;
+            row.statusReason = QStringLiteral("Expiration has passed — the rule is withdrawn");
+        } else if (state == PolicyActivationState::Unsupported) {
+            row.status = Policies::Status::Unsupported;
+            row.statusReason = QStringLiteral(
+                "The recurring window cannot be parsed, so the policy stays inactive");
+        } else if (!policy.schedule.trimmed().isEmpty()) {
+            row.status = Policies::Status::Scheduled;
+            row.statusReason = state == PolicyActivationState::Active
+                                   ? QStringLiteral("In window — enforcing now")
+                                   : QStringLiteral("Outside window — not enforcing");
+        } else {
+            row.status = Policies::Status::Active;
+            row.statusReason = QStringLiteral(
+                "Enforced live via Windows Firewall / QoS");
+        }
+
+        rows.append(row);
     }
 
-    m_policies->setSummary(summary);
+    std::sort(rows.begin(), rows.end(),
+              [](const Policies::Row &left, const Policies::Row &right) {
+        return left.name.compare(right.name, Qt::CaseInsensitive) < 0;
+    });
+
+    m_policies->setRows(rows);
 }
 
 void MainWindow::refreshConnections()
