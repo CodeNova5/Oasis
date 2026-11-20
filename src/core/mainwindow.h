@@ -40,6 +40,7 @@ class OverviewPage;
 class ActivityPage;
 class ApplicationsPage;
 class ConnectionsPage;
+class PoliciesPage;
 class SettingsPage;
 class QStackedWidget;
 struct BandwidthEvent;
@@ -106,6 +107,10 @@ private slots:
     // Connections (Screen 05): grouped destinations from the same beat.
     void refreshConnections();
 
+    // Policies (docs/POLICIES_PAGE_PLAN.md): the shell derives each stored
+    // policy's live state and hands the counts to the page.
+    void refreshPolicies();
+
     void onExportHistory();
     void onClearHistory();
     void onHistoryFilterChanged(int index);
@@ -141,6 +146,7 @@ private:
     void setupActivity();
     void setupApplications();
     void setupConnections();
+    void setupPolicies();
 
     // The one-second beat only refreshes the screen that is on top; every other
     // screen is refreshed when it is navigated to. These helpers decide which
@@ -197,6 +203,7 @@ private:
     OverviewPage      *m_overview = nullptr;
     ApplicationsPage  *m_applications = nullptr;
     ConnectionsPage   *m_connections = nullptr;
+    PoliciesPage      *m_policies = nullptr;
     quint64            m_overviewRxRate = 0;
     quint64            m_overviewTxRate = 0;
     bool               m_overviewHasData = false;

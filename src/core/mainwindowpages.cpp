@@ -286,6 +286,44 @@ void MainWindow::setupConnections()
     refreshConnections();
 }
 
+void MainWindow::setupPolicies()
+{
+    if (!m_policies)
+        return;
+
+    // Navigation refreshes the page, so the counts are derived from the store
+    // each time it is shown. The page owns no store read of its own.
+    refreshPolicies();
+}
+
+void MainWindow::refreshPolicies()
+{
+    if (!m_policies)
+        return;
+
+    // A policy counts as active only while it is in force: the scheduler's own
+    // evaluation decides that, so a window boundary or an expiry is reflected
+    // without the page knowing anything about time.
+    Policies::Summary summary;
+    const QDateTime now = QDateTime::currentDateTime();
+    const QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    summary.total = policies.size();
+
+    for (const NetworkPolicy &policy : policies) {
+        if (policyActivationAt(policy, now) != PolicyActivationState::Active) {
+            ++summary.scheduledPaused;
+            continue;
+        }
+        if (policyEnforcementSummary(policy).startsWith(QStringLiteral("Stored only"),
+                                                       Qt::CaseInsensitive))
+            ++summary.storedOnly;
+        else
+            ++summary.active;
+    }
+
+    m_policies->setSummary(summary);
+}
+
 void MainWindow::refreshConnections()
 {
     if (!m_connections || !m_netWidget)
@@ -420,6 +458,8 @@ void MainWindow::refreshVisiblePage()
         refreshConnections();
     } else if (current == m_activity) {
         renderActivityPanel();
+    } else if (current == m_policies) {
+        refreshPolicies();
     }
 }
 

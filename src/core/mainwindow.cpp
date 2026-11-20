@@ -44,6 +44,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupActivity();
     setupApplications();
     setupConnections();
+    setupPolicies();
 
     ui->cmbOverlayRamFormat->setCurrentIndex(0);
 
@@ -341,13 +342,11 @@ void MainWindow::buildShell()
               QStringLiteral("Domains, IPs and evidence"));
     m_connectionsIndex = m_screenTitles.size() - 1;
 
-    // The legacy tabs behind these destinations (Policies, Data Saver, History,
-    // Hardware, Settings) are detached and excluded from the build. Their
-    // services keep running; only the screens are gone until each is rebuilt.
-    addScreen(QStringLiteral("Policies"),
-              makePlaceholderPage(QStringLiteral("Policies"),
-                  QStringLiteral("The rule editor is being rebuilt as a dedicated screen. "
-                                 "Policies already stored continue to be enforced.")),
+    // The legacy tabs behind these destinations (Data Saver, History, Hardware,
+    // Settings) are detached and excluded from the build. Their services keep
+    // running; only the screens are gone until each is rebuilt.
+    m_policies = new PoliciesPage;
+    addScreen(QStringLiteral("Policies"), m_policies,
               QStringLiteral("Policies"),
               QStringLiteral("Rules and enforcement status"));
     m_policiesIndex = m_screenTitles.size() - 1;

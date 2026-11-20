@@ -42,6 +42,7 @@ SOURCES += \
     src/ui/pages/activity/activitypage.cpp \
     src/ui/pages/applications/applicationspage.cpp \
     src/ui/pages/applications/applicationspage_models.cpp \
+    src/ui/pages/policies/policiespage.cpp \
     src/ui/pages/connections/connectionspage.cpp \
     src/ui/pages/connections/connectionstable.cpp \
     src/ui/pages/activity/activitytimeline.cpp \
@@ -141,6 +142,7 @@ HEADERS += \
     src/ui/pages/activity/activitypage.h \
     src/ui/pages/applications/applicationspage.h \
     src/ui/pages/applications/applicationspage_p.h \
+    src/ui/pages/policies/policiespage.h \
     src/ui/pages/connections/connectionspage.h \
     src/ui/pages/connections/connectionstable.h \
     src/ui/pages/connections/connectionicons.h \

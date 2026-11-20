@@ -4,8 +4,9 @@ Plan for building the redesigned Policies screen from `Policies Page.html` on
 top of the existing policy backend. Every capability below was checked against
 the source; line numbers are approximate and refer to this revision.
 
-Status: **Phase 3 (configurable throttle rate) is implemented.** Phases 1, 2, 4
-and 5 have not been started.
+Status: **Phases 1 and 3 are implemented.** Phase 1 is the Policies screen
+skeleton; Phase 3 is the configurable throttle rate. Phases 2, 4 and 5 have not
+been started.
 
 ---
 
@@ -107,7 +108,7 @@ Fixed-rate copy removed in the same change:
 
 Each phase compiles and runs on its own.
 
-### Phase 1 — Skeleton (no backend change)
+### Phase 1 — Skeleton (no backend change) — DONE
 
 - New `src/ui/pages/policies/policiespage.{h,cpp}`.
 - Replace the placeholder at `m_policiesIndex` in `src/core/mainwindow.cpp`.
@@ -120,8 +121,9 @@ Each phase compiles and runs on its own.
 - Declare the class in `src/core/mainwindow.h` / `mainwindow_p.h`, add sources to
   `Oasis.pro`.
 
-*Done when:* the screen shows real counts and an empty state, and the old
-placeholder no longer appears.
+*Done:* the placeholder is replaced by `PoliciesPage`, which shows the KPI
+counts, the page-body toolbar (buttons disabled until Phase 4) and the empty
+state. Not compiled in this environment at the author's request.
 
 ### Phase 2 — Read-only table
 

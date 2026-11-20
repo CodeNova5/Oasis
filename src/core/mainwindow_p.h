@@ -20,6 +20,7 @@
 #include "ui/pages/activity/activitypage.h"
 #include "ui/pages/applications/applicationspage.h"
 #include "ui/pages/connections/connectionspage.h"
+#include "ui/pages/policies/policiespage.h"
 #include "ui/pages/settings/settingspage.h"
 #include "activity/detectionprofile.h"
 #include "ui/components/trafficchart.h"
