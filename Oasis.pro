@@ -41,6 +41,7 @@ SOURCES += \
     src/ui/pages/overview/overviewpage.cpp \
     src/ui/pages/activity/activitypage.cpp \
     src/ui/pages/applications/applicationspage.cpp \
+    src/ui/pages/applications/applicationspage_models.cpp \
     src/ui/pages/connections/connectionspage.cpp \
     src/ui/pages/connections/connectionstable.cpp \
     src/ui/pages/activity/activitytimeline.cpp \
@@ -53,6 +54,8 @@ SOURCES += \
     src/core/appinstaller.cpp \
     src/core/windowsicon.cpp \
     src/network/networkmonitor.cpp \
+    src/network/networkmonitor_adapters.cpp \
+    src/network/networkmonitor_caches.cpp \
     src/network/bandwidthguard.cpp \
     src/network/windowsqosbackend.cpp \
     src/network/windivertapi.cpp \
@@ -108,6 +111,7 @@ SOURCES += \
     src/identity/serviceresolver.cpp \
     src/identity/processlineage.cpp \
     src/identity/processgroupmanager.cpp \
+    src/identity/processgroupmanager_assign.cpp \
     src/identity/foregroundsignal.cpp \
     src/network/groupdetaildialog.cpp \
     src/firewall/firewallmanager.cpp \
@@ -136,6 +140,7 @@ HEADERS += \
     src/ui/pages/overview/overviewpage.h \
     src/ui/pages/activity/activitypage.h \
     src/ui/pages/applications/applicationspage.h \
+    src/ui/pages/applications/applicationspage_p.h \
     src/ui/pages/connections/connectionspage.h \
     src/ui/pages/connections/connectionstable.h \
     src/ui/pages/connections/connectionicons.h \
@@ -205,6 +210,7 @@ HEADERS += \
     src/identity/serviceresolver.h \
     src/identity/processlineage.h \
     src/identity/processgroupmanager.h \
+    src/identity/processgroupmanager_p.h \
     src/identity/foregroundsignal.h \
     src/network/groupdetaildialog.h \
     src/firewall/firewallmanager.h \
