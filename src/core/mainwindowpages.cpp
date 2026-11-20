@@ -70,25 +70,19 @@ void MainWindow::setupWidgets()
 
     connect(m_overlay, &TaskbarOverlay::exitRequested, qApp, &QApplication::quit);
 
-    // ── Global monitoring state → header pill and status bar ───────────────
+    // ── Global monitoring state → status bar ───────────────────────────────
     NetworkMonitor *monitor = m_netWidget->networkMonitor();
     connect(monitor, &NetworkMonitor::captureStarted, this, [this]() {
-        if (m_header)
-            m_header->setMonitoringState(AppHeader::MonitorState::Active);
         if (m_statusBar) {
             m_statusBar->setWarning(QString());
             m_statusBar->setMonitoringState(true, m_netWidget->activeAdapterDescription());
         }
     });
     connect(monitor, &NetworkMonitor::captureStopped, this, [this]() {
-        if (m_header)
-            m_header->setMonitoringState(AppHeader::MonitorState::Stopped);
         if (m_statusBar)
             m_statusBar->setMonitoringState(false);
     });
     connect(monitor, &NetworkMonitor::captureError, this, [this](const QString &msg) {
-        if (m_header)
-            m_header->setMonitoringState(AppHeader::MonitorState::Degraded);
         if (m_statusBar)
             m_statusBar->setWarning(
                 QStringLiteral("⚠ Capture error — open diagnostics"), true);

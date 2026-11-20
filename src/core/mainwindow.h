@@ -65,7 +65,6 @@ protected:
 
 private slots:
     void onToggleTheme();
-    void onMinimizeToTray();
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void onNetworkSpeed(quint64 rxBps, quint64 txBps);
     void onBandwidthAlert(const BandwidthEvent &event);

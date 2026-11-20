@@ -46,7 +46,6 @@ MainWindow::MainWindow(QWidget *parent)
     setupConnections();
 
     ui->cmbOverlayRamFormat->setCurrentIndex(0);
-    m_header->setDarkMode(ThemeManager::instance().isDark());
 
     connect(ui->chkRunAtStartup, &QCheckBox::toggled, this, [this](bool checked){
         applyRunAtStartup(checked);
@@ -389,13 +388,6 @@ void MainWindow::buildShell()
     });
 
     connect(m_sidebar, &AppSidebar::itemActivated, this, &MainWindow::navigateTo);
-    connect(m_header, &AppHeader::themeToggleRequested,
-            this, &MainWindow::onToggleTheme);
-    connect(m_header, &AppHeader::minimizeToTrayRequested,
-            this, &MainWindow::onMinimizeToTray);
-    connect(m_header, &AppHeader::monitoringPillActivated, this, [this]() {
-        navigateTo(m_settingsIndex);
-    });
     connect(m_statusBar, &SystemStatusBar::warningActivated, this, [this]() {
         navigateTo(m_settingsIndex);
     });

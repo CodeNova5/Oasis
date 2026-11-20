@@ -101,42 +101,6 @@
          </property>
         </spacer>
        </item>
-       <item>
-        <widget class="QLabel" name="liveBadge">
-         <property name="text">
-          <string>● LIVE</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="btnThemeToggle">
-         <property name="text">
-          <string>☀</string>
-         </property>
-         <property name="checkable">
-          <bool>true</bool>
-         </property>
-         <property name="fixedWidth" stdset="0">
-          <number>42</number>
-         </property>
-         <property name="fixedHeight" stdset="0">
-          <number>42</number>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="btnMinimizeToTray">
-         <property name="text">
-          <string>⊟</string>
-         </property>
-         <property name="fixedWidth" stdset="0">
-          <number>42</number>
-         </property>
-         <property name="fixedHeight" stdset="0">
-          <number>42</number>
-         </property>
-        </widget>
-       </item>
       </layout>
      </widget>
     </item>

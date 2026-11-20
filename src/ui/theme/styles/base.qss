@@ -172,16 +172,6 @@ QLabel#txLabel { color: @chart-upload; font-weight: 600; }
 QLabel#cpuLabel { color: @semantic-warning; font-weight: 600; }
 QLabel#ramLabel { color: @semantic-info; font-weight: 600; }
 
-QLabel#liveBadge {
-    background-color: @success-subtle;
-    color: @semantic-success;
-    border: 1px solid @semantic-success;
-    border-radius: @radius-control;
-    padding: @space-xs @space-sm;
-    font-size: @font-size-meta;
-    font-weight: 600;
-}
-
 QLabel#dropHint {
     color: @text-muted;
     background-color: @surface-window;

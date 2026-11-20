@@ -8,8 +8,8 @@
  * @author  Oasis
  *
  * MainWindow tray, notifications and live status: tray menu and activation,
- * theme toggle, minimize-to-tray, the network alert feed, data-saver actions,
- * hardware status and the silent background update check.
+ * theme toggle, the network alert feed, data-saver actions, hardware status
+ * and the silent background update check.
  */
 #include "mainwindow_p.h"
 
@@ -46,21 +46,7 @@ void MainWindow::onToggleTheme()
 {
     ThemeManager::instance().toggleTheme();
     m_theme = ThemeManager::instance().mode();
-    if (m_header)
-        m_header->setDarkMode(m_theme == ThemeManager::Dark);
     saveSettings();
-}
-
-void MainWindow::onMinimizeToTray()
-{
-    hide();
-    // A tray notice is not about an application, so following it would be wrong.
-    rememberNotificationSubject(0, QString(), QString());
-    AppNotification notification;
-    notification.key = QStringLiteral("tray-background");
-    notification.title = QStringLiteral("Oasis");
-    notification.message = QStringLiteral("Running in the background. Click the tray icon to restore.");
-    postNotification(notification);
 }
 
 void MainWindow::rememberNotificationSubject(quint32 pid, const QString &path,
