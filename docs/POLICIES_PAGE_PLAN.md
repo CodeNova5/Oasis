@@ -15,7 +15,7 @@ started.
 
 | Question | Decision |
 | --- | --- |
-| Create/edit flow | Reuse `PolicyEditorDialog`. Do not build the mock's 3-step app-first wizard. |
+| Create/edit flow | Reuse `PolicyEditorDialog`. Create now presents the mock's 3-step wizard (target / rule / schedule) over the same fields; edit stays a single view, like the mock's separate edit modal. Step 1 keeps the target field and Browse rather than the mock's detected-app catalog. |
 | Throttle rate | Make the stored rate the enforced rate. Remove the fixed 51.2 KB/s behaviour. |
 | Service/publisher scopes, Block direction | Leave as-is (stored-only / both directions). Document, do not fake. |
 | Verify and Create actions | Page-body toolbar, not the shell header. |
@@ -203,7 +203,9 @@ per-row editing (Edit still lives in the legacy Policies dialog).
 - Service and publisher scopes stay stored-only.
 - Block/Allow keep ignoring direction.
 - No import/export UI.
-- No 3-step wizard, no per-row rate popover.
+- No per-row rate popover.
+- The wizard's step 1 has no detected-app catalog or app search; it uses the
+  existing target field and executable browser.
 
 ---
 

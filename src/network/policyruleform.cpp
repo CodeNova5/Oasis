@@ -54,7 +54,8 @@ void PolicyRuleForm::buildUi()
     bodyLayout->setSpacing(20);
 
     // ── 1. Target & scope ─────────────────────────────────────────────────
-    auto *sectionTarget = new QWidget(this);
+    m_sectionTarget = new QWidget(this);
+    auto *sectionTarget = m_sectionTarget;
     auto *targetLayout = new QVBoxLayout(sectionTarget);
     targetLayout->setContentsMargins(0, 0, 0, 0);
     targetLayout->setSpacing(10);
@@ -121,9 +122,11 @@ void PolicyRuleForm::buildUi()
     divider->setObjectName(QStringLiteral("headerLine"));
     divider->setFixedHeight(1);
     bodyLayout->addWidget(divider);
+    m_sectionDivider = divider;
 
     // ── 2. Traffic action & limit ─────────────────────────────────────────
-    auto *sectionAction = new QWidget(this);
+    m_sectionAction = new QWidget(this);
+    auto *sectionAction = m_sectionAction;
     auto *actionLayout = new QVBoxLayout(sectionAction);
     actionLayout->setContentsMargins(0, 0, 0, 0);
     actionLayout->setSpacing(12);
@@ -452,6 +455,33 @@ void PolicyRuleForm::buildUi()
         if (m_accordionOpen)
             m_accordionBody->setMaximumHeight(QWIDGETSIZE_MAX);
     });
+}
+
+void PolicyRuleForm::setStep(int step)
+{
+    m_step = step;
+    const bool all = step == 0;
+    const bool review = step == 3;
+
+    m_sectionTarget->setVisible(all || step == 1);
+    // The divider exists only to separate stacked sections; a single wizard
+    // step has nothing to separate from.
+    m_sectionDivider->setVisible(all);
+    m_sectionAction->setVisible(all || step == 2);
+    m_accordion->setVisible(all || review);
+    m_impactCard->setVisible(all || review);
+
+    // In the review step the schedule fields are the point of the step, so the
+    // collapsible header (and its chevron) is dropped and the body is opened
+    // without animating.
+    m_accordionHeader->setVisible(!review);
+    if (review && !m_accordionOpen) {
+        m_accordionAnim->stop();
+        m_accordionOpen = true;
+        m_accordionBody->setMaximumHeight(QWIDGETSIZE_MAX);
+    }
+    applyTheme();
+    emit layoutChanged();
 }
 
 void PolicyRuleForm::loadPolicy(const NetworkPolicy &policy)

@@ -65,6 +65,10 @@ public:
     /// Copy the fields of an existing policy into the form (edit mode).
     void loadPolicy(const NetworkPolicy &policy);
 
+    /// Show one wizard step (1 target, 2 traffic rule, 3 schedule & review), or
+    /// all sections at once (0) for the single-view edit layout.
+    void setStep(int step);
+
     /// Text the dialog shows in the header badge; the PID and group previews
     /// reuse it so they name the thing the user recognises.
     void setTargetLabel(const QString &label) { m_targetLabel = label; }
@@ -119,6 +123,9 @@ private:
     PolicyTarget m_target;
     QString m_targetLabel;
 
+    QWidget *m_sectionTarget = nullptr;
+    QWidget *m_sectionDivider = nullptr;
+    QWidget *m_sectionAction = nullptr;
     QFrame *m_targetField = nullptr;
     QFrame *m_rateField = nullptr;
     QFrame *m_accordion = nullptr;
@@ -158,4 +165,5 @@ private:
 
     QPropertyAnimation *m_accordionAnim = nullptr;
     bool m_accordionOpen = false;
+    int m_step = 0;
 };

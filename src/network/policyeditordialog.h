@@ -7,11 +7,12 @@
  * that appear later inherit it. The risk text is a plain function rather than
  * widget state, so the wording can be checked without constructing a dialog.
  *
- * The visual layout follows `create_network_policy_modal_ui.html`: a 520 px
- * rounded card with an icon header, numbered sections, action cards, a
- * collapsible schedule group, and a live impact summary. Inter and JetBrains
- * Mono are bundled in `resources/fonts` and registered by ThemeManager, so the
- * dialog keeps the mockup's type in both themes.
+ * Creating follows the redesign's wizard: a 540 px rounded card with an icon
+ * header, a three-step stepper, and a Next / Back footer over the same fields
+ * used by the single-view edit modal. The card keeps the action cards, the
+ * schedule group and the live impact summary from the mockup. Inter and
+ * JetBrains Mono are bundled in `resources/fonts` and registered by
+ * ThemeManager, so the dialog keeps the mockup's type in both themes.
  *
  * Scope keys match `NetworkPolicy::scope`: "pid", "path", "publisher",
  * "service", and "group". A group policy stores the activity-group id in
@@ -27,6 +28,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QList>
 #include <QString>
 
 #include "network/policyruleform.h"
@@ -65,6 +67,14 @@ private:
     QString processBadgeText() const;
     void showToast(const QString &message);
 
+    // The create flow is the mock's three-step wizard; editing stays a single
+    // scrolling view, which is the mock's separate edit modal.
+    void goToStep(int step);
+    void updateStepChrome();
+    bool targetReady() const;
+    bool validateStep(int step, QString *message);
+    void advance();
+
     PolicyTarget m_target;
     NetworkPolicy m_policy;
     bool m_editing = false;
@@ -78,8 +88,16 @@ private:
 
     QLabel *m_headerIcon = nullptr;
     QLabel *m_titleLabel = nullptr;
+    QLabel *m_stepSubtitle = nullptr;
     QLabel *m_processBadge = nullptr;
     QLabel *m_toast = nullptr;
+
+    QWidget *m_targetRow = nullptr;
+    QWidget *m_stepper = nullptr;
+    QList<QPushButton *> m_stepButtons;
+    QList<QLabel *> m_stepNums;
+    QList<QLabel *> m_stepTitles;
+    int m_step = 0;
 
     QPushButton *m_closeButton = nullptr;
     QPushButton *m_cancelButton = nullptr;

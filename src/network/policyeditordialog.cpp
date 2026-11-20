@@ -32,6 +32,7 @@
 #include <QResizeEvent>
 #include <QScreen>
 #include <QScrollArea>
+#include <QStyle>
 #include <QShowEvent>
 #include <QTimer>
 #include <QUuid>
@@ -51,6 +52,17 @@ QFrame#headerIconTile { background: {accentSoft}; border: 1px solid {accentBorde
 QLabel { background: transparent; color: {text}; }
 QLabel#dialogTitle { font-size: 16px; font-weight: 600; color: {title}; }
 QLabel#dialogSubtitle { font-size: 12px; color: {muted}; }
+QLabel#stepNum { border-radius: 9px; font-size: 10px; font-weight: 700; }
+QLabel#stepNum[state="current"] { background: {accentSolid}; color: #FFFFFF; }
+QLabel#stepNum[state="done"] { background: #10B981; color: #FFFFFF; }
+QLabel#stepNum[state="todo"] { background: {chip}; color: {muted}; }
+QLabel#stepTitle { font-size: 11px; font-weight: 600; color: {muted}; }
+QLabel#stepTitle[state="current"] { color: {title}; }
+QLabel#stepTitle[state="done"] { color: #10B981; }
+QPushButton#stepPill { background: transparent; border: 1px solid {border}; border-radius: 8px; padding: 0; text-align: left; }
+QPushButton#stepPill:hover { background: {hoverSoft}; }
+QPushButton#stepPill[state="current"] { background: {accentSoft}; border-color: {accent}; }
+QPushButton#stepPill[state="done"] { background: rgba(16, 185, 129, 22); border-color: rgba(16, 185, 129, 75); }
 QLabel#processBadge { font-family: "JetBrains Mono"; font-size: 11px; color: {secondary}; background: {field}; border: 1px solid {border}; border-radius: 4px; padding: 1px 6px; }
 QFrame#headerLine { background: {border}; border: none; }
 QScrollArea { background: transparent; border: none; }
@@ -212,7 +224,7 @@ void PolicyEditorDialog::buildUi()
 
     m_card = new QFrame(this);
     m_card->setObjectName(QStringLiteral("policyCard"));
-    m_card->setFixedWidth(520);
+    m_card->setFixedWidth(540);
     root->addWidget(m_card, 0, Qt::AlignHCenter);
 
     const bool dark = ThemeManager::instance().isDark();
@@ -227,12 +239,19 @@ void PolicyEditorDialog::buildUi()
     cardLayout->setSpacing(0);
 
     // ── Header ────────────────────────────────────────────────────────────
+    // Title and step subtitle, then the three-cell stepper, all inside the
+    // tinted header block the mock draws above the step body.
     m_header = new QWidget(m_card);
-    auto *headerRow = new QHBoxLayout(m_header);
-    headerRow->setContentsMargins(20, 20, 20, 16);
+    auto *headerColumn = new QVBoxLayout(m_header);
+    headerColumn->setContentsMargins(20, 18, 20, 14);
+    headerColumn->setSpacing(12);
+
+    auto *headerRowWidget = new QWidget(m_header);
+    auto *headerRow = new QHBoxLayout(headerRowWidget);
+    headerRow->setContentsMargins(0, 0, 0, 0);
     headerRow->setSpacing(12);
 
-    auto *iconTile = new QFrame(m_header);
+    auto *iconTile = new QFrame(headerRowWidget);
     iconTile->setObjectName(QStringLiteral("headerIconTile"));
     iconTile->setFixedSize(36, 36);
     auto *iconLayout = new QVBoxLayout(iconTile);
@@ -247,32 +266,90 @@ void PolicyEditorDialog::buildUi()
     titleColumn->setContentsMargins(0, 0, 0, 0);
     titleColumn->setSpacing(3);
     m_titleLabel = makeLabel(QStringLiteral("Create Network Policy"),
-                             QStringLiteral("dialogTitle"), m_header);
+                             QStringLiteral("dialogTitle"), headerRowWidget);
     titleColumn->addWidget(m_titleLabel);
 
-    auto *subtitleRow = new QHBoxLayout();
+    m_stepSubtitle = makeLabel(QString(), QStringLiteral("dialogSubtitle"),
+                               headerRowWidget);
+    titleColumn->addWidget(m_stepSubtitle);
+
+    // The single-view edit layout has no step subtitle, so it keeps the target
+    // badge the wizard drops in favour of its step line.
+    m_targetRow = new QWidget(headerRowWidget);
+    auto *subtitleRow = new QHBoxLayout(m_targetRow);
     subtitleRow->setContentsMargins(0, 0, 0, 0);
     subtitleRow->setSpacing(6);
     auto *subtitlePrefix =
         makeLabel(QStringLiteral("Target process:"), QStringLiteral("dialogSubtitle"),
-                  m_header);
+                  m_targetRow);
     subtitleRow->addWidget(subtitlePrefix);
     m_processBadge = makeLabel(processBadgeText(), QStringLiteral("processBadge"),
-                               m_header);
+                               m_targetRow);
     m_processBadge->setProperty("fullText", processBadgeText());
     m_processBadge->setToolTip(processBadgeText());
     subtitleRow->addWidget(m_processBadge);
     subtitleRow->addStretch(1);
-    titleColumn->addLayout(subtitleRow);
+    titleColumn->addWidget(m_targetRow);
     headerRow->addLayout(titleColumn, 1);
 
-    m_closeButton = new QPushButton(m_header);
+    m_closeButton = new QPushButton(headerRowWidget);
     m_closeButton->setObjectName(QStringLiteral("iconButton"));
     m_closeButton->setFixedSize(28, 28);
     m_closeButton->setCursor(Qt::PointingHandCursor);
     m_closeButton->setToolTip(QStringLiteral("Close"));
     m_closeButton->setAccessibleName(QStringLiteral("Close"));
     headerRow->addWidget(m_closeButton, 0, Qt::AlignTop);
+    headerColumn->addWidget(headerRowWidget);
+
+    // ── Stepper ───────────────────────────────────────────────────────────
+    m_stepper = new QWidget(m_header);
+    auto *stepperRow = new QHBoxLayout(m_stepper);
+    stepperRow->setContentsMargins(0, 0, 0, 0);
+    stepperRow->setSpacing(8);
+    const char *stepTitles[] = {"Select App", "Traffic Rule", "Schedule & Review"};
+    for (int i = 0; i < 3; ++i) {
+        auto *pill = new QPushButton(m_stepper);
+        pill->setObjectName(QStringLiteral("stepPill"));
+        pill->setCursor(Qt::PointingHandCursor);
+        pill->setFixedHeight(30);
+        pill->setAccessibleName(QStringLiteral("Step %1: %2")
+                                    .arg(i + 1)
+                                    .arg(QLatin1String(stepTitles[i])));
+        auto *cell = new QHBoxLayout(pill);
+        cell->setContentsMargins(6, 0, 6, 0);
+        cell->setSpacing(6);
+
+        auto *number = new QLabel(QString::number(i + 1), pill);
+        number->setObjectName(QStringLiteral("stepNum"));
+        number->setAlignment(Qt::AlignCenter);
+        number->setFixedSize(18, 18);
+        number->setAttribute(Qt::WA_TransparentForMouseEvents);
+        cell->addWidget(number, 0, Qt::AlignVCenter);
+
+        auto *title = new QLabel(QLatin1String(stepTitles[i]), pill);
+        title->setObjectName(QStringLiteral("stepTitle"));
+        title->setAttribute(Qt::WA_TransparentForMouseEvents);
+        cell->addWidget(title, 1);
+
+        pill->setProperty("state", QStringLiteral("todo"));
+        number->setProperty("state", QStringLiteral("todo"));
+        title->setProperty("state", QStringLiteral("todo"));
+        stepperRow->addWidget(pill, 1);
+
+        connect(pill, &QPushButton::clicked, this, [this, i]() {
+            if (i > 0 && !targetReady()) {
+                showToast(QStringLiteral("Choose an application before moving "
+                                         "past the first step."));
+                return;
+            }
+            goToStep(i + 1);
+        });
+
+        m_stepButtons << pill;
+        m_stepNums << number;
+        m_stepTitles << title;
+    }
+    headerColumn->addWidget(m_stepper);
 
     cardLayout->addWidget(m_header);
 
@@ -311,13 +388,15 @@ void PolicyEditorDialog::buildUi()
     auto *footerRow = new QHBoxLayout(footer);
     footerRow->setContentsMargins(20, 12, 20, 16);
     footerRow->setSpacing(10);
-    footerRow->addStretch(1);
 
+    // Cancel / Back sits on the left and the forward action on the right, as
+    // the mock lays them out.
     m_cancelButton = new QPushButton(QStringLiteral("Cancel"), footer);
     m_cancelButton->setObjectName(QStringLiteral("cancelButton"));
     m_cancelButton->setCursor(Qt::PointingHandCursor);
     m_cancelButton->setAutoDefault(false);
     footerRow->addWidget(m_cancelButton);
+    footerRow->addStretch(1);
 
     m_saveButton = new QPushButton(QStringLiteral("Save Policy"), footer);
     m_saveButton->setObjectName(QStringLiteral("saveButton"));
@@ -341,7 +420,7 @@ void PolicyEditorDialog::buildUi()
     // ── Connections ───────────────────────────────────────────────────────
     connect(m_closeButton, &QPushButton::clicked, this, &QDialog::reject);
     connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
-    connect(m_saveButton, &QPushButton::clicked, this, &PolicyEditorDialog::accept);
+    connect(m_saveButton, &QPushButton::clicked, this, &PolicyEditorDialog::advance);
 
     // Drag the frameless card by its header.
     QWidget *handles[] = {m_header, m_titleLabel, m_processBadge, m_headerIcon};
@@ -349,6 +428,20 @@ void PolicyEditorDialog::buildUi()
         handle->installEventFilter(this);
 
     applyTheme();
+
+    if (m_editing) {
+        // Edit keeps the mock's single-view modal: every section at once, no
+        // stepper, and the target badge instead of a step line.
+        m_stepper->setVisible(false);
+        m_stepSubtitle->setVisible(false);
+        m_targetRow->setVisible(true);
+        m_form->setStep(0);
+    } else {
+        m_targetRow->setVisible(false);
+        m_step = 1;
+        m_form->setStep(1);
+        updateStepChrome();
+    }
 
     // Cap the scroll viewport before the fixed-size layout is first applied so
     // the dialog never flashes at its full content height. Measure the chrome
@@ -410,6 +503,147 @@ void PolicyEditorDialog::applyTheme()
     if (!m_toast->isVisible()) m_toast->setGraphicsEffect(m_toastEffect);
 
     m_form->applyTheme();
+}
+
+bool PolicyEditorDialog::targetReady() const
+{
+    const PolicyScopeKind scope = m_form->currentScope();
+    if (scope == PolicyScopeKind::Pid)
+        return m_target.pid != 0;
+    if (scope == PolicyScopeKind::ApplicationGroup)
+        return !m_target.groupId.isEmpty();
+    return !m_form->targetForScope().isEmpty();
+}
+
+bool PolicyEditorDialog::validateStep(int step, QString *message)
+{
+    const PolicyScopeKind scope = m_form->currentScope();
+
+    if (step == 1) {
+        if (scope == PolicyScopeKind::Pid && m_target.pid == 0) {
+            *message = QStringLiteral("Select a process row before creating a "
+                                      "PID-scoped policy.");
+            return false;
+        }
+        if (scope == PolicyScopeKind::ApplicationGroup &&
+            m_target.groupId.isEmpty()) {
+            *message = QStringLiteral("This process does not belong to an activity "
+                                      "group, so a group-scoped policy has no "
+                                      "target.");
+            return false;
+        }
+        if (!targetReady()) {
+            *message = QStringLiteral("Enter the %1 this policy should cover.")
+                           .arg(scope == PolicyScopeKind::Publisher
+                                    ? QStringLiteral("publisher")
+                                    : scope == PolicyScopeKind::Service
+                                          ? QStringLiteral("service name")
+                                          : QStringLiteral("path"));
+            m_form->focusTargetField();
+            return false;
+        }
+        return true;
+    }
+
+    if (step == 2) {
+        const NetworkPolicy::Action action = m_form->currentAction();
+        const bool shaping = action == NetworkPolicy::Action::Throttle ||
+                             action == NetworkPolicy::Action::Schedule;
+        if (shaping && m_form->rateKbps() <= 0) {
+            *message = QStringLiteral("A throttle policy needs a rate above zero.");
+            m_form->focusRateField();
+            return false;
+        }
+        return true;
+    }
+
+    const QString schedule = m_form->scheduleValue();
+    if (!schedule.isEmpty() && !scheduleIsSupported(schedule)) {
+        *message = QStringLiteral("The recurring window \"%1\" is not recognised. "
+                                  "Use work-hours, overnight, HH:MM-HH:MM, or "
+                                  "\"Mon-Fri 09:00-17:00\".")
+                       .arg(schedule);
+        return false;
+    }
+    if (m_form->expiresChecked() &&
+        m_form->expiration() <= QDateTime::currentDateTime()) {
+        *message = QStringLiteral("The expiration must be in the future.");
+        m_form->focusExpirationField();
+        return false;
+    }
+    return true;
+}
+
+void PolicyEditorDialog::advance()
+{
+    if (m_editing || m_step >= 3) {
+        accept();
+        return;
+    }
+
+    QString message;
+    if (!validateStep(m_step, &message)) {
+        showToast(message);
+        return;
+    }
+    goToStep(m_step + 1);
+}
+
+void PolicyEditorDialog::goToStep(int step)
+{
+    if (m_editing) return;
+
+    step = qBound(1, step, 3);
+    if (step > 1 && !targetReady()) {
+        showToast(QStringLiteral("Choose an application before moving past the "
+                                 "first step."));
+        step = 1;
+    }
+
+    m_step = step;
+    m_form->setStep(step);
+    updateStepChrome();
+    layout()->activate();
+    adjustSize();
+}
+
+void PolicyEditorDialog::updateStepChrome()
+{
+    static const char *subtitles[] = {
+        "Step 1 of 3 \xE2\x80\x94 Choose an application to control",
+        "Step 2 of 3 \xE2\x80\x94 Set traffic action and bandwidth limit",
+        "Step 3 of 3 \xE2\x80\x94 Optional schedule and final review",
+    };
+    m_stepSubtitle->setText(QString::fromUtf8(subtitles[m_step - 1]));
+    m_targetRow->setVisible(false);
+    m_stepSubtitle->setVisible(true);
+
+    for (int i = 0; i < m_stepButtons.size(); ++i) {
+        const int number = i + 1;
+        const char *state = number < m_step ? "done"
+                          : number == m_step ? "current"
+                                             : "todo";
+        QWidget *parts[] = {m_stepButtons[i], m_stepNums[i], m_stepTitles[i]};
+        for (QWidget *part : parts) {
+            part->setProperty("state", QLatin1String(state));
+            part->style()->unpolish(part);
+            part->style()->polish(part);
+            part->update();
+        }
+    }
+
+    const bool last = m_step == 3;
+    m_cancelButton->setText(m_step == 1 ? QStringLiteral("Cancel")
+                                        : QString::fromUtf8("\xE2\x86\x90 Back"));
+    m_saveButton->setText(
+        last ? QStringLiteral("Create Policy")
+             : m_step == 1
+                   ? QString::fromUtf8("Next: Traffic Rule \xE2\x86\x92")
+                   : QString::fromUtf8("Next: Schedule & Review \xE2\x86\x92"));
+    m_saveButton->setIcon(last
+                              ? QIcon(glyphPixmap(GlyphCheck, 14, QColor("#FFFFFF"), 2.0))
+                              : QIcon());
+    m_saveButton->setIconSize(QSize(14, 14));
 }
 
 bool PolicyEditorDialog::eventFilter(QObject *watched, QEvent *event)
@@ -477,50 +711,25 @@ void PolicyEditorDialog::accept()
     const NetworkPolicy::Action action = m_form->currentAction();
     const QString target = m_form->targetForScope();
 
-    if (scope == PolicyScopeKind::Pid && m_target.pid == 0) {
-        showToast(QStringLiteral("Select a process row before creating a "
-                                 "PID-scoped policy."));
-        return;
-    }
-    if (scope == PolicyScopeKind::ApplicationGroup && m_target.groupId.isEmpty()) {
-        showToast(QStringLiteral("This process does not belong to an activity group, "
-                                 "so a group-scoped policy has no target."));
-        return;
-    }
-    if (scope != PolicyScopeKind::Pid && scope != PolicyScopeKind::ApplicationGroup &&
-        target.isEmpty()) {
-        showToast(QStringLiteral("Enter the %1 this policy should cover.")
-                      .arg(scope == PolicyScopeKind::Publisher
-                               ? QStringLiteral("publisher")
-                               : scope == PolicyScopeKind::Service
-                                     ? QStringLiteral("service name")
-                                     : QStringLiteral("path")));
-        m_form->focusTargetField();
+    // Enter on an unfinished wizard advances instead of saving a half-built
+    // policy; accept-time validation still runs as the last line of defence.
+    if (!m_editing && m_step < 3) {
+        advance();
         return;
     }
 
-    const QString schedule = m_form->scheduleValue();
-    if (!schedule.isEmpty() && !scheduleIsSupported(schedule)) {
-        showToast(QStringLiteral("The recurring window \"%1\" is not recognised. "
-                                 "Use work-hours, overnight, HH:MM-HH:MM, or "
-                                 "\"Mon-Fri 09:00-17:00\".").arg(schedule));
-        return;
+    QString message;
+    for (int step = 1; step <= 3; ++step) {
+        if (!validateStep(step, &message)) {
+            showToast(message);
+            return;
+        }
     }
 
     const bool shaping = action == NetworkPolicy::Action::Throttle ||
                          action == NetworkPolicy::Action::Schedule;
-    if (shaping && m_form->rateKbps() <= 0) {
-        showToast(QStringLiteral("A throttle policy needs a rate above zero."));
-        m_form->focusRateField();
-        return;
-    }
-
+    const QString schedule = m_form->scheduleValue();
     const QDateTime now = QDateTime::currentDateTime();
-    if (m_form->expiresChecked() && m_form->expiration() <= now) {
-        showToast(QStringLiteral("The expiration must be in the future."));
-        m_form->focusExpirationField();
-        return;
-    }
 
     // NG-053: a publisher or group policy covers software the user did not pick
     // directly, so it is confirmed with its impact spelled out. Cancel is the
