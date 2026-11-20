@@ -149,6 +149,11 @@ public:
     // not resolved for every row on every beat.
     Applications::Details applicationDetails(quint32 pid, const QString &executablePath,
                                              const QString &processName = QString());
+    // The shell icon for an executable path, resolved once and cached by
+    // normalized path. A target that is not a real file (a service name, a
+    // group id) resolves to the generic application icon. Used by screens that
+    // list stored policies, whose executables are often not running.
+    QIcon executableIcon(const QString &executablePath);
     bool isCapturing() const { return m_capturing; }
     // NG-050: the persisted audit log behind the audit view and its export.
     AuditEventStore *auditStore() { return &m_auditStore; }
@@ -209,11 +214,6 @@ private:
     // The shell's generic application icon, for rows whose executable icon has
     // not been resolved (or that have no executable of their own).
     QIcon genericExecutableIcon() const;
-    // The shell icon for an executable path, resolved once and cached by
-    // normalized path. A target that is not a real file (a service name, a
-    // group id) resolves to the generic application icon. Used by screens that
-    // list stored policies, whose executables are often not running.
-    QIcon executableIcon(const QString &executablePath);
     void requestThrottle(quint32 pid, const QString &procName);
     // Evidence snapshot for the recommendation and approval views, taken while
     // the context menu's row is still valid.
