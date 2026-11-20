@@ -1030,6 +1030,8 @@ void testReconciliationThrottle()
                    QStringLiteral("the request carries the policy id"));
         check(!apply->automatic,
               QStringLiteral("a user policy's limit is not marked automatic"));
+        checkEqual(apply->limitBitsPerSecond, throttle.rateBitsPerSecond,
+                   QStringLiteral("the request carries the policy's own rate"));
     }
 
     const QString key = normPath(throttle.targetId);
@@ -1049,6 +1051,19 @@ void testReconciliationThrottle()
     apply = firstAction(report, ReconciliationAction::Kind::ApplyThrottle);
     check(apply && apply->message.contains(QStringLiteral("download")),
           QStringLiteral("the request names the missing download limit"));
+
+    // The policy decides the rate, so a limit at the old rate is re-applied.
+    PolicyObservation staleRate;
+    staleRate.throttledPaths.insert(key);
+    staleRate.downloadLimits.insert(key, 409600);
+    report = planPolicyReconciliation({throttle}, noGroups, staleRate, now);
+    checkEqual(actionCount(report, ReconciliationAction::Kind::ApplyThrottle), 1,
+               QStringLiteral("a limit at a different rate is requested again"));
+    apply = firstAction(report, ReconciliationAction::Kind::ApplyThrottle);
+    checkEqual(apply ? apply->limitBitsPerSecond : 0, throttle.rateBitsPerSecond,
+               QStringLiteral("the re-apply carries the policy's rate, not the old one"));
+    check(apply && apply->message.contains(QStringLiteral("rate differs")),
+          QStringLiteral("the re-apply explains that the enforced rate changed"));
 
     NetworkPolicy upload = throttle;
     upload.direction = NetworkDirection::Upload;
@@ -5593,9 +5608,8 @@ void testPolicyScopePresentation()
 
     checkEqual(policyRateText(400000), QStringLiteral("0.40 Mbit/s"),
                QStringLiteral("a stored rate is shown in Mbit/s"));
-    checkEqual(policyRateText(kEnforcedThrottleBitsPerSecond),
-               QStringLiteral("0.41 Mbit/s"),
-               QStringLiteral("the enforced default rate is shown too"));
+    checkEqual(policyRateText(409600), QStringLiteral("0.41 Mbit/s"),
+               QStringLiteral("the default throttle rate formats the same way"));
     checkEqual(policyEffectSummary(NetworkPolicy::Action::Throttle, NetworkDirection::Both,
                                    400000),
                QStringLiteral("Throttle to 0.40 Mbit/s, both directions"),
@@ -5647,8 +5661,8 @@ void testPolicyScopePresentation()
               QStringLiteral("Enforcement: Stored only: this build cannot resolve "
                              "publisher policies")),
           QStringLiteral("the preview admits a stored-only scope"));
-    check(impact.contains(QStringLiteral("0.41 Mbit/s")),
-          QStringLiteral("the preview names the rate this build actually applies"));
+    check(!impact.contains(QStringLiteral("0.41 Mbit/s")),
+          QStringLiteral("the preview no longer claims a different applied rate"));
     check(impact.contains(QStringLiteral("processes that appear later")),
           QStringLiteral("the preview says the scope reaches future processes"));
     check(!impact.contains(QStringLiteral("Window:")),
@@ -5684,11 +5698,12 @@ void testPolicyScopePresentation()
     pathPolicy.action = NetworkPolicy::Action::Allow;
     checkEqual(policyEnforcementSummary(pathPolicy), QStringLiteral("Enforced"),
                QStringLiteral("a path policy is enforced by this build"));
+    // The stored rate is now the enforced rate, so a policy with any rate is
+    // simply enforced rather than flagged as an approximation.
     pathPolicy.action = NetworkPolicy::Action::Throttle;
     pathPolicy.rateBitsPerSecond = 400000;
-    checkEqual(policyEnforcementSummary(pathPolicy),
-               QStringLiteral("Enforced at 0.41 Mbit/s (stored rate differs)"),
-               QStringLiteral("the list shows when the applied rate is not the stored one"));
+    checkEqual(policyEnforcementSummary(pathPolicy), QStringLiteral("Enforced"),
+               QStringLiteral("a throttle policy enforces its own stored rate"));
 
     NetworkPolicy publisherPolicy;
     publisherPolicy.scope = QStringLiteral("publisher");

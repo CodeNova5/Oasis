@@ -223,7 +223,8 @@ void PolicyReconciler::deliverReport(const ReconciliationReport &report)
                 // The throttle worker performs the QoS call; this is a request,
                 // not a result. The policy id is attached so the limit can be
                 // withdrawn later.
-                m_throttle->applyForPolicy(action.path, action.policyId, action.automatic);
+                m_throttle->applyForPolicy(action.path, action.policyId,
+                                           action.limitBitsPerSecond, action.automatic);
                 ++finalReport.repaired;
                 break;
             case ReconciliationAction::Kind::ReassignThrottle:

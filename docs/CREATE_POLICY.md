@@ -101,8 +101,8 @@ states:
 - the enforcement note: `Enforced: …` for path/group, or
   `Stored only: this build cannot resolve <scope> policies …`.
 
-For Throttle the enforcement note also states that the channel requests a fixed
-51.2 KB/s in this build (see [Known limitations](#known-limitations)). The
+For Throttle the stored rate is the rate both shaping halves request, so the
+enforcement note matches the impact summary instead of adding a caveat. The
 collapsible group's header shows `(Configured)` once a window or expiration is
 set, and the disclosure animates open/closed.
 
@@ -351,11 +351,10 @@ Target, Action, Direction, Rate, Window, Expires, Enforcement, Source.
 
 ## 10. Known limitations
 
-- **Fixed throttle rate**: the shaping channel requests
-  `ThrottlePolicyManager::DefaultLimitBitsPerSecond` (409600 bits/s, shown as
-  51.2 KB/s). A different rate is stored and shown, with a warning in the
-  tooltip, rate label and live summary, but is not the rate applied. Editing to
-  any other value does not change enforcement.
+- **Throttle rate**: the stored rate is applied. `ThrottlePolicyManager`
+  persists the per-path rate with the active set, so a restart, restore or
+  reconciliation pass reproduces the policy's rate instead of a default. A
+  rate of 0 falls back to `DefaultLimitBitsPerSecond` (409600 bits/s).
 - **PID, publisher, and service scopes are stored only.** No rule or limit is
   created for them. Only `path`/`executable` and `group` are resolved.
 - **Package, port, and protocol scopes** exist in `NetworkPolicy` but are not

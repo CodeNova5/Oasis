@@ -60,8 +60,10 @@ public:
     // Applies a limit on behalf of a stored policy. The attribution is kept
     // (and persisted with the active set) so reconciliation can withdraw the
     // limit once that policy stops wanting it; a plain apply() clears it.
+    // `limitBitsPerSecond` is the rate the policy asks for; 0 falls back to
+    // DefaultLimitBitsPerSecond so an advisory-shaped policy still applies.
     void applyForPolicy(const QString &executablePath, const QString &policyId,
-                        bool automatic = false);
+                        quint64 limitBitsPerSecond, bool automatic = false);
     void remove(const QString &executablePath);
     // Changes which policy owns an already-enforced limit, without another QoS
     // call. Used when a different active policy takes over a path; an
@@ -83,7 +85,14 @@ public:
     }
     // Normalized path -> Oasis policy id, for limits applied by a policy.
     QHash<QString, QString> policyAttribution() const { return m_policyAttribution; }
+    // Normalized path -> the rate that path is limited to, for every active
+    // path. Persisted with the active set, so a restore keeps the stored rate
+    // instead of falling back to the default.
     QHash<QString, quint64> downloadLimits() const { return m_downloadLimits; }
+    quint64 limitForPath(const QString &executablePath) const
+    {
+        return m_pathLimits.value(normalizePath(executablePath), 0);
+    }
 
     // Empty while download shaping works; otherwise why it cannot start.
     QString downloadLimiterStatus() const { return m_downloadStatus; }
@@ -112,7 +121,8 @@ private slots:
     void onWorkerOrphansPruned(const ThrottleResult &result, const QStringList &removedPolicyIds);
 
 private:
-    void applyInternal(const QString &path, const QString &policyId, bool automatic);
+    void applyInternal(const QString &path, const QString &policyId,
+                       quint64 limitBitsPerSecond, bool automatic);
     QVariantMap policySnapshot() const;
     void load();
     void save() const;
@@ -139,6 +149,12 @@ private:
 
     // Path -> limit (bits/s) currently enforced by the WinDivert download shaper.
     QHash<QString, quint64> m_downloadLimits;
+    // Path -> the rate the policy asked for. This is the persisted copy, so
+    // rebuildDownloadLimits() after a restart or restore reproduces the same
+    // limit rather than the default.
+    QHash<QString, quint64> m_pathLimits;
+    // Path -> rate of an apply() request still in flight on the worker.
+    QHash<QString, quint64> m_pendingLimits;
     DownloadShaper *m_download = nullptr;
     QString m_downloadStatus;
 };

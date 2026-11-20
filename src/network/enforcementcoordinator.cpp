@@ -269,21 +269,17 @@ EnforcementResult EnforcementCoordinator::routeToThrottle(const NetworkPolicy &p
 
     // Marked automatic only when the product created the policy, so a limit the
     // user asked for is never taken back by emergency restore. The policy id
-    // travels with the request so reconciliation can withdraw the limit later.
-    m_throttle->applyForPolicy(executablePath, policy.id,
+    // travels with the request so reconciliation can withdraw the limit later,
+    // and the rate travels with it so the policy decides the limit.
+    m_throttle->applyForPolicy(executablePath, policy.id, policy.rateBitsPerSecond,
                                policyOrigin(policy) == PolicyOrigin::Automatic);
 
     result.status = EnforcementResult::Status::Requested;
-    if (policy.rateBitsPerSecond > 0 &&
-        policy.rateBitsPerSecond != ThrottlePolicyManager::DefaultLimitBitsPerSecond) {
-        result.message = QStringLiteral(
-            "Requested the default %1 bits/s limit; the policy asks for %2 bits/s, "
-            "which this build cannot set")
-            .arg(ThrottlePolicyManager::DefaultLimitBitsPerSecond)
-            .arg(policy.rateBitsPerSecond);
-    } else {
-        result.message = QStringLiteral("Limit request queued on the throttle worker");
-    }
+    const quint64 requestedLimit = policy.rateBitsPerSecond > 0
+        ? policy.rateBitsPerSecond
+        : ThrottlePolicyManager::DefaultLimitBitsPerSecond;
+    result.message = QStringLiteral("Queued a %1 bits/s limit on the throttle worker")
+                          .arg(requestedLimit);
 
     if (channels.uploadShaping) result.uploadReason = QStringLiteral("QoS request queued");
     if (channels.downloadShaping)

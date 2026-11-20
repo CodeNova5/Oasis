@@ -245,8 +245,8 @@ void PolicyRuleForm::buildUi()
     m_rateEdit->setValidator(new QIntValidator(1, 1000000, m_rateEdit));
     m_rateEdit->setText(QStringLiteral("400"));
     m_rateEdit->setToolTip(QStringLiteral(
-        "This build requests a fixed 51.2 KB/s limit. A different rate is "
-        "stored with the policy but is not applied yet."));
+        "The limit this policy enforces, applied to downloads and uploads "
+        "for the target."));
     m_rateEdit->installEventFilter(this);
     rateFieldLayout->addWidget(m_rateEdit, 1);
     auto *unit = makeLabel(QStringLiteral("KB/s"), QStringLiteral("rateUnit"), m_rateField);
@@ -633,11 +633,7 @@ void PolicyRuleForm::updateImpactPreview()
     const bool advisory = action == NetworkPolicy::Action::Notify ||
                           action == NetworkPolicy::Action::Ask ||
                           action == NetworkPolicy::Action::NoAction;
-    const bool shaping = action == NetworkPolicy::Action::Throttle ||
-                         action == NetworkPolicy::Action::Schedule;
-    const qint64 kbps = m_rateEdit->text().toLongLong();
-    const bool warning = !policyScopeEnforcedByThisBuild(currentScope()) || advisory ||
-                         (shaping && kbps > 0 && kbps * 8000 != 409600);
+    const bool warning = !policyScopeEnforcedByThisBuild(currentScope()) || advisory;
     m_enforcementLabel->setProperty("warning", warning);
     repolish(m_enforcementLabel);
 
@@ -816,15 +812,7 @@ QString PolicyRuleForm::enforcementText() const
                               "or bandwidth state in this build.");
     }
 
-    QString note = policyScopeEnforcementNote(currentScope());
-    const bool shaping = action == NetworkPolicy::Action::Throttle ||
-                         action == NetworkPolicy::Action::Schedule;
-    if (shaping) {
-        note += QStringLiteral(" The throttle channel requests a fixed 51.2 KB/s "
-                               "in this build, so the stored rate is not the "
-                               "applied one.");
-    }
-    return note;
+    return policyScopeEnforcementNote(currentScope());
 }
 
 PolicyScopeKind PolicyRuleForm::currentScope() const

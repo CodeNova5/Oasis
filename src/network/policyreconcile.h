@@ -62,6 +62,9 @@ struct ReconciliationAction
     QString ruleName;      // RemoveFirewallRule only
     bool block = false;    // CreateFirewallRule only
     bool automatic = false; // ApplyThrottle only
+    // ApplyThrottle only: the rate the policy asks for, so the pass restores
+    // the stored limit rather than the manager's default.
+    quint64 limitBitsPerSecond = 0;
     QString message;
 };
 

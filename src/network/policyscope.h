@@ -58,11 +58,6 @@ QString policyScopeRiskSummary(PolicyScopeKind scope);
 QString policyScopeEnforcementNote(PolicyScopeKind scope);
 
 // ─── Effect and impact ──────────────────────────────────────────────────────
-// The rate the throttle channel actually requests in this build (NG-021): a
-// stored rate is recorded but the manager is asked for this default. Keep in
-// sync with ThrottlePolicyManager::DefaultLimitBitsPerSecond.
-constexpr quint64 kEnforcedThrottleBitsPerSecond = 409600;
-
 QString policyActionDisplayName(NetworkPolicy::Action action);
 QString policyDirectionDisplayName(NetworkDirection direction);
 // "0.40 Mbit/s"
@@ -92,7 +87,7 @@ QString policyImpactSummary(const PolicyImpact &impact, const QDateTime &now);
 // underneath it.
 QString policyConfirmationText(const PolicyImpact &impact, const QDateTime &now);
 
-// One line for the policy list: "Enforced", "Stored only — ...", or the
-// fixed-rate caveat. The scope key is read from the policy, so a stored policy
-// with a scope the editor does not know is reported rather than assumed.
+// One line for the policy list: "Enforced" or "Stored only — ...". The scope
+// key is read from the policy, so a stored policy with a scope the editor does
+// not know is reported rather than assumed.
 QString policyEnforcementSummary(const NetworkPolicy &policy);

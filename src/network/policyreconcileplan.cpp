@@ -266,8 +266,14 @@ ReconciliationReport planPolicyReconciliation(
     for (auto it = desiredThrottle.constBegin(); it != desiredThrottle.constEnd(); ++it) {
         const bool throttled = observed.throttledPaths.contains(it.key());
         const bool downloadLimited = observed.downloadLimits.contains(it.key());
+        // The policy decides the rate now, so a limit with the old rate is just
+        // as wrong as a missing one. Only compare where a rate was observed.
+        const bool rateMismatch = it->policy.rateBitsPerSecond > 0 &&
+            observed.downloadLimits.contains(it.key()) &&
+            observed.downloadLimits.value(it.key()) != it->policy.rateBitsPerSecond;
 
-        if (throttled && (!wantsDownload(it->policy) || downloadLimited)) {
+        if (throttled && !rateMismatch &&
+            (!wantsDownload(it->policy) || downloadLimited)) {
             // The enforced limit is right, but a different policy may have
             // asked for it originally. Hand ownership over without touching
             // QoS, so a later withdrawal follows the policy that wants it now.
@@ -283,6 +289,7 @@ ReconciliationReport planPolicyReconciliation(
                 reassign.policyId = it->policy.id;
                 reassign.path = it->path;
                 reassign.automatic = automatic;
+                reassign.limitBitsPerSecond = it->policy.rateBitsPerSecond;
                 reassign.message = currentOwner == it->policy.id
                     ? QStringLiteral("the limit's automatic status changed")
                     : QStringLiteral("the limit is now owned by the active policy");
@@ -296,9 +303,12 @@ ReconciliationReport planPolicyReconciliation(
         action.policyId = it->policy.id;
         action.path = it->path;
         action.automatic = policyOrigin(it->policy) == PolicyOrigin::Automatic;
-        action.message = throttled
-            ? QStringLiteral("the download shaping limit is missing")
-            : QStringLiteral("no limit is applied");
+        action.limitBitsPerSecond = it->policy.rateBitsPerSecond;
+        action.message = rateMismatch
+            ? QStringLiteral("the enforced rate differs from the policy's rate")
+            : throttled
+                  ? QStringLiteral("the download shaping limit is missing")
+                  : QStringLiteral("no limit is applied");
         report.actions << action;
     }
 

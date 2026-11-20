@@ -199,32 +199,41 @@ constexpr quint64 ThrottlePolicyManager::DefaultLimitBitsPerSecond;
 
 void ThrottlePolicyManager::apply(const QString &executablePath, bool automatic)
 {
-    applyInternal(normalizePath(executablePath), QString(), automatic);
+    applyInternal(normalizePath(executablePath), QString(), DefaultLimitBitsPerSecond,
+                  automatic);
 }
 
 void ThrottlePolicyManager::applyForPolicy(const QString &executablePath,
-                                           const QString &policyId, bool automatic)
+                                           const QString &policyId,
+                                           quint64 limitBitsPerSecond, bool automatic)
 {
-    applyInternal(normalizePath(executablePath), policyId, automatic);
+    applyInternal(normalizePath(executablePath), policyId, limitBitsPerSecond, automatic);
 }
 
 void ThrottlePolicyManager::applyInternal(const QString &path, const QString &policyId,
-                                          bool automatic)
+                                          quint64 limitBitsPerSecond, bool automatic)
 {
     if (path.isEmpty() || m_inFlight.contains(path)) return;
+
+    // A policy that asks for no rate still needs a limit; the default is the
+    // only sensible one to use, and the caller's message already says so.
+    const quint64 limit = limitBitsPerSecond > 0 ? limitBitsPerSecond
+                                                 : DefaultLimitBitsPerSecond;
 
     m_inFlight.insert(path);
     m_pendingAutomatic.insert(path, automatic);
     m_pendingPolicyId.insert(path, policyId);
+    m_pendingLimits.insert(path, limit);
 
     // The download half starts immediately instead of waiting for the
-    // PowerShell round trip that installs the QoS policy.
-    if (!m_downloadLimits.contains(path)) {
-        m_downloadLimits.insert(path, DefaultLimitBitsPerSecond);
+    // PowerShell round trip that installs the QoS policy. Re-applying a
+    // policy with a new rate updates the shaper in place.
+    if (m_downloadLimits.value(path, 0) != limit) {
+        m_downloadLimits.insert(path, limit);
         pushDownloadLimits();
     }
 
-    emit applyRequested(path, ThrottlePolicyNames::forPath(path), DefaultLimitBitsPerSecond);
+    emit applyRequested(path, ThrottlePolicyNames::forPath(path), limit);
 }
 
 void ThrottlePolicyManager::remove(const QString &executablePath)
@@ -233,6 +242,7 @@ void ThrottlePolicyManager::remove(const QString &executablePath)
     if (path.isEmpty() || m_inFlight.contains(path)) return;
 
     m_inFlight.insert(path);
+    m_pendingLimits.remove(path);
     if (m_downloadLimits.remove(path) > 0)
         pushDownloadLimits();
 
@@ -308,12 +318,18 @@ void ThrottlePolicyManager::onWorkerApplied(const QString &executablePath,
     m_inFlight.remove(executablePath);
     const bool automatic = m_pendingAutomatic.take(executablePath);
     const QString policyId = m_pendingPolicyId.take(executablePath);
+    const quint64 requestedLimit = m_pendingLimits.take(executablePath);
 
     ThrottleResult outcome = result;
     if (result.status == ThrottleStatus::Applied) {
         m_activePolicies.insert(executablePath, result.policyId.isEmpty()
                                                     ? ThrottlePolicyNames::forPath(executablePath)
                                                     : result.policyId);
+        // Keep the rate the policy asked for, so the download shaper and the
+        // persisted set agree with what QoS was actually given.
+        m_pathLimits.insert(executablePath,
+                            requestedLimit > 0 ? requestedLimit
+                                               : DefaultLimitBitsPerSecond);
         // A user-applied limit always wins over an automatic one.
         if (automatic)
             m_autoApplied.insert(executablePath);
@@ -328,6 +344,7 @@ void ThrottlePolicyManager::onWorkerApplied(const QString &executablePath,
     } else if (m_downloadLimits.remove(executablePath) > 0) {
         // The QoS policy did not install, so drop the optimistic download limit
         // too rather than leaving a silent half-limit behind.
+        m_pathLimits.remove(executablePath);
         pushDownloadLimits();
     }
     emit throttleApplied(executablePath, outcome);
@@ -342,6 +359,7 @@ void ThrottlePolicyManager::onWorkerRemoved(const QString &executablePath,
         m_activePolicies.remove(executablePath);
         m_autoApplied.remove(executablePath);
         m_policyAttribution.remove(executablePath);
+        m_pathLimits.remove(executablePath);
         save();
     }
     emit throttleRemoved(executablePath, result);
@@ -362,6 +380,7 @@ void ThrottlePolicyManager::onWorkerRestored(const ThrottleResult &result,
         } else {
             m_autoApplied.remove(it.key());
             m_policyAttribution.remove(it.key());
+            m_pathLimits.remove(it.key());
             it = m_activePolicies.erase(it);
         }
     }
@@ -378,6 +397,7 @@ void ThrottlePolicyManager::onWorkerVerified(const QStringList &existingPolicyId
             ++it;
         } else {
             m_policyAttribution.remove(it.key());
+            m_pathLimits.remove(it.key());
             it = m_activePolicies.erase(it);
             changed = true;
         }
@@ -401,8 +421,12 @@ void ThrottlePolicyManager::onWorkerOrphansPruned(const ThrottleResult &result,
 void ThrottlePolicyManager::rebuildDownloadLimits()
 {
     m_downloadLimits.clear();
-    for (auto it = m_activePolicies.constBegin(); it != m_activePolicies.constEnd(); ++it)
-        m_downloadLimits.insert(it.key(), DefaultLimitBitsPerSecond);
+    for (auto it = m_activePolicies.constBegin(); it != m_activePolicies.constEnd(); ++it) {
+        // The persisted rate is the truth; a path stored by an older build has
+        // none, and keeps working at the default it was applied with.
+        m_downloadLimits.insert(it.key(),
+                                m_pathLimits.value(it.key(), DefaultLimitBitsPerSecond));
+    }
     pushDownloadLimits();
 }
 
@@ -423,6 +447,16 @@ void ThrottlePolicyManager::load()
     const QStringList autoPolicies = settings.value("autoPolicies").toStringList();
     for (const QString &path : autoPolicies) {
         if (m_activePolicies.contains(path)) m_autoApplied.insert(path);
+    }
+
+    // Version 2 added the rate. A path stored by an older build has no entry,
+    // and rebuildDownloadLimits() falls back to the default for it.
+    const QVariantMap limits = settings.value("activeLimits").toMap();
+    for (auto it = limits.constBegin(); it != limits.constEnd(); ++it) {
+        const QString path = it.key();
+        const quint64 limit = it.value().toULongLong();
+        if (m_activePolicies.contains(path) && limit > 0)
+            m_pathLimits.insert(path, limit);
     }
 
     // Attribution only matters for a limit that still exists.
@@ -450,6 +484,13 @@ void ThrottlePolicyManager::save() const
         if (m_activePolicies.contains(path)) autoPolicies << path;
     }
     settings.setValue("autoPolicies", autoPolicies);
+
+    QVariantMap limits;
+    for (auto it = m_pathLimits.constBegin(); it != m_pathLimits.constEnd(); ++it) {
+        if (m_activePolicies.contains(it.key()) && it.value() > 0)
+            limits.insert(it.key(), QVariant::fromValue(it.value()));
+    }
+    settings.setValue("activeLimits", limits);
 
     QVariantMap attributed;
     for (auto it = m_policyAttribution.constBegin(); it != m_policyAttribution.constEnd(); ++it) {

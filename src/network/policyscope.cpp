@@ -273,14 +273,7 @@ QString policyImpactSummary(const PolicyImpact &impact, const QDateTime &now)
                   ? QStringLiteral("State: enabled.")
                   : QStringLiteral("State: disabled by the user — stored but not enforced."));
 
-    QString enforcement = policyScopeEnforcementNote(impact.scope);
-    if (impact.action == NetworkPolicy::Action::Throttle &&
-        impact.rateBitsPerSecond != kEnforcedThrottleBitsPerSecond) {
-        enforcement += QStringLiteral(" The throttle channel requests %1 in this build, "
-                                      "so the stored rate is not the applied one.")
-                           .arg(policyRateText(kEnforcedThrottleBitsPerSecond));
-    }
-    lines << QStringLiteral("Enforcement: %1").arg(enforcement);
+    lines << QStringLiteral("Enforcement: %1").arg(policyScopeEnforcementNote(impact.scope));
 
     if (policyScopeAffectsFutureProcesses(impact.scope))
         lines << QStringLiteral("This scope also affects processes that appear later.");
@@ -326,13 +319,6 @@ QString policyEnforcementSummary(const NetworkPolicy &policy)
     if (!policyScopeEnforcedByThisBuild(scope)) {
         return QStringLiteral("Stored only — %1 scope is not resolved yet")
             .arg(scopeToken(scope));
-    }
-
-    if (policy.action == NetworkPolicy::Action::Throttle &&
-        policy.rateBitsPerSecond != 0 &&
-        policy.rateBitsPerSecond != kEnforcedThrottleBitsPerSecond) {
-        return QStringLiteral("Enforced at %1 (stored rate differs)")
-            .arg(policyRateText(kEnforcedThrottleBitsPerSecond));
     }
 
     return QStringLiteral("Enforced");
