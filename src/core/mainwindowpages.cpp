@@ -320,6 +320,10 @@ void MainWindow::refreshPolicies()
 
         Policies::Row row;
         row.id = policy.id;
+        // The shell icon cache resolves once per executable path, so a policy
+        // whose app is not running still shows the app's own icon.
+        if (m_netWidget)
+            row.icon = m_netWidget->executableIcon(target);
 
         // Name the target the way the scope reads, so a user never has to parse
         // a path to tell what the policy covers.

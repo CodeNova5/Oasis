@@ -299,6 +299,7 @@ void NetworkWidget::onClearTable()
     m_totalPkts = 0;
     ui->lblPackets->setText("0");
     m_iconCache.clear();
+    m_executableIconCache.clear();
     m_dashboardPathCache.clear();
     ui->btnExpandAll->setText("Expand All");
     refreshDashboard();
@@ -357,6 +358,35 @@ QIcon NetworkWidget::getIconByPid(quint32 pid, const QString &procName)
     if (SHGetFileInfoW(procName.toStdWString().c_str(), FILE_ATTRIBUTE_NORMAL, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES)) {
             if (sfi.hIcon) { icon = iconFromHICON(sfi.hIcon); DestroyIcon(sfi.hIcon); }
     }
+    return icon;
+}
+
+QIcon NetworkWidget::executableIcon(const QString &executablePath)
+{
+    const QString path = executablePath.trimmed();
+    if (path.isEmpty())
+        return genericExecutableIcon();
+
+    const QString key = ThrottlePolicyManager::normalizePath(path);
+    const auto cached = m_executableIconCache.constFind(key);
+    if (cached != m_executableIconCache.constEnd())
+        return cached.value();
+
+    // The executable's own 32 px icon. A stored policy can name something that
+    // is no longer installed, so a failed lookup is cached as the generic icon
+    // rather than retried on every refresh.
+    QIcon icon;
+    SHFILEINFOW sfi = {};
+    if (SHGetFileInfoW(path.toStdWString().c_str(), 0, &sfi, sizeof(sfi),
+                       SHGFI_ICON | SHGFI_LARGEICON)
+        && sfi.hIcon) {
+        icon = iconFromHICON(sfi.hIcon);
+        DestroyIcon(sfi.hIcon);
+    }
+    if (icon.isNull())
+        icon = genericExecutableIcon();
+
+    m_executableIconCache.insert(key, icon);
     return icon;
 }
 

@@ -127,8 +127,11 @@ state. Not compiled in this environment at the author's request.
 
 ### Phase 2 — Read-only table — DONE
 
-- Columns: Application, Action & Limit, Window/Expires, Status & reason,
-  Actions (a dash in this phase).
+- Columns: icon, Application, Action & Limit, Window/Expires, Status & reason,
+  Actions (a dash in this phase). The icon comes from
+  `NetworkWidget::executableIcon(path)`, which caches the shell icon by
+  normalized executable path and falls back to the generic application icon for
+  targets that are not files.
 - Filter pills with counts and search over name, note, effect, window, expiry
   and status; the Unsupported pill appears only when a policy is in that state.
 - The KPI cards set the matching filter when clicked.

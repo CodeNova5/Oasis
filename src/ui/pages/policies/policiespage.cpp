@@ -20,6 +20,7 @@
 #include <QPushButton>
 #include <QString>
 #include <QStringList>
+#include <QStyle>
 #include <QTableWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -70,7 +71,8 @@ Filter filterFor(Status status)
 
 namespace {
 
-constexpr int kActionColumn = 4;
+constexpr int kIconColumn = 0;
+constexpr int kActionColumn = 5;
 
 StatusBadge::Status badgeFor(Policies::Status status)
 {
@@ -249,14 +251,16 @@ void PoliciesPage::buildFilterBar(QVBoxLayout *root)
 
 void PoliciesPage::buildTable(QVBoxLayout *root)
 {
-    m_table = new QTableWidget(0, 5, this);
+    m_table = new QTableWidget(0, 6, this);
     m_table->setHorizontalHeaderLabels({
+        QString(),
         QStringLiteral("Application"),
         QStringLiteral("Action & Limit"),
         QStringLiteral("Window & Expires"),
         QStringLiteral("Status / Enforcement"),
         QStringLiteral("Actions")
     });
+    m_table->setIconSize(QSize(24, 24));
     m_table->verticalHeader()->setVisible(false);
     m_table->setShowGrid(false);
     m_table->setWordWrap(false);
@@ -267,10 +271,12 @@ void PoliciesPage::buildTable(QVBoxLayout *root)
     m_table->setMinimumHeight(240);
 
     QHeaderView *header = m_table->horizontalHeader();
-    header->setSectionResizeMode(0, QHeaderView::Stretch);
+    header->setSectionResizeMode(kIconColumn, QHeaderView::Fixed);
+    header->resizeSection(kIconColumn, 44);
     header->setSectionResizeMode(1, QHeaderView::Stretch);
     header->setSectionResizeMode(2, QHeaderView::Stretch);
     header->setSectionResizeMode(3, QHeaderView::Stretch);
+    header->setSectionResizeMode(4, QHeaderView::Stretch);
     header->setSectionResizeMode(kActionColumn, QHeaderView::Fixed);
     header->resizeSection(kActionColumn, 64);
     header->setStretchLastSection(false);
@@ -432,12 +438,23 @@ void PoliciesPage::populateTable(const QList<Policies::Row> &rows)
         for (int column = 0; column < m_table->columnCount(); ++column)
             m_table->setItem(rowIndex, column, new QTableWidgetItem);
 
-        m_table->setCellWidget(rowIndex, 0, applicationCell(row));
-        m_table->setCellWidget(rowIndex, 1,
-                               textCell(row.effect, QString(), row.tooltip));
+        // The icon is a plain decoration item, so it needs no widget.
+        const QIcon icon = row.icon.isNull()
+            ? style()->standardIcon(QStyle::SP_FileIcon)
+            : row.icon;
+        QTableWidgetItem *iconItem = m_table->item(rowIndex, kIconColumn);
+        if (iconItem) {
+            iconItem->setIcon(icon);
+            iconItem->setTextAlignment(Qt::AlignCenter);
+            iconItem->setToolTip(row.tooltip);
+        }
+
+        m_table->setCellWidget(rowIndex, 1, applicationCell(row));
         m_table->setCellWidget(rowIndex, 2,
+                               textCell(row.effect, QString(), row.tooltip));
+        m_table->setCellWidget(rowIndex, 3,
                                textCell(row.window, row.expires, row.tooltip));
-        m_table->setCellWidget(rowIndex, 3, statusCell(row));
+        m_table->setCellWidget(rowIndex, 4, statusCell(row));
 
         auto *actions = new QWidget;
         auto *actionsLayout = cellLayout(actions);

@@ -21,6 +21,7 @@
  */
 #pragma once
 
+#include <QIcon>
 #include <QList>
 #include <QString>
 #include <QWidget>
@@ -66,6 +67,7 @@ Filter filterFor(Status status);
 struct Row
 {
     QString id;
+    QIcon icon;            // the executable's own icon, or the generic app icon
     QString name;          // executable name, group, publisher, service or PID
     QString subtitle;      // stored note, or what the target is
     QString tooltip;       // full target and note

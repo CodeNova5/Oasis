@@ -189,6 +189,11 @@ private:
     // The shell's generic application icon, for rows whose executable icon has
     // not been resolved (or that have no executable of their own).
     QIcon genericExecutableIcon() const;
+    // The shell icon for an executable path, resolved once and cached by
+    // normalized path. A target that is not a real file (a service name, a
+    // group id) resolves to the generic application icon. Used by screens that
+    // list stored policies, whose executables are often not running.
+    QIcon executableIcon(const QString &executablePath);
     void requestThrottle(quint32 pid, const QString &procName);
     // Evidence snapshot for the recommendation and approval views, taken while
     // the context menu's row is still valid.
@@ -239,6 +244,9 @@ private:
     QElapsedTimer           m_domainRefreshClock;
 
     QHash<QString, QIcon>   m_iconCache;
+    // Normalized executable path -> shell icon. Kept apart from m_iconCache,
+    // which is keyed by process name and filled while processes are captured.
+    QHash<QString, QIcon>   m_executableIconCache;
     mutable QIcon           m_genericExecutableIcon;
     // NG-054: paths resolved once per (pid, start time) for the dashboard, so a
     // refresh does not open a process handle for every row every second.
