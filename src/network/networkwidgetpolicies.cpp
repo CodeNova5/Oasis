@@ -735,6 +735,7 @@ void NetworkWidget::requestThrottlePath(const QString &path)
         return;
 
     ui->lblStatus->setText("Applying a 50 KiB/s limit...");
+    m_pendingManualThrottles.insert(ThrottlePolicyManager::normalizePath(path));
     m_throttlePolicies->apply(path);
 }
 
@@ -851,6 +852,10 @@ void NetworkWidget::restoreAllDataSaverPolicies()
 void NetworkWidget::onThrottleApplied(const QString &executablePath, const ThrottleResult &result)
 {
     const bool applied = result.status == ThrottleStatus::Applied;
+    // Clear the marker here rather than in one branch, so a result can never be
+    // consumed twice and confirm a later apply the user did not request.
+    const bool manual = m_pendingManualThrottles.remove(
+                            ThrottlePolicyManager::normalizePath(executablePath)) > 0;
 
     const auto pending = m_pendingThrottleEvents.find(executablePath);
     if (pending != m_pendingThrottleEvents.end()) {
@@ -886,16 +891,43 @@ void NetworkWidget::onThrottleApplied(const QString &executablePath, const Throt
         return;
     }
 
-    if (applied) {
-        ui->lblStatus->setText("Bandwidth limit applied.");
-        QMessageBox::information(this, "Bandwidth limit applied",
-                                 QString("The executable is now limited to 50 KiB/s.\n\n%1\n\n"
-                                         "Use the process menu again to remove the limit.")
-                                     .arg(result.message));
-    } else {
-        ui->lblStatus->setText("⚠ Bandwidth limit not applied.");
-        QMessageBox::warning(this, "Bandwidth limit not applied", result.message);
+    if (manual) {
+        // The user asked for this limit, so the confirmation stays a dialog.
+        if (applied) {
+            ui->lblStatus->setText("Bandwidth limit applied.");
+            QMessageBox::information(this, "Bandwidth limit applied",
+                                     QString("The executable is now limited to 50 KiB/s.\n\n%1\n\n"
+                                             "Use the process menu again to remove the limit.")
+                                         .arg(result.message));
+        } else {
+            ui->lblStatus->setText("⚠ Bandwidth limit not applied.");
+            QMessageBox::warning(this, "Bandwidth limit not applied", result.message);
+        }
+        refreshDashboard();
+        return;
     }
+
+    // Nobody is waiting for this result: reconciliation re-applied a stored
+    // limit, or a stored policy supplied one. A dialog would interrupt the user
+    // for work they did not ask for — typically seconds after an elevated launch
+    // — so the outcome goes to the status line and the audit feed instead.
+    AuditEvent backgroundAudit;
+    backgroundAudit.type = AuditEvent::EventType::EnforcementResult;
+    backgroundAudit.scope = executablePath;
+    backgroundAudit.reason = applied
+        ? QStringLiteral("a stored policy applied a bandwidth limit")
+        : QStringLiteral("a stored policy could not apply a bandwidth limit");
+    backgroundAudit.result = applied ? QStringLiteral("applied") : QStringLiteral("failed");
+    if (!applied) backgroundAudit.errorInfo = result.message;
+    // The stored policy behind the limit, when one is attributed; a limit nobody
+    // claims keeps an empty link rather than pointing at the QoS policy name.
+    backgroundAudit.relatedPolicyId = m_throttlePolicies->policyAttribution().value(
+        ThrottlePolicyManager::normalizePath(executablePath));
+    m_auditStore.append(backgroundAudit);
+
+    ui->lblStatus->setText(applied
+        ? QStringLiteral("Bandwidth limit applied by a stored policy.")
+        : QStringLiteral("⚠ Bandwidth limit could not be applied: ") + result.message);
     refreshDashboard();
 }
 

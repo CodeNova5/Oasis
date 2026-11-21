@@ -50,8 +50,8 @@ QFrame#policyCard { background: {card}; border: 1px solid {border}; border-radiu
 QWidget { font-family: "Inter"; font-size: 12px; color: {text}; }
 QFrame#headerIconTile { background: {accentSoft}; border: 1px solid {accentBorder}; border-radius: 12px; }
 QLabel { background: transparent; color: {text}; }
-QLabel#dialogTitle { font-size: 16px; font-weight: 600; color: {title}; }
-QLabel#dialogSubtitle { font-size: 12px; color: {muted}; }
+QLabel#dialogTitle { font-size: 14px; font-weight: 700; color: {title}; }
+QLabel#dialogSubtitle { font-size: 11px; color: {muted}; }
 QLabel#stepNum { border-radius: 9px; font-size: 10px; font-weight: 700; }
 QLabel#stepNum[state="current"] { background: {accentSolid}; color: #FFFFFF; }
 QLabel#stepNum[state="done"] { background: #10B981; color: #FFFFFF; }
@@ -74,7 +74,7 @@ QScrollBar::handle:vertical:hover { background: {scrollHover}; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
 QLabel#sectionLabel { font-size: 12px; font-weight: 600; color: {muted}; }
-QComboBox#scopePill, QComboBox#directionPill { background: {field}; border: 1px solid {border}; border-radius: 11px; padding: 1px 8px; color: {secondary}; font-size: 11px; }
+QComboBox#scopePill, QComboBox#directionPill { background: {field}; border: 1px solid {border}; border-radius: 12px; padding: 2px 10px; color: {secondary}; font-size: 11px; }
 QComboBox#scopePill::drop-down, QComboBox#directionPill::drop-down { width: 0; border: none; }
 QComboBox#scopePill::down-arrow, QComboBox#directionPill::down-arrow { width: 0; height: 0; image: none; }
 QComboBox#scopePill:disabled, QComboBox#directionPill:disabled { color: {muted}; }
@@ -243,24 +243,24 @@ void PolicyEditorDialog::buildUi()
     // tinted header block the mock draws above the step body.
     m_header = new QWidget(m_card);
     auto *headerColumn = new QVBoxLayout(m_header);
-    headerColumn->setContentsMargins(20, 18, 20, 14);
-    headerColumn->setSpacing(12);
+    headerColumn->setContentsMargins(20, 16, 20, 14);
+    headerColumn->setSpacing(14);
 
     auto *headerRowWidget = new QWidget(m_header);
     auto *headerRow = new QHBoxLayout(headerRowWidget);
     headerRow->setContentsMargins(0, 0, 0, 0);
-    headerRow->setSpacing(12);
+    headerRow->setSpacing(10);
 
     auto *iconTile = new QFrame(headerRowWidget);
     iconTile->setObjectName(QStringLiteral("headerIconTile"));
-    iconTile->setFixedSize(36, 36);
+    iconTile->setFixedSize(32, 32);
     auto *iconLayout = new QVBoxLayout(iconTile);
     iconLayout->setContentsMargins(0, 0, 0, 0);
     m_headerIcon = new QLabel(iconTile);
     m_headerIcon->setAlignment(Qt::AlignCenter);
-    m_headerIcon->setFixedSize(20, 20);
+    m_headerIcon->setFixedSize(16, 16);
     iconLayout->addWidget(m_headerIcon, 0, Qt::AlignCenter);
-    headerRow->addWidget(iconTile, 0, Qt::AlignTop);
+    headerRow->addWidget(iconTile, 0, Qt::AlignVCenter);
 
     auto *titleColumn = new QVBoxLayout();
     titleColumn->setContentsMargins(0, 0, 0, 0);
@@ -298,7 +298,7 @@ void PolicyEditorDialog::buildUi()
     m_closeButton->setCursor(Qt::PointingHandCursor);
     m_closeButton->setToolTip(QStringLiteral("Close"));
     m_closeButton->setAccessibleName(QStringLiteral("Close"));
-    headerRow->addWidget(m_closeButton, 0, Qt::AlignTop);
+    headerRow->addWidget(m_closeButton, 0, Qt::AlignVCenter);
     headerColumn->addWidget(headerRowWidget);
 
     // ── Stepper ───────────────────────────────────────────────────────────
@@ -311,13 +311,13 @@ void PolicyEditorDialog::buildUi()
         auto *pill = new QPushButton(m_stepper);
         pill->setObjectName(QStringLiteral("stepPill"));
         pill->setCursor(Qt::PointingHandCursor);
-        pill->setFixedHeight(30);
+        pill->setFixedHeight(32);
         pill->setAccessibleName(QStringLiteral("Step %1: %2")
                                     .arg(i + 1)
                                     .arg(QLatin1String(stepTitles[i])));
         auto *cell = new QHBoxLayout(pill);
-        cell->setContentsMargins(6, 0, 6, 0);
-        cell->setSpacing(6);
+        cell->setContentsMargins(8, 0, 8, 0);
+        cell->setSpacing(8);
 
         auto *number = new QLabel(QString::number(i + 1), pill);
         number->setObjectName(QStringLiteral("stepNum"));
@@ -386,7 +386,7 @@ void PolicyEditorDialog::buildUi()
 
     auto *footer = new QWidget(m_card);
     auto *footerRow = new QHBoxLayout(footer);
-    footerRow->setContentsMargins(20, 12, 20, 16);
+    footerRow->setContentsMargins(20, 14, 20, 14);
     footerRow->setSpacing(10);
 
     // Cancel / Back sits on the left and the forward action on the right, as
@@ -454,11 +454,6 @@ void PolicyEditorDialog::buildUi()
                                      : QRect(0, 0, 1080, 720);
     const int cap = qMax(240, available.height() - chrome - 8);
     m_scroll->setMaximumHeight(cap);
-    // A wizard step holds one section, so without a floor the card collapses to
-    // the height of two fields and the chrome dominates it. The floor also
-    // stops the dialog jumping every time the step changes.
-    if (!m_editing)
-        m_scroll->setMinimumHeight(qMin(320, cap));
 }
 
 QString PolicyEditorDialog::processBadgeText() const
@@ -500,7 +495,7 @@ void PolicyEditorDialog::applyTheme()
     m_processBadge->setText(m_processBadge->fontMetrics().elidedText(
         badgeText, Qt::ElideMiddle, 216));
 
-    m_headerIcon->setPixmap(glyphPixmap(GlyphShield, 20, c.accent, 1.6));
+    m_headerIcon->setPixmap(glyphPixmap(GlyphShield, 16, c.accent, 1.8));
     m_closeButton->setIcon(QIcon(glyphPixmap(GlyphClose, 16, c.muted, 1.8)));
     m_closeButton->setIconSize(QSize(16, 16));
     m_saveButton->setIcon(QIcon(glyphPixmap(GlyphCheck, 14, QColor("#FFFFFF"), 2.0)));

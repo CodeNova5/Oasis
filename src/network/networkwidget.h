@@ -5,6 +5,7 @@
 #pragma once
 
 #include <QHash>
+#include <QSet>
 #include <QWidget>
 #include <QSortFilterProxyModel>
 #include <QDialog>
@@ -275,6 +276,10 @@ private:
     TopConsumers::Summary m_dashboardSummary;
     // Auto-throttle alerts waiting for the worker thread to report back.
     QHash<QString, BandwidthEvent> m_pendingThrottleEvents;
+    // Paths the user explicitly limited, so their result is confirmed with a
+    // dialog. Anything else that applies a limit is background work and reports
+    // through the status line and the audit feed instead.
+    QSet<QString> m_pendingManualThrottles;
     // Emergency restore result waiting for the throttle worker's outcome, so
     // the user sees one report covering both the policy store and the shaping.
     EmergencyRestoreReport  m_restoreReport;

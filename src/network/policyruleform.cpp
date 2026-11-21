@@ -51,14 +51,14 @@ void PolicyRuleForm::buildUi()
     setObjectName(QStringLiteral("dialogBody"));
     auto *bodyLayout = new QVBoxLayout(this);
     bodyLayout->setContentsMargins(20, 20, 20, 20);
-    bodyLayout->setSpacing(20);
+    bodyLayout->setSpacing(16);
 
     // ── 1. Target & scope ─────────────────────────────────────────────────
     m_sectionTarget = new QWidget(this);
     auto *sectionTarget = m_sectionTarget;
     auto *targetLayout = new QVBoxLayout(sectionTarget);
     targetLayout->setContentsMargins(0, 0, 0, 0);
-    targetLayout->setSpacing(10);
+    targetLayout->setSpacing(12);
 
     auto *targetHead = new QHBoxLayout();
     targetHead->setContentsMargins(0, 0, 0, 0);
@@ -72,7 +72,7 @@ void PolicyRuleForm::buildUi()
     m_scopeCombo->setObjectName(QStringLiteral("scopePill"));
     m_scopeCombo->setCursor(Qt::PointingHandCursor);
     m_scopeCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    m_scopeCombo->setFixedHeight(22);
+    m_scopeCombo->setFixedHeight(24);
     for (PolicyScopeKind scope : {PolicyScopeKind::Pid, PolicyScopeKind::ExecutablePath,
                                   PolicyScopeKind::Publisher, PolicyScopeKind::Service,
                                   PolicyScopeKind::ApplicationGroup}) {
@@ -87,7 +87,7 @@ void PolicyRuleForm::buildUi()
 
     m_targetField = new QFrame(sectionTarget);
     m_targetField->setObjectName(QStringLiteral("targetField"));
-    m_targetField->setFixedHeight(36);
+    m_targetField->setFixedHeight(38);
     auto *targetFieldLayout = new QHBoxLayout(m_targetField);
     targetFieldLayout->setContentsMargins(12, 0, 6, 0);
     targetFieldLayout->setSpacing(6);
@@ -129,7 +129,7 @@ void PolicyRuleForm::buildUi()
     auto *sectionAction = m_sectionAction;
     auto *actionLayout = new QVBoxLayout(sectionAction);
     actionLayout->setContentsMargins(0, 0, 0, 0);
-    actionLayout->setSpacing(12);
+    actionLayout->setSpacing(10);
 
     auto *actionHead = new QHBoxLayout();
     actionHead->setContentsMargins(0, 0, 0, 0);
@@ -141,7 +141,7 @@ void PolicyRuleForm::buildUi()
     m_directionCombo = new QComboBox(sectionAction);
     m_directionCombo->setObjectName(QStringLiteral("directionPill"));
     m_directionCombo->setCursor(Qt::PointingHandCursor);
-    m_directionCombo->setFixedHeight(22);
+    m_directionCombo->setFixedHeight(24);
     m_directionCombo->addItem(QStringLiteral("Direction: Download"),
                               static_cast<int>(NetworkDirection::Download));
     m_directionCombo->addItem(QStringLiteral("Direction: Upload"),
@@ -214,7 +214,7 @@ void PolicyRuleForm::buildUi()
     m_rateContainer = new QWidget(sectionAction);
     auto *rateLayout = new QVBoxLayout(m_rateContainer);
     rateLayout->setContentsMargins(0, 0, 0, 0);
-    rateLayout->setSpacing(8);
+    rateLayout->setSpacing(6);
 
     auto *rateHead = new QHBoxLayout();
     rateHead->setContentsMargins(0, 0, 0, 0);
@@ -238,7 +238,7 @@ void PolicyRuleForm::buildUi()
 
     m_rateField = new QFrame(m_rateContainer);
     m_rateField->setObjectName(QStringLiteral("rateField"));
-    m_rateField->setFixedHeight(40);
+    m_rateField->setFixedHeight(38);
     auto *rateFieldLayout = new QHBoxLayout(m_rateField);
     rateFieldLayout->setContentsMargins(14, 0, 6, 0);
     rateFieldLayout->setSpacing(6);
@@ -396,6 +396,11 @@ void PolicyRuleForm::buildUi()
     m_enforcementLabel->setWordWrap(true);
     impactLayout->addWidget(m_enforcementLabel);
     bodyLayout->addWidget(m_impactCard);
+    // Anchor the content to the top of the scroll body. Without this the layout
+    // spreads any spare height across the labels, which pushed the helper text
+    // into the middle of the card on the single-section wizard steps.
+    bodyLayout->addStretch(1);
+
     // ── Connections ───────────────────────────────────────────────────────
     connect(m_browseButton, &QPushButton::clicked,
             this, &PolicyRuleForm::browseForExecutable);

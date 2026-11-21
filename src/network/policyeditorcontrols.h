@@ -36,7 +36,7 @@ public:
         setCheckable(true);
         setCursor(Qt::PointingHandCursor);
         setFocusPolicy(Qt::StrongFocus);
-        setMinimumHeight(62);
+        setMinimumHeight(58);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     }
 
@@ -51,7 +51,7 @@ public:
         update();
     }
 
-    QSize sizeHint() const override { return QSize(150, 62); }
+    QSize sizeHint() const override { return QSize(150, 58); }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -78,7 +78,7 @@ protected:
         p.setPen(QPen(border, borderWidth));
         p.drawRoundedRect(r, 12, 12);
 
-        paintGlyph(p, m_glyph, QRectF(width() / 2.0 - 8.0, 12.0, 16.0, 16.0),
+        paintGlyph(p, m_glyph, QRectF(width() / 2.0 - 8.0, 10.0, 16.0, 16.0),
                    m_accent, 1.6);
 
         QFont labelFont(QStringLiteral("Inter"));
@@ -86,7 +86,7 @@ protected:
         labelFont.setWeight(QFont::DemiBold);
         p.setFont(labelFont);
         p.setPen(isChecked() ? m_checkedText : m_text);
-        p.drawText(QRect(0, 34, width(), 18),
+        p.drawText(QRect(0, 31, width(), 18),
                    Qt::AlignHCenter | Qt::AlignTop, text());
 
         if (hasFocus()) {
