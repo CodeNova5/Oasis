@@ -269,7 +269,7 @@ void PolicyRuleForm::buildUi()
     m_accordionHeader = new QPushButton(m_accordion);
     m_accordionHeader->setObjectName(QStringLiteral("accordionHeader"));
     m_accordionHeader->setCursor(Qt::PointingHandCursor);
-    m_accordionHeader->setFixedHeight(42);
+    m_accordionHeader->setFixedHeight(40);
     auto *accordionHead = new QHBoxLayout(m_accordionHeader);
     accordionHead->setContentsMargins(14, 0, 14, 0);
     accordionHead->setSpacing(8);
@@ -298,7 +298,7 @@ void PolicyRuleForm::buildUi()
     m_accordionBody->setMaximumHeight(0);
     auto *accordionBodyLayout = new QVBoxLayout(m_accordionBody);
     accordionBodyLayout->setContentsMargins(14, 0, 14, 14);
-    accordionBodyLayout->setSpacing(12);
+    accordionBodyLayout->setSpacing(10);
 
     auto *accordionLine = new QFrame(m_accordionBody);
     accordionLine->setObjectName(QStringLiteral("accordionLine"));
@@ -311,6 +311,7 @@ void PolicyRuleForm::buildUi()
     m_scheduleCombo = new QComboBox(m_accordionBody);
     m_scheduleCombo->setObjectName(QStringLiteral("fieldCombo"));
     m_scheduleCombo->setCursor(Qt::PointingHandCursor);
+    m_scheduleCombo->setFixedHeight(34);
     m_scheduleCombo->addItem(QStringLiteral("Always in force (24/7)"), QString());
     m_scheduleCombo->addItem(QStringLiteral("Work hours (Mon–Fri, 09:00–17:00)"),
                              QStringLiteral("work-hours"));
@@ -326,6 +327,7 @@ void PolicyRuleForm::buildUi()
     customLayout->setSpacing(0);
     m_customScheduleEdit = new QLineEdit(m_customScheduleWrap);
     m_customScheduleEdit->setObjectName(QStringLiteral("monoField"));
+    m_customScheduleEdit->setFixedHeight(34);
     m_customScheduleEdit->setPlaceholderText(
         QStringLiteral("e.g. Mon,Wed,Fri 18:00-23:00"));
     customLayout->addWidget(m_customScheduleEdit);
@@ -343,6 +345,7 @@ void PolicyRuleForm::buildUi()
     m_expirationEdit = new QDateTimeEdit(
         QDateTime::currentDateTime().addSecs(3600), m_expirationWrap);
     m_expirationEdit->setObjectName(QStringLiteral("expirationEdit"));
+    m_expirationEdit->setFixedHeight(34);
     m_expirationEdit->setCalendarPopup(true);
     m_expirationEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd HH:mm"));
     expiryLayout->addWidget(m_expirationEdit);
@@ -354,6 +357,7 @@ void PolicyRuleForm::buildUi()
                                              m_accordionBody));
     m_descriptionEdit = new QLineEdit(m_accordionBody);
     m_descriptionEdit->setObjectName(QStringLiteral("noteInput"));
+    m_descriptionEdit->setFixedHeight(34);
     m_descriptionEdit->setPlaceholderText(
         QStringLiteral("Optional description (e.g. Prevent background sync spikes)"));
     accordionBodyLayout->addWidget(m_descriptionEdit);
@@ -365,8 +369,8 @@ void PolicyRuleForm::buildUi()
     m_impactCard = new QFrame(this);
     m_impactCard->setObjectName(QStringLiteral("impactCard"));
     auto *impactLayout = new QVBoxLayout(m_impactCard);
-    impactLayout->setContentsMargins(14, 14, 14, 14);
-    impactLayout->setSpacing(10);
+    impactLayout->setContentsMargins(14, 12, 14, 12);
+    impactLayout->setSpacing(8);
 
     auto *impactHead = new QHBoxLayout();
     impactHead->setContentsMargins(0, 0, 0, 0);
