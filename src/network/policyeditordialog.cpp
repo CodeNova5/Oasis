@@ -106,6 +106,25 @@ QComboBox#fieldCombo::down-arrow { width: 0; height: 0; image: none; }
 QLineEdit#monoField { font-family: "JetBrains Mono"; font-size: 11px; }
 QDateTimeEdit#expirationEdit { font-family: "JetBrains Mono"; font-size: 11px; }
 QDateTimeEdit#expirationEdit::drop-down { border: none; width: 20px; }
+QFrame#identityCard { background: {field}; border: 1px solid {fieldBorder}; border-radius: 12px; }
+QFrame#identityIconTile { background: {accentSoft}; border: 1px solid {accentBorder}; border-radius: 12px; }
+QLabel#appName { font-size: 12px; font-weight: 700; color: {title}; }
+QLabel#appSubtitle { font-size: 11px; color: {muted}; }
+QLabel#exceptionBadge { font-family: "JetBrains Mono"; font-size: 10px; color: {warningText}; background: {warningSoft}; border: 1px solid {warningBorder}; border-radius: 4px; padding: 1px 6px; }
+QFrame#identityLine { background: {border}; border: none; }
+QPushButton#linkButton { background: transparent; border: none; padding: 0; text-align: left; font-size: 11px; font-weight: 500; color: {muted}; }
+QPushButton#linkButton:hover { color: {accentText}; }
+QLabel#pathValue { font-family: "JetBrains Mono"; font-size: 11px; color: {secondary}; background: {card}; border: 1px solid {border}; border-radius: 8px; padding: 6px 10px; }
+QFrame#expiredBanner { background: rgba(227, 107, 112, 26); border: 1px solid rgba(227, 107, 112, 77); border-radius: 12px; }
+QLabel#expiredText { font-size: 11px; color: {dangerText}; }
+QPushButton#reactivateButton { background: transparent; border: 1px solid rgba(227, 107, 112, 102); border-radius: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: {dangerText}; }
+QPushButton#reactivateButton:hover { background: rgba(227, 107, 112, 38); }
+QPushButton#actionPill { background: {field}; border: 1px solid {border}; border-radius: 12px; padding: 7px 12px; font-size: 12px; font-weight: 600; color: {secondary}; }
+QPushButton#actionPill:hover { background: {hover}; }
+QPushButton#actionPill[tone="throttle"]:checked { background: {accentSoft}; border: 2px solid {accent}; color: {accentText}; padding: 6px 11px; }
+QPushButton#actionPill[tone="block"]:checked { background: rgba(244, 63, 94, 22); border: 2px solid #F43F5E; color: {dangerText}; padding: 6px 11px; }
+QPushButton#actionPill[tone="allow"]:checked { background: rgba(16, 185, 129, 22); border: 2px solid #10B981; color: {successText}; padding: 6px 11px; }
+QFrame#accordion[edit="true"] { background: transparent; border: none; }
 QFrame#impactCard { background: {impactBg}; border: 1px solid {impactBorder}; border-radius: 12px; }
 QFrame#impactCard[enabled="false"] { background: {inactiveBg}; border: 1px solid {inactiveBorder}; }
 QLabel#impactCaption { font-size: 11px; font-weight: 600; color: {accentText}; }
@@ -158,6 +177,8 @@ QLabel#toast { background: {toastBg}; color: #FFFFFF; border: 1px solid {toastBo
         {"{warningText}", c.warningText},
         {"{warningSoft}", c.warningSoft},
         {"{warningBorder}", c.warningBorder},
+        {"{dangerText}", c.dangerText},
+        {"{successText}", c.successText},
         {"{toastBg}", c.toastBg},
         {"{toastBorder}", c.toastBorder},
     };
@@ -183,6 +204,8 @@ PolicyEditorDialog::PolicyEditorDialog(const NetworkPolicy &policy, QWidget *par
     m_policy = policy;
     m_policyId = policy.id;
     m_policySource = policy.source;
+    if (policy.expiration.isValid() && policy.expiration <= QDateTime::currentDateTime())
+        m_storedExpiration = policy.expiration;
 
     PolicyScopeKind scope = PolicyScopeKind::ExecutablePath;
     policyScopeKindFromKey(policy.scope, &scope);
@@ -205,9 +228,10 @@ PolicyEditorDialog::PolicyEditorDialog(const NetworkPolicy &policy, QWidget *par
     }
 
     buildUi();
-    setWindowTitle(QStringLiteral("Edit Network Policy"));
-    m_titleLabel->setText(QStringLiteral("Edit Network Policy"));
+    setWindowTitle(QStringLiteral("Edit Policy"));
+    m_titleLabel->setText(QStringLiteral("Edit Policy"));
     m_form->loadPolicy(policy);
+    m_form->setExpired(policy.expiration);
 }
 
 void PolicyEditorDialog::buildUi()
@@ -243,8 +267,10 @@ void PolicyEditorDialog::buildUi()
     // tinted header block the mock draws above the step body.
     m_header = new QWidget(m_card);
     auto *headerColumn = new QVBoxLayout(m_header);
-    headerColumn->setContentsMargins(20, 16, 20, 14);
-    headerColumn->setSpacing(14);
+    headerColumn->setContentsMargins(20, 16, 20, 16);
+    // A little more air than the mock's 14 px so the stepper reads as its own
+    // block rather than crowding the title line above it.
+    headerColumn->setSpacing(18);
 
     auto *headerRowWidget = new QWidget(m_header);
     auto *headerRow = new QHBoxLayout(headerRowWidget);
@@ -260,6 +286,9 @@ void PolicyEditorDialog::buildUi()
     m_headerIcon->setAlignment(Qt::AlignCenter);
     m_headerIcon->setFixedSize(16, 16);
     iconLayout->addWidget(m_headerIcon, 0, Qt::AlignCenter);
+    // The edit modal's header is title + subtitle only, as the mock draws it;
+    // the app identity moves into the locked card at the top of the body.
+    iconTile->setVisible(!m_editing);
     headerRow->addWidget(iconTile, 0, Qt::AlignVCenter);
 
     auto *titleColumn = new QVBoxLayout();
@@ -382,6 +411,7 @@ void PolicyEditorDialog::buildUi()
     auto *footerLine = new QFrame(m_card);
     footerLine->setObjectName(QStringLiteral("headerLine"));
     footerLine->setFixedHeight(1);
+    footerLine->setVisible(!m_editing);
     cardLayout->addWidget(footerLine);
 
     auto *footer = new QWidget(m_card);
@@ -389,16 +419,19 @@ void PolicyEditorDialog::buildUi()
     footerRow->setContentsMargins(20, 14, 20, 14);
     footerRow->setSpacing(10);
 
-    // Cancel / Back sits on the left and the forward action on the right, as
-    // the mock lays them out.
+    // The wizard puts Cancel / Back on the left and its forward action on the
+    // right; the edit modal right-aligns Cancel next to Save Changes.
+    if (m_editing) footerRow->addStretch(1);
+
     m_cancelButton = new QPushButton(QStringLiteral("Cancel"), footer);
     m_cancelButton->setObjectName(QStringLiteral("cancelButton"));
     m_cancelButton->setCursor(Qt::PointingHandCursor);
     m_cancelButton->setAutoDefault(false);
     footerRow->addWidget(m_cancelButton);
-    footerRow->addStretch(1);
+    if (!m_editing) footerRow->addStretch(1);
 
-    m_saveButton = new QPushButton(QStringLiteral("Save Policy"), footer);
+    m_saveButton = new QPushButton(m_editing ? QStringLiteral("Save Changes")
+                                             : QStringLiteral("Save Policy"), footer);
     m_saveButton->setObjectName(QStringLiteral("saveButton"));
     m_saveButton->setCursor(Qt::PointingHandCursor);
     m_saveButton->setDefault(true);
@@ -431,11 +464,15 @@ void PolicyEditorDialog::buildUi()
 
     if (m_editing) {
         // Edit keeps the mock's single-view modal: every section at once, no
-        // stepper, and the target badge instead of a step line.
+        // stepper, no target badge, and the form's locked identity card in
+        // place of the scope fields.
         m_stepper->setVisible(false);
-        m_stepSubtitle->setVisible(false);
-        m_targetRow->setVisible(true);
+        m_targetRow->setVisible(false);
+        m_stepSubtitle->setVisible(true);
+        m_stepSubtitle->setText(
+            QStringLiteral("Adjust traffic limits, schedule, or activation state"));
         m_form->setStep(0);
+        m_form->setEditMode(true);
     } else {
         m_targetRow->setVisible(false);
         m_step = 1;
@@ -567,7 +604,11 @@ bool PolicyEditorDialog::validateStep(int step, QString *message)
         return false;
     }
     if (m_form->expiresChecked() &&
-        m_form->expiration() <= QDateTime::currentDateTime()) {
+        m_form->expiration() <= QDateTime::currentDateTime() &&
+        !(m_storedExpiration.isValid() &&
+          m_form->expiration() == m_storedExpiration)) {
+        // Saving an already-expired policy unchanged is allowed; back-dating a
+        // new one is not.
         *message = QStringLiteral("The expiration must be in the future.");
         m_form->focusExpirationField();
         return false;

@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <QDateTime>
 #include <QDialog>
 #include <QList>
 #include <QString>
@@ -80,6 +81,9 @@ private:
     bool m_editing = false;
     QString m_policyId;
     QString m_policySource;
+    // An expired edit target that has not been reactivated may be saved as-is;
+    // the edit modal offers to clear the lapse, not to invent a new past date.
+    QDateTime m_storedExpiration;
 
     QFrame *m_card = nullptr;
     QWidget *m_header = nullptr;

@@ -29,6 +29,7 @@ class QDateTimeEdit;
 class QFrame;
 class QLabel;
 class QLineEdit;
+class QGridLayout;
 class QPropertyAnimation;
 class QPushButton;
 
@@ -68,6 +69,16 @@ public:
     /// Show one wizard step (1 target, 2 traffic rule, 3 schedule & review), or
     /// all sections at once (0) for the single-view edit layout.
     void setStep(int step);
+
+    /// Switch to the mock's single-view edit modal: the target is locked, so
+    /// the scope fields give way to an identity card, the action cards
+    /// collapse into compact pills, and the schedule/note fields sit side by
+    /// side instead of inside a collapsible section.
+    void setEditMode(bool editing);
+    bool isEditMode() const { return m_editMode; }
+
+    /// Show the expired banner for an edit target whose window has passed.
+    void setExpired(const QDateTime &expiration);
 
     /// Text the dialog shows in the header badge; the PID and group previews
     /// reuse it so they name the thing the user recognises.
@@ -116,6 +127,8 @@ private:
     void updateActionControls();
     void updateAccordionStatus();
     void toggleAccordion();
+    void applyScheduleLayout(bool edit);
+    void syncActionPills();
     QString previewHtml() const;
     QString enforcementText() const;
     void browseForExecutable();
@@ -126,16 +139,31 @@ private:
     QWidget *m_sectionTarget = nullptr;
     QWidget *m_sectionDivider = nullptr;
     QWidget *m_sectionAction = nullptr;
+    QFrame *m_identityCard = nullptr;
+    QFrame *m_expiredBanner = nullptr;
+    QFrame *m_accordionLine = nullptr;
     QFrame *m_targetField = nullptr;
     QFrame *m_rateField = nullptr;
     QFrame *m_accordion = nullptr;
     QFrame *m_impactCard = nullptr;
+    QGridLayout *m_accordionGrid = nullptr;
     QWidget *m_rateContainer = nullptr;
     QWidget *m_accordionBody = nullptr;
     QWidget *m_expirationWrap = nullptr;
     QWidget *m_customScheduleWrap = nullptr;
 
     QLabel *m_scopeLabel = nullptr;
+    QLabel *m_sectionActionLabel = nullptr;
+    QLabel *m_scheduleLabel = nullptr;
+    QLabel *m_noteLabel = nullptr;
+    QLabel *m_impactCaption = nullptr;
+    QLabel *m_identityIcon = nullptr;
+    QLabel *m_appNameLabel = nullptr;
+    QLabel *m_appSubtitle = nullptr;
+    QLabel *m_exceptionBadge = nullptr;
+    QLabel *m_pathValue = nullptr;
+    QLabel *m_expiredText = nullptr;
+    QLabel *m_editEnabledLabel = nullptr;
     QLabel *m_targetHint = nullptr;
     QLabel *m_serviceBanner = nullptr;
     QLabel *m_accordionStatus = nullptr;
@@ -157,13 +185,18 @@ private:
 
     QPushButton *m_browseButton = nullptr;
     QPushButton *m_accordionHeader = nullptr;
+    QPushButton *m_pathToggle = nullptr;
+    QPushButton *m_reactivateButton = nullptr;
+    QList<QPushButton *> m_actionPills;
 
     QButtonGroup *m_actionGroup = nullptr;
     QList<PolicyActionCard *> m_actionCards;
     PolicyToggleSwitch *m_enabledSwitch = nullptr;
+    PolicyToggleSwitch *m_editEnabledSwitch = nullptr;
     PolicyCheckBox *m_expiresCheck = nullptr;
 
     QPropertyAnimation *m_accordionAnim = nullptr;
     bool m_accordionOpen = false;
+    bool m_editMode = false;
     int m_step = 0;
 };

@@ -26,6 +26,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QIntValidator>
@@ -33,6 +34,7 @@
 #include <QLineEdit>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 using namespace PolicyEditorStyle;
@@ -52,6 +54,101 @@ void PolicyRuleForm::buildUi()
     auto *bodyLayout = new QVBoxLayout(this);
     bodyLayout->setContentsMargins(20, 20, 20, 20);
     bodyLayout->setSpacing(16);
+
+    // ── Edit: locked target identity ──────────────────────────────────────
+    // The edit modal fixes the target: the scope and path fields would invite
+    // quietly widening a stored policy, so they are replaced by a summary card
+    // that names the application and keeps the technical path behind a toggle.
+    m_identityCard = new QFrame(this);
+    m_identityCard->setObjectName(QStringLiteral("identityCard"));
+    auto *identityLayout = new QVBoxLayout(m_identityCard);
+    identityLayout->setContentsMargins(12, 12, 12, 12);
+    identityLayout->setSpacing(8);
+
+    auto *identityRow = new QHBoxLayout();
+    identityRow->setContentsMargins(0, 0, 0, 0);
+    identityRow->setSpacing(10);
+
+    auto *identityIconTile = new QFrame(m_identityCard);
+    identityIconTile->setObjectName(QStringLiteral("identityIconTile"));
+    identityIconTile->setFixedSize(36, 36);
+    auto *identityIconLayout = new QVBoxLayout(identityIconTile);
+    identityIconLayout->setContentsMargins(0, 0, 0, 0);
+    m_identityIcon = new QLabel(identityIconTile);
+    m_identityIcon->setFixedSize(18, 18);
+    m_identityIcon->setAlignment(Qt::AlignCenter);
+    identityIconLayout->addWidget(m_identityIcon, 0, Qt::AlignCenter);
+    identityRow->addWidget(identityIconTile, 0, Qt::AlignVCenter);
+
+    auto *identityText = new QVBoxLayout();
+    identityText->setContentsMargins(0, 0, 0, 0);
+    identityText->setSpacing(2);
+    auto *appNameRow = new QHBoxLayout();
+    appNameRow->setContentsMargins(0, 0, 0, 0);
+    appNameRow->setSpacing(6);
+    m_appNameLabel = makeLabel(QString(), QStringLiteral("appName"), m_identityCard);
+    appNameRow->addWidget(m_appNameLabel);
+    m_exceptionBadge = makeLabel(QString(), QStringLiteral("exceptionBadge"), m_identityCard);
+    m_exceptionBadge->setVisible(false);
+    appNameRow->addWidget(m_exceptionBadge);
+    appNameRow->addStretch(1);
+    identityText->addLayout(appNameRow);
+    m_appSubtitle = makeLabel(QStringLiteral("Target locked"),
+                              QStringLiteral("appSubtitle"), m_identityCard);
+    identityText->addWidget(m_appSubtitle);
+    identityRow->addLayout(identityText, 1);
+
+    m_editEnabledLabel = makeLabel(QStringLiteral("Enabled"),
+                                   QStringLiteral("enabledState"), m_identityCard);
+    identityRow->addWidget(m_editEnabledLabel, 0, Qt::AlignVCenter);
+    m_editEnabledSwitch = new PolicyToggleSwitch(m_identityCard);
+    m_editEnabledSwitch->setChecked(true);
+    identityRow->addWidget(m_editEnabledSwitch, 0, Qt::AlignVCenter);
+    identityLayout->addLayout(identityRow);
+
+    auto *identityLine = new QFrame(m_identityCard);
+    identityLine->setObjectName(QStringLiteral("identityLine"));
+    identityLine->setFixedHeight(1);
+    identityLayout->addWidget(identityLine);
+
+    m_pathToggle = new QPushButton(QStringLiteral("Show technical path"), m_identityCard);
+    m_pathToggle->setObjectName(QStringLiteral("linkButton"));
+    m_pathToggle->setCursor(Qt::PointingHandCursor);
+    m_pathToggle->setAutoDefault(false);
+    auto *pathRow = new QHBoxLayout();
+    pathRow->setContentsMargins(0, 0, 0, 0);
+    pathRow->setSpacing(0);
+    pathRow->addWidget(m_pathToggle);
+    pathRow->addStretch(1);
+    identityLayout->addLayout(pathRow);
+
+    m_pathValue = makeLabel(QString(), QStringLiteral("pathValue"), m_identityCard);
+    m_pathValue->setWordWrap(true);
+    m_pathValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_pathValue->setVisible(false);
+    identityLayout->addWidget(m_pathValue);
+
+    m_identityCard->setVisible(false);
+    bodyLayout->addWidget(m_identityCard);
+
+    // The mock warns when the stored policy has already lapsed and offers to
+    // reactivate it without an expiry before saving.
+    m_expiredBanner = new QFrame(this);
+    m_expiredBanner->setObjectName(QStringLiteral("expiredBanner"));
+    auto *expiredLayout = new QHBoxLayout(m_expiredBanner);
+    expiredLayout->setContentsMargins(12, 8, 12, 8);
+    expiredLayout->setSpacing(10);
+    m_expiredText = makeLabel(QString(), QStringLiteral("expiredText"), m_expiredBanner);
+    m_expiredText->setWordWrap(true);
+    expiredLayout->addWidget(m_expiredText, 1);
+    m_reactivateButton =
+        new QPushButton(QStringLiteral("Reactivate (no expiry)"), m_expiredBanner);
+    m_reactivateButton->setObjectName(QStringLiteral("reactivateButton"));
+    m_reactivateButton->setCursor(Qt::PointingHandCursor);
+    m_reactivateButton->setAutoDefault(false);
+    expiredLayout->addWidget(m_reactivateButton, 0, Qt::AlignVCenter);
+    m_expiredBanner->setVisible(false);
+    bodyLayout->addWidget(m_expiredBanner);
 
     // ── 1. Target & scope ─────────────────────────────────────────────────
     m_sectionTarget = new QWidget(this);
@@ -134,8 +231,9 @@ void PolicyRuleForm::buildUi()
     auto *actionHead = new QHBoxLayout();
     actionHead->setContentsMargins(0, 0, 0, 0);
     actionHead->setSpacing(8);
-    actionHead->addWidget(makeLabel(QStringLiteral("2. TRAFFIC ACTION & LIMIT"),
-                                    QStringLiteral("sectionLabel"), sectionAction));
+    m_sectionActionLabel = makeLabel(QStringLiteral("2. TRAFFIC ACTION & LIMIT"),
+                                     QStringLiteral("sectionLabel"), sectionAction);
+    actionHead->addWidget(m_sectionActionLabel);
     actionHead->addStretch(1);
 
     m_directionCombo = new QComboBox(sectionAction);
@@ -180,6 +278,42 @@ void PolicyRuleForm::buildUi()
         actionRow->addWidget(card, 1);
     }
     actionLayout->addLayout(actionRow);
+
+    // The edit modal is a single compact view, so it uses the mock's plain
+    // pills instead of the taller painted cards. Both drive the same button
+    // group; the pills mirror the group's checked action.
+    auto *pillRow = new QHBoxLayout();
+    pillRow->setContentsMargins(0, 0, 0, 0);
+    pillRow->setSpacing(8);
+    struct PillSpec
+    {
+        NetworkPolicy::Action action;
+        const char *label;
+        const char *tone;
+    };
+    const PillSpec pills[] = {
+        {NetworkPolicy::Action::Throttle, "Throttle", "throttle"},
+        {NetworkPolicy::Action::Block, "Block", "block"},
+        {NetworkPolicy::Action::Allow, "Allow", "allow"},
+    };
+    for (const PillSpec &spec : pills) {
+        auto *pill = new QPushButton(QString::fromLatin1(spec.label), sectionAction);
+        pill->setObjectName(QStringLiteral("actionPill"));
+        pill->setProperty("tone", QString::fromLatin1(spec.tone));
+        pill->setProperty("action", static_cast<int>(spec.action));
+        pill->setCheckable(true);
+        pill->setCursor(Qt::PointingHandCursor);
+        pill->setFixedHeight(34);
+        pill->setVisible(false);
+        connect(pill, &QPushButton::clicked, this, [this, spec]() {
+            setAction(spec.action);
+            syncActionPills();
+            updateActionControls();
+        });
+        m_actionPills.append(pill);
+        pillRow->addWidget(pill, 1);
+    }
+    actionLayout->addLayout(pillRow);
 
     // Advisory actions are kept, but secondary: the mockup leads with the three
     // enforcement actions and these three do not create a rule or limit.
@@ -296,18 +430,22 @@ void PolicyRuleForm::buildUi()
     m_accordionBody = new QWidget(m_accordion);
     m_accordionBody->setObjectName(QStringLiteral("accordionBody"));
     m_accordionBody->setMaximumHeight(0);
-    auto *accordionBodyLayout = new QVBoxLayout(m_accordionBody);
-    accordionBodyLayout->setContentsMargins(14, 0, 14, 14);
-    accordionBodyLayout->setSpacing(10);
+    // A grid rather than a column: the wizard stacks everything, while the edit
+    // modal puts Schedule and Note side by side (applyScheduleLayout swaps the
+    // placement without recreating the fields).
+    m_accordionGrid = new QGridLayout(m_accordionBody);
+    m_accordionGrid->setContentsMargins(14, 0, 14, 14);
+    m_accordionGrid->setHorizontalSpacing(12);
+    m_accordionGrid->setVerticalSpacing(10);
+    m_accordionGrid->setColumnStretch(0, 1);
+    m_accordionGrid->setColumnStretch(1, 1);
 
-    auto *accordionLine = new QFrame(m_accordionBody);
-    accordionLine->setObjectName(QStringLiteral("accordionLine"));
-    accordionLine->setFixedHeight(1);
-    accordionBodyLayout->addWidget(accordionLine);
+    m_accordionLine = new QFrame(m_accordionBody);
+    m_accordionLine->setObjectName(QStringLiteral("accordionLine"));
+    m_accordionLine->setFixedHeight(1);
 
-    accordionBodyLayout->addWidget(makeLabel(QStringLiteral("Recurring Active Window"),
-                                             QStringLiteral("fieldLabel"),
-                                             m_accordionBody));
+    m_scheduleLabel = makeLabel(QStringLiteral("Recurring Active Window"),
+                                QStringLiteral("fieldLabel"), m_accordionBody);
     m_scheduleCombo = new QComboBox(m_accordionBody);
     m_scheduleCombo->setObjectName(QStringLiteral("fieldCombo"));
     m_scheduleCombo->setCursor(Qt::PointingHandCursor);
@@ -319,7 +457,6 @@ void PolicyRuleForm::buildUi()
                              QStringLiteral("overnight"));
     m_scheduleCombo->addItem(QStringLiteral("Custom schedule window..."),
                              QStringLiteral("custom"));
-    accordionBodyLayout->addWidget(m_scheduleCombo);
 
     m_customScheduleWrap = new QWidget(m_accordionBody);
     auto *customLayout = new QVBoxLayout(m_customScheduleWrap);
@@ -332,11 +469,9 @@ void PolicyRuleForm::buildUi()
         QStringLiteral("e.g. Mon,Wed,Fri 18:00-23:00"));
     customLayout->addWidget(m_customScheduleEdit);
     m_customScheduleWrap->setVisible(false);
-    accordionBodyLayout->addWidget(m_customScheduleWrap);
 
     m_expiresCheck = new PolicyCheckBox(
         QStringLiteral("Automatically expire policy"), m_accordionBody);
-    accordionBodyLayout->addWidget(m_expiresCheck);
 
     m_expirationWrap = new QWidget(m_accordionBody);
     auto *expiryLayout = new QVBoxLayout(m_expirationWrap);
@@ -350,17 +485,16 @@ void PolicyRuleForm::buildUi()
     m_expirationEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd HH:mm"));
     expiryLayout->addWidget(m_expirationEdit);
     m_expirationWrap->setVisible(false);
-    accordionBodyLayout->addWidget(m_expirationWrap);
 
-    accordionBodyLayout->addWidget(makeLabel(QStringLiteral("Note / Reason"),
-                                             QStringLiteral("fieldLabel"),
-                                             m_accordionBody));
+    m_noteLabel = makeLabel(QStringLiteral("Note / Reason"), QStringLiteral("fieldLabel"),
+                            m_accordionBody);
     m_descriptionEdit = new QLineEdit(m_accordionBody);
     m_descriptionEdit->setObjectName(QStringLiteral("noteInput"));
     m_descriptionEdit->setFixedHeight(34);
     m_descriptionEdit->setPlaceholderText(
         QStringLiteral("Optional description (e.g. Prevent background sync spikes)"));
-    accordionBodyLayout->addWidget(m_descriptionEdit);
+
+    applyScheduleLayout(false);
 
     accordionLayout->addWidget(m_accordionBody);
     bodyLayout->addWidget(m_accordion);
@@ -378,8 +512,9 @@ void PolicyRuleForm::buildUi()
     m_eyeIcon = new QLabel(m_impactCard);
     m_eyeIcon->setFixedSize(14, 14);
     impactHead->addWidget(m_eyeIcon);
-    impactHead->addWidget(makeLabel(QStringLiteral("LIVE POLICY SUMMARY"),
-                                    QStringLiteral("impactCaption"), m_impactCard));
+    m_impactCaption = makeLabel(QStringLiteral("LIVE POLICY SUMMARY"),
+                                QStringLiteral("impactCaption"), m_impactCard);
+    impactHead->addWidget(m_impactCaption);
     impactHead->addStretch(1);
     m_enabledLabel = makeLabel(QStringLiteral("Enabled"),
                                QStringLiteral("enabledState"), m_impactCard);
@@ -449,8 +584,48 @@ void PolicyRuleForm::buildUi()
     connect(m_enabledSwitch, &QAbstractButton::toggled, this, [this](bool enabled) {
         m_enabledLabel->setText(enabled ? QStringLiteral("Enabled")
                                         : QStringLiteral("Disabled"));
+        if (m_editEnabledSwitch->isChecked() != enabled) {
+            QSignalBlocker blocker(m_editEnabledSwitch);
+            m_editEnabledSwitch->setChecked(enabled);
+        }
+        m_editEnabledLabel->setText(enabled ? QStringLiteral("Enabled")
+                                            : QStringLiteral("Paused"));
         updateImpactPreview();
     });
+
+    // The edit card carries its own switch; keep it a mirror of the form state
+    // so either control can flip the policy without the two disagreeing.
+    connect(m_editEnabledSwitch, &QAbstractButton::toggled, this, [this](bool enabled) {
+        m_editEnabledLabel->setText(enabled ? QStringLiteral("Enabled")
+                                            : QStringLiteral("Paused"));
+        if (m_enabledSwitch->isChecked() != enabled) {
+            QSignalBlocker blocker(m_enabledSwitch);
+            m_enabledSwitch->setChecked(enabled);
+        }
+        updateImpactPreview();
+    });
+
+    connect(m_pathToggle, &QPushButton::clicked, this, [this]() {
+        const bool show = !m_pathValue->isVisible();
+        m_pathValue->setVisible(show);
+        m_pathToggle->setText(show ? QStringLiteral("Hide technical path")
+                                   : QStringLiteral("Show technical path"));
+        emit layoutChanged();
+    });
+
+    connect(m_reactivateButton, &QPushButton::clicked, this, [this]() {
+        m_expiredBanner->setVisible(false);
+        m_expiresCheck->setChecked(false);
+        m_expirationWrap->setVisible(false);
+        updateImpactPreview();
+        emit layoutChanged();
+    });
+
+    connect(m_actionGroup, &QButtonGroup::buttonToggled, this,
+            [this](QAbstractButton *, bool checked) {
+        if (checked) syncActionPills();
+    });
+
     connect(m_accordionHeader, &QPushButton::clicked,
             this, &PolicyRuleForm::toggleAccordion);
 
@@ -472,25 +647,123 @@ void PolicyRuleForm::setStep(int step)
     const bool all = step == 0;
     const bool review = step == 3;
 
-    m_sectionTarget->setVisible(all || step == 1);
+    // The edit modal is the mock's single-view form: the target is locked, so
+    // the scope fields never appear, and the schedule/note fields are always
+    // open instead of collapsed behind the accordion header.
+    const bool openSchedule = review || m_editMode;
+
+    m_sectionTarget->setVisible(!m_editMode && (all || step == 1));
     // The divider exists only to separate stacked sections; a single wizard
     // step has nothing to separate from.
-    m_sectionDivider->setVisible(all);
+    m_sectionDivider->setVisible(all && !m_editMode);
     m_sectionAction->setVisible(all || step == 2);
     m_accordion->setVisible(all || review);
     m_impactCard->setVisible(all || review);
 
-    // In the review step the schedule fields are the point of the step, so the
-    // collapsible header (and its chevron) is dropped and the body is opened
-    // without animating.
-    m_accordionHeader->setVisible(!review);
-    if (review && !m_accordionOpen) {
+    // In the review step (and the edit modal) the schedule fields are the point
+    // of the section, so the collapsible header (and its chevron) is dropped
+    // and the body is opened without animating.
+    m_accordionHeader->setVisible(!openSchedule);
+    if (openSchedule && !m_accordionOpen) {
         m_accordionAnim->stop();
         m_accordionOpen = true;
         m_accordionBody->setMaximumHeight(QWIDGETSIZE_MAX);
     }
     applyTheme();
     emit layoutChanged();
+}
+
+void PolicyRuleForm::setEditMode(bool editing)
+{
+    if (m_editMode == editing) return;
+    m_editMode = editing;
+
+    m_identityCard->setVisible(editing);
+    for (PolicyActionCard *card : m_actionCards)
+        card->setVisible(!editing);
+    for (QPushButton *pill : m_actionPills)
+        pill->setVisible(editing);
+
+    m_sectionActionLabel->setText(editing ? QStringLiteral("Traffic action")
+                                          : QStringLiteral("2. TRAFFIC ACTION & LIMIT"));
+    m_scheduleLabel->setText(editing ? QStringLiteral("Schedule")
+                                     : QStringLiteral("Recurring Active Window"));
+    m_noteLabel->setText(editing ? QStringLiteral("Note")
+                                 : QStringLiteral("Note / Reason"));
+    m_impactCaption->setText(editing ? QStringLiteral("Live impact preview")
+                                     : QStringLiteral("LIVE POLICY SUMMARY"));
+
+    // The enabled toggle lives in the identity card in edit mode, so the copy
+    // in the impact card steps aside.
+    m_enabledLabel->setVisible(!editing);
+    m_enabledSwitch->setVisible(!editing);
+
+    // The edit layout is the mock's flat form, not a boxed collapsible group.
+    m_accordion->setProperty("edit", editing);
+    repolish(m_accordion);
+    m_accordionLine->setVisible(!editing);
+    const int inset = editing ? 0 : 14;
+    m_accordionGrid->setContentsMargins(inset, 0, inset, inset);
+    applyScheduleLayout(editing);
+
+    syncActionPills();
+    setStep(m_step);
+    updateGeometry();
+}
+
+void PolicyRuleForm::applyScheduleLayout(bool edit)
+{
+    if (!m_accordionGrid) return;
+    QWidget *fields[] = {m_accordionLine, m_scheduleLabel, m_scheduleCombo,
+                         m_customScheduleWrap, m_expiresCheck, m_expirationWrap,
+                         m_noteLabel, m_descriptionEdit};
+    for (QWidget *field : fields)
+        m_accordionGrid->removeWidget(field);
+
+    m_accordionGrid->addWidget(m_accordionLine, 0, 0, 1, 2);
+    if (edit) {
+        m_accordionGrid->addWidget(m_scheduleLabel, 1, 0);
+        m_accordionGrid->addWidget(m_noteLabel, 1, 1);
+        m_accordionGrid->addWidget(m_scheduleCombo, 2, 0);
+        m_accordionGrid->addWidget(m_descriptionEdit, 2, 1);
+        m_accordionGrid->addWidget(m_customScheduleWrap, 3, 0);
+        m_accordionGrid->addWidget(m_expiresCheck, 4, 0, 1, 2);
+        m_accordionGrid->addWidget(m_expirationWrap, 5, 0, 1, 2);
+    } else {
+        m_accordionGrid->addWidget(m_scheduleLabel, 1, 0, 1, 2);
+        m_accordionGrid->addWidget(m_scheduleCombo, 2, 0, 1, 2);
+        m_accordionGrid->addWidget(m_customScheduleWrap, 3, 0, 1, 2);
+        m_accordionGrid->addWidget(m_expiresCheck, 4, 0, 1, 2);
+        m_accordionGrid->addWidget(m_expirationWrap, 5, 0, 1, 2);
+        m_accordionGrid->addWidget(m_noteLabel, 6, 0, 1, 2);
+        m_accordionGrid->addWidget(m_descriptionEdit, 7, 0, 1, 2);
+    }
+    m_accordionGrid->invalidate();
+}
+
+void PolicyRuleForm::syncActionPills()
+{
+    const NetworkPolicy::Action action = currentAction();
+    for (QPushButton *pill : m_actionPills) {
+        QSignalBlocker blocker(pill);
+        pill->setChecked(pill->property("action").toInt() == static_cast<int>(action));
+    }
+}
+
+void PolicyRuleForm::setExpired(const QDateTime &expiration)
+{
+    const bool expired = expiration.isValid() &&
+                         expiration <= QDateTime::currentDateTime();
+    if (!expired) {
+        m_expiredBanner->setVisible(false);
+        return;
+    }
+
+    m_expiredText->setTextFormat(Qt::RichText);
+    m_expiredText->setText(
+        QStringLiteral("This rule expired on <b>%1</b>. Saving keeps it expired.")
+            .arg(expiration.toString(QStringLiteral("yyyy-MM-dd HH:mm"))));
+    m_expiredBanner->setVisible(true);
 }
 
 void PolicyRuleForm::loadPolicy(const NetworkPolicy &policy)
@@ -514,6 +787,19 @@ void PolicyRuleForm::loadPolicy(const NetworkPolicy &policy)
     if (policy.expiration.isValid()) m_expirationEdit->setDateTime(policy.expiration);
     m_enabledSwitch->setChecked(policy.enabled);
     m_descriptionEdit->setText(policy.description);
+
+    // Identity card (edit mode): the app name the caller resolved, the opaque
+    // target behind the path toggle, and the host-service badge the mock shows
+    // next to the name.
+    QString appName = m_targetLabel;
+    if (appName.isEmpty()) appName = QFileInfo(policy.targetId).fileName();
+    m_appNameLabel->setText(appName);
+    m_pathValue->setText(QDir::toNativeSeparators(policy.targetId));
+    if (policy.scope == QLatin1String("service")) {
+        m_exceptionBadge->setText(policy.targetId);
+        m_exceptionBadge->setVisible(true);
+    }
+
     updateActionControls();
     updateImpactPreview();
 }
@@ -551,6 +837,8 @@ void PolicyRuleForm::applyTheme()
         f.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
         caption->setFont(f);
     }
+
+    m_identityIcon->setPixmap(glyphPixmap(GlyphFolder, 18, c.accent, 1.7));
 
     m_impactCard->setProperty("enabled", m_enabledSwitch->isChecked());
     repolish(m_impactCard);
@@ -941,6 +1229,13 @@ bool PolicyRuleForm::enabled() const
 
 QWidget *PolicyRuleForm::initialFocusWidget() const
 {
+    // The edit modal hides the target fields, so start on the selected action.
+    if (m_editMode) {
+        for (QPushButton *pill : m_actionPills)
+            if (pill->isChecked()) return pill;
+        return m_actionPills.value(0);
+    }
+
     // Start on the field the dialog is about. When the scope makes the target
     // read-only (PID or activity group), the action choice is the first thing
     // the user can actually change.
