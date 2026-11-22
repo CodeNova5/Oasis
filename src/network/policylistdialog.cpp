@@ -7,7 +7,6 @@
 #include "policylistdialog.h"
 
 #include "policyschedule.h"
-#include "policyeditordialog.h"
 #include "policyscope.h"
 
 #include <QAbstractItemView>
@@ -74,14 +73,6 @@ QString scopeName(const QString &key)
     if (scope == QLatin1String("package")) return QStringLiteral("Package");
     if (scope.isEmpty()) return QStringLiteral("—");
     return key;
-}
-
-bool editorSupportsScope(const QString &key)
-{
-    const QString scope = key.trimmed().toLower();
-    return scope == QLatin1String("pid") || scope == QLatin1String("path") ||
-           scope == QLatin1String("executable") || scope == QLatin1String("publisher") ||
-           scope == QLatin1String("service") || scope == QLatin1String("group");
 }
 
 QString rateName(const NetworkPolicy &policy)
@@ -245,31 +236,14 @@ void PolicyListDialog::editSelected()
     const int row = selectedRow();
     if (row < 0 || row >= m_policies.size()) return;
 
-    const NetworkPolicy &selected = m_policies.at(row);
-    if (!editorSupportsScope(selected.scope)) {
-        QMessageBox::information(
-            this, QStringLiteral("Policies"),
-            QStringLiteral("A policy with the scope \"%1\" cannot be edited in this "
-                           "build. Delete it and create a replacement instead.")
-                .arg(selected.scope));
-        return;
-    }
+    emit editRequested(m_policies.at(row).id);
+}
 
-    PolicyEditorDialog dialog(selected, this);
-    if (dialog.exec() != QDialog::Accepted) return;
-
-    QList<NetworkPolicy> updated = m_policies;
-    updated[row] = dialog.policy();
-    if (!PolicyStore::savePolicies(updated)) {
-        QMessageBox::warning(this, QStringLiteral("Policies"),
-                             QStringLiteral("The edited policy could not be saved."));
-        refresh();
-        return;
-    }
-
-    m_changed = true;
+void PolicyListDialog::reload()
+{
+    const int row = selectedRow();
     refresh();
-    if (row < m_table->rowCount()) m_table->selectRow(row);
+    if (row >= 0 && row < m_table->rowCount()) m_table->selectRow(row);
 }
 
 void PolicyListDialog::deleteSelected()

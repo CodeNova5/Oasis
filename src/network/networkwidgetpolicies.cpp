@@ -33,6 +33,17 @@ static bool explicitPolicyCovers(const ActivityQuery &query, quint32 pid)
     return false;
 }
 
+// Scopes the policy editor can represent. A stored policy in any other scope
+// has no field the form could populate, so editing it would silently rewrite
+// its scope; it is refused with an explanation instead.
+static bool editorSupportsScope(const QString &key)
+{
+    const QString scope = key.trimmed().toLower();
+    return scope == QLatin1String("pid") || scope == QLatin1String("path") ||
+           scope == QLatin1String("executable") || scope == QLatin1String("publisher") ||
+           scope == QLatin1String("service") || scope == QLatin1String("group");
+}
+
 // NG-052: the identity and path searches overlap (an event may be stored with
 // both), so identical records are folded before the view sees them.
 static QList<AuditEvent> mergeAuditEvents(const QList<AuditEvent> &first,
@@ -308,6 +319,73 @@ void NetworkWidget::deletePolicy(const QString &policyId)
     // emitted for it; the pass is what withdraws its rules.
     schedulePolicyReconciliation();
     emit policiesChanged();
+}
+
+bool NetworkWidget::editPolicy(const QString &policyId, QWidget *dialogParent)
+{
+    if (policyId.isEmpty())
+        return false;
+
+    QWidget *const parent = dialogParent ? dialogParent : this;
+    QList<NetworkPolicy> policies = PolicyStore::loadPolicies();
+    int index = -1;
+    for (int i = 0; i < policies.size(); ++i) {
+        if (policies.at(i).id == policyId) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) {
+        // The row was stale; re-read so the screen shows what the store holds.
+        emit policiesChanged();
+        return false;
+    }
+
+    const NetworkPolicy stored = policies.at(index);
+    if (!editorSupportsScope(stored.scope)) {
+        QMessageBox::information(
+            parent, QStringLiteral("Policies"),
+            QStringLiteral("A policy with the scope \"%1\" cannot be edited in this "
+                           "build. Delete it and create a replacement instead.")
+                .arg(stored.scope));
+        return false;
+    }
+
+    // The editor is handed the stored policy, not a copy of the form state, so
+    // a field the editor does not show (a legacy schedule, say) round-trips.
+    PolicyEditorDialog dialog(stored, parent);
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    policies[index] = dialog.policy();
+    if (!PolicyStore::savePolicies(policies)) {
+        QMessageBox::warning(parent, QStringLiteral("Policies"),
+                             QStringLiteral("The edited policy could not be saved."));
+        emit policiesChanged();
+        return false;
+    }
+
+    const NetworkPolicy &policy = policies.at(index);
+    AuditEvent audit;
+    audit.type = AuditEvent::EventType::PolicyChange;
+    audit.scope = policy.targetId;
+    audit.reason = QStringLiteral("user edited a policy");
+    audit.result = QStringLiteral("saved");
+    audit.relatedPolicyId = policy.id;
+    audit.details = policy.description;
+    m_auditStore.append(audit);
+
+    // The edited policy may now be inactive, shaped differently, or point at a
+    // different rate, so the applied set has to be re-derived rather than
+    // patched: forget what was re-applied, re-evaluate activation, and let the
+    // reconciler withdraw or rewrite the rules attributed to this policy id.
+    m_enforcement->forgetReappliedPolicies();
+    m_policyScheduler->evaluateNow();
+    schedulePolicyReconciliation();
+    refreshDashboard();
+    ui->lblStatus->setText(QStringLiteral("Policy updated."));
+    emit policiesChanged();
+    return true;
 }
 
 void NetworkWidget::showRecommendationFor(quint32 pid, const QString &processName,

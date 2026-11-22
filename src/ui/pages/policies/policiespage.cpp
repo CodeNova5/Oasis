@@ -584,6 +584,19 @@ QWidget *PoliciesPage::actionsCell(const Policies::Row &row)
     });
     layout->addWidget(toggle);
 
+    auto *edit = new QToolButton(cell);
+    edit->setText(QStringLiteral("Edit"));
+    edit->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    edit->setProperty("uiRole", QStringLiteral("rowAction"));
+    edit->setCursor(Qt::PointingHandCursor);
+    edit->setToolTip(QStringLiteral(
+        "Edit this policy. The editor opens on the stored values and saves through "
+        "the same store, audit and reconciliation path as any other change."));
+    connect(edit, &QToolButton::clicked, this, [this, id = row.id]() {
+        emit policyEditRequested(id);
+    });
+    layout->addWidget(edit);
+
     auto *remove = new QToolButton(cell);
     remove->setText(QStringLiteral("Delete"));
     remove->setToolButtonStyle(Qt::ToolButtonTextOnly);

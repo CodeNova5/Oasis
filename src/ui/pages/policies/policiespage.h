@@ -106,9 +106,11 @@ signals:
     /// shell wires these when the actions exist.
     void verifyRequested();
     void createRequested();
-    /// A row's switch was flipped, or its delete action was used. The shell
-    /// routes both through NetworkWidget, which owns the store and enforcement.
+    /// A row's switch was flipped, or its edit/delete action was used. The shell
+    /// routes all three through NetworkWidget, which owns the store and
+    /// enforcement, so a change here takes the same path as any other write.
     void policyEnabledChangeRequested(const QString &policyId, bool enabled);
+    void policyEditRequested(const QString &policyId);
     void policyDeleteRequested(const QString &policyId);
 
 private:

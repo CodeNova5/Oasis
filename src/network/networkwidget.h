@@ -198,6 +198,13 @@ public:
     // Confirms, then deletes one stored policy and schedules the withdrawal of
     // the rules attributed to it.
     void deletePolicy(const QString &policyId);
+    // Opens the policy editor for one stored policy and saves the result through
+    // the same store/scheduler/reconciliation path as every other write, so the
+    // Policies screen and the legacy list do not each own an edit path. Returns
+    // true when the policy was saved; `dialogParent` only selects the window the
+    // editor is centred on. Scopes the editor cannot represent are refused with
+    // an explanation instead of being silently narrowed.
+    bool editPolicy(const QString &policyId, QWidget *dialogParent = nullptr);
     // Most recent DNS/SNI name observed for the process, when one exists. The
     // out parameter receives its plain confidence label (Confirmed/Likely/...).
     QString primaryDestinationForPid(quint32 pid,

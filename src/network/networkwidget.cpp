@@ -393,6 +393,15 @@ NetworkWidget::NetworkWidget(QWidget *parent)
             m_verifyDialog = &dlg;
             m_policyReconciler->requestReconciliation(m_runningGroupPaths);
         });
+        // The list is a view over the store: an edit goes through the same
+        // NetworkWidget path the Policies screen uses, then the list reloads so
+        // it shows what was saved. The block below is for this dialog's own
+        // deletes only, which is why editPolicy accounts for itself.
+        connect(&dlg, &PolicyListDialog::editRequested, this,
+                [this, &dlg](const QString &policyId) {
+            editPolicy(policyId, &dlg);
+            dlg.reload();
+        });
         dlg.exec();
         m_verifyDialog = nullptr;
         if (!dlg.changed()) return;

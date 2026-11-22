@@ -33,11 +33,19 @@ class PolicyListDialog : public QDialog
 public:
     explicit PolicyListDialog(QWidget *parent = nullptr);
 
-    // True when a policy was saved or deleted, so the caller can re-evaluate
-    // activation and forget stale re-application bookkeeping.
+    // True when a policy was deleted here, so the caller can re-evaluate
+    // activation and forget stale re-application bookkeeping. Edits go through
+    // editRequested(), so the caller performs and accounts for them.
     bool changed() const { return m_changed; }
 
+    // Re-reads the store. Called by the host after an edit it performed, so the
+    // table shows what was actually saved and keeps the selected row.
+    void reload();
+
 signals:
+    // The dialog is a view over the store: it asks the owner (which holds the
+    // policy editor, scheduler and reconciliation) to edit one policy.
+    void editRequested(const QString &policyId);
     // NG-024: the caller owns the enforcement managers, so it performs the
     // verification and shows the result while this dialog is open.
     void verifyRequested();

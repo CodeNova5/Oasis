@@ -305,6 +305,13 @@ void MainWindow::setupPolicies()
                 [this](const QString &policyId, bool enabled) {
             m_netWidget->setPolicyEnabled(policyId, enabled);
         });
+        connect(m_policies, &PoliciesPage::policyEditRequested, this,
+                [this](const QString &policyId) {
+            // The Policies screen is the visible surface, so the editor is
+            // parented to the window rather than the network widget it is not
+            // being shown from.
+            m_netWidget->editPolicy(policyId, this);
+        });
         connect(m_policies, &PoliciesPage::policyDeleteRequested, this,
                 [this](const QString &policyId) {
             m_netWidget->deletePolicy(policyId);

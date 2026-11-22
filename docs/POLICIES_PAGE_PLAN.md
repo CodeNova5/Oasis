@@ -15,7 +15,7 @@ started.
 
 | Question | Decision |
 | --- | --- |
-| Create/edit flow | Reuse `PolicyEditorDialog`. Create now presents the mock's 3-step wizard (target / rule / schedule) over the same fields; edit stays a single view, like the mock's separate edit modal. Step 1 keeps the target field and Browse rather than the mock's detected-app catalog. |
+| Create/edit flow | Reuse `PolicyEditorDialog`. Create now presents the mock's 3-step wizard (target / rule / expiration) over the same fields; edit stays a single view, like the mock's separate edit modal. Step 1 keeps the target field and Browse rather than the mock's detected-app catalog. |
 | Throttle rate | Make the stored rate the enforced rate. Remove the fixed 51.2 KB/s behaviour. |
 | Service/publisher scopes, Block direction | Leave as-is (stored-only / both directions). Document, do not fake. |
 | Verify and Create actions | Page-body toolbar, not the shell header. |
@@ -184,8 +184,12 @@ run from this environment.
 store from `policiesChanged()`. Not compiled or run in this environment at the
 author's request.
 
-Not built in this phase: the sidebar `enforcementChannels()` readiness card and
-per-row editing (Edit still lives in the legacy Policies dialog).
+Not built in this phase: the sidebar `enforcementChannels()` readiness card.
+Per-row editing was wired afterwards: each row's **Edit** action emits
+`policyEditRequested()`, which the shell routes to
+`NetworkWidget::editPolicy(policyId, parent)` — the same method the legacy
+Policies dialog now calls when it emits `editRequested()`, so the editor, the
+store write, the audit entry and the reconciliation pass have one implementation.
 
 ### Phase 5 — Polish
 
