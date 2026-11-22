@@ -470,7 +470,7 @@ void PolicyEditorDialog::buildUi()
         m_targetRow->setVisible(false);
         m_stepSubtitle->setVisible(true);
         m_stepSubtitle->setText(
-            QStringLiteral("Adjust traffic limits, schedule, or activation state"));
+            QStringLiteral("Adjust traffic limits or activation state"));
         m_form->setStep(0);
         m_form->setEditMode(true);
     } else {

@@ -456,7 +456,7 @@
           <button type="button" onclick="goToWizardStep(3)" id="stepperBtn3"
             class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-left transition-all">
             <span id="stepperNum3" class="w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0">3</span>
-            <span class="text-[11px] font-semibold truncate">Schedule &amp; Review</span>
+            <span class="text-[11px] font-semibold truncate">Expiration &amp; Review</span>
           </button>
         </div>
       </div>
@@ -617,26 +617,9 @@
         </div>
 
         <!-- =============================================================== -->
-        <!-- WIZARD STEP 3: SCHEDULE & REVIEW                                -->
+        <!-- WIZARD STEP 3: EXPIRATION & REVIEW                              -->
         <!-- =============================================================== -->
         <div id="wizardStep3" class="hidden step-animate space-y-4">
-          <!-- Recurring Schedule Selector -->
-          <div class="space-y-1.5">
-            <label for="wizScheduleSelect" class="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-              Active Schedule Window
-            </label>
-            <select id="wizScheduleSelect" onchange="onWizardScheduleChange()"
-              class="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-oasis-elevatedDark border border-slate-200 dark:border-oasis-borderDark text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/40">
-              <option value="Always">Always active (24/7)</option>
-              <option value="work-hours">Work hours (Mon–Fri, 09:00–17:00)</option>
-              <option value="22:00-06:00">Overnight (22:00–06:00)</option>
-              <option value="custom">Custom window...</option>
-            </select>
-            <input type="text" id="wizCustomScheduleInput" oninput="updateWizardSummary()"
-              placeholder="e.g. Mon,Wed,Fri 18:00-23:00"
-              class="hidden mt-1.5 w-full px-3 py-2 text-xs font-mono rounded-xl bg-slate-50 dark:bg-oasis-elevatedDark border border-slate-200 dark:border-oasis-borderDark text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/40" />
-          </div>
-
           <!-- Optional Auto-Expire Segmented Choice -->
           <div class="space-y-1.5">
             <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -718,7 +701,7 @@
       <div class="px-5 py-3.5 border-b border-slate-200/80 dark:border-oasis-borderDark flex items-center justify-between">
         <div>
           <h2 id="editModalTitle" class="text-sm font-bold text-slate-900 dark:text-white">Edit Policy</h2>
-          <p class="text-[11px] text-slate-500 dark:text-slate-400">Adjust traffic limits, schedule, or activation state</p>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400">Adjust traffic limits or activation state</p>
         </div>
         <button type="button" onclick="closeEditModal()" aria-label="Close edit modal"
           class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-oasis-elevatedDark transition-colors">
@@ -814,19 +797,14 @@
           </div>
         </div>
 
-        <!-- Schedule & Note Grid -->
+        <!-- Expiration & Note Grid -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label for="editScheduleSelect" class="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">Schedule</label>
-            <select id="editScheduleSelect" onchange="onEditScheduleChange()"
-              class="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-oasis-elevatedDark border border-slate-200 dark:border-oasis-borderDark text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/40">
-              <option value="Always">Always (24/7)</option>
-              <option value="work-hours">Work hours (09:00–17:00)</option>
-              <option value="22:00-06:00">Overnight (22:00–06:00)</option>
-              <option value="custom">Custom window...</option>
-            </select>
-            <input type="text" id="editCustomSchedule" oninput="updateEditPreview()" placeholder="e.g. Mon-Fri 18:00-22:00"
-              class="hidden mt-1.5 w-full px-2.5 py-1.5 text-xs font-mono rounded-lg bg-slate-50 dark:bg-oasis-elevatedDark border border-slate-200 dark:border-oasis-borderDark text-slate-800 dark:text-slate-100" />
+            <div class="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">Schedule</div>
+            <div id="editScheduleReadOnly"
+              class="w-full px-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-oasis-elevatedDark border border-slate-200 dark:border-oasis-borderDark text-slate-600 dark:text-slate-300">
+              Always in force (24/7)
+            </div>
           </div>
 
           <div>
@@ -1449,7 +1427,6 @@
       wizardState.customPath = '';
       wizardState.action = 'Throttle';
       wizardState.rateKbps = 250;
-      wizardState.schedule = 'Always';
       wizardState.expireMode = 'never';
       wizardState.note = '';
 
@@ -1458,9 +1435,6 @@
       document.getElementById('customPathDrawer').classList.add('hidden');
       document.getElementById('customPathChevron').classList.remove('rotate-90');
       document.getElementById('wizRateKbps').value = '250';
-      document.getElementById('wizScheduleSelect').value = 'Always';
-      document.getElementById('wizCustomScheduleInput').value = '';
-      document.getElementById('wizCustomScheduleInput').classList.add('hidden');
       document.getElementById('wizExpireCustomInput').classList.add('hidden');
       document.getElementById('wizNoteInput').value = '';
       document.getElementById('wizDirection').value = 'Both';
@@ -1652,7 +1626,7 @@
       const subtitles = {
         1: 'Step 1 of 3 — Choose an application to control',
         2: 'Step 2 of 3 — Set traffic action and bandwidth limit',
-        3: 'Step 3 of 3 — Optional schedule and final review'
+        3: 'Step 3 of 3 — Optional expiration and final review'
       };
       document.getElementById('wizardStepSubtitle').textContent = subtitles[stepNumber];
 
@@ -1707,7 +1681,7 @@
         nextBtn.disabled = !hasTarget;
       } else if (wizardState.step === 2) {
         backBtn.textContent = '← Back';
-        nextLabel.textContent = 'Next: Schedule & Review';
+        nextLabel.textContent = 'Next: Expiration & Review';
         nextArrow.classList.remove('hidden');
         nextBtn.disabled = false;
       } else {
@@ -1774,13 +1748,6 @@
       updateWizardSummary();
     }
 
-    function onWizardScheduleChange() {
-      const val = document.getElementById('wizScheduleSelect').value;
-      const customIn = document.getElementById('wizCustomScheduleInput');
-      customIn.classList.toggle('hidden', val !== 'custom');
-      updateWizardSummary();
-    }
-
     function setWizardExpireMode(mode) {
       wizardState.expireMode = mode;
       const buttons = {
@@ -1813,20 +1780,11 @@
       updateWizardSummary();
     }
 
-    function getEffectiveWizardSchedule() {
-      const sel = document.getElementById('wizScheduleSelect').value;
-      if (sel === 'custom') {
-        return document.getElementById('wizCustomScheduleInput').value.trim() || 'Always';
-      }
-      return sel || 'Always';
-    }
-
     function updateWizardSummary() {
       const target = getResolvedWizardTarget();
       if (!target) return;
 
       const rate = parseInt(document.getElementById('wizRateKbps').value, 10) || 250;
-      const schedule = getEffectiveWizardSchedule();
       const isException = Boolean(target.serviceException) || target.exeName.toLowerCase() === 'svchost.exe';
 
       // Update enforcement badge
@@ -1848,9 +1806,7 @@
         actionText = `<strong>Allow</strong> traffic for <span class="font-semibold text-emerald-600 dark:text-[#3FB982]">${escapeHtml(target.friendlyName)}</span> ${dirPhraseFor(document.getElementById('wizDirection').value)}`;
       }
 
-      const schedText = schedule === 'Always'
-        ? 'active 24/7'
-        : `active during <strong class="font-mono text-[11px]">${escapeHtml(schedule)}</strong>`;
+      const schedText = 'active 24/7';
 
       let expText = 'with no expiration';
       if (wizardState.expireMode === '1h') {
@@ -1879,7 +1835,7 @@
       const rate = wizardState.action === 'Throttle'
         ? (parseInt(document.getElementById('wizRateKbps').value, 10) || 250)
         : null;
-      const schedule = getEffectiveWizardSchedule();
+      const schedule = 'Always';
       const note = document.getElementById('wizNoteInput').value.trim();
       const isException = Boolean(target.serviceException) || target.exeName.toLowerCase() === 'svchost.exe';
 
@@ -1973,18 +1929,12 @@
       document.getElementById('editExpiredText').textContent = `This rule expired (${p.expiresLabel || 'expired'}). Saving your changes keeps it expired.`;
       document.getElementById('editReactivateBtn').classList.remove('hidden');
 
-      const presets = ['Always', 'work-hours', '22:00-06:00'];
-      const schedSel = document.getElementById('editScheduleSelect');
-      const customSched = document.getElementById('editCustomSchedule');
-      if (presets.includes(p.schedule)) {
-        schedSel.value = p.schedule;
-        customSched.classList.add('hidden');
-        customSched.value = '';
-      } else {
-        schedSel.value = 'custom';
-        customSched.classList.remove('hidden');
-        customSched.value = p.schedule || '';
-      }
+      // Recurring windows can no longer be chosen or edited: a stored one is
+      // shown as a fact, and saving leaves it as it is.
+      document.getElementById('editScheduleReadOnly').textContent =
+        (!p.schedule || p.schedule === 'Always')
+          ? 'Always in force (24/7)'
+          : `Existing schedule: ${p.schedule} (kept as configured)`;
 
       setEditAction(p.action || 'Throttle');
       updateEditPreview();
@@ -2038,12 +1988,6 @@
       updateEditPreview();
     }
 
-    function onEditScheduleChange() {
-      const val = document.getElementById('editScheduleSelect').value;
-      document.getElementById('editCustomSchedule').classList.toggle('hidden', val !== 'custom');
-      updateEditPreview();
-    }
-
     function updateEditPreview() {
       const id = document.getElementById('editPolicyId').value;
       const p = policies.find((item) => item.id === id);
@@ -2053,10 +1997,7 @@
       document.getElementById('editEnabledLabel').textContent = enabled ? 'Enabled' : 'Paused';
 
       const rate = parseInt(document.getElementById('editRateKbps').value, 10) || 250;
-      const sel = document.getElementById('editScheduleSelect').value;
-      const schedule = sel === 'custom'
-        ? (document.getElementById('editCustomSchedule').value.trim() || 'Always')
-        : sel;
+      const schedule = p.schedule || 'Always';
 
       let rulePhrase = '';
       if (editActionState === 'Throttle') {
@@ -2069,7 +2010,7 @@
 
       const stateText = (p.expired && !editReactivate) ? 'Expired rule:' : (enabled ? 'Active rule:' : 'Paused rule:');
       document.getElementById('editPreviewParagraph').innerHTML =
-        `${stateText} ${rulePhrase} · Schedule: <strong class="font-mono text-[11px]">${escapeHtml(schedule)}</strong>.`;
+        `${stateText} ${rulePhrase} · Schedule: <strong class="font-mono text-[11px]">${schedule === 'Always' ? 'always in force (24/7)' : escapeHtml(schedule) + ' (kept as configured)'}</strong>.`;
     }
 
     function saveEditedPolicy(e) {
@@ -2087,16 +2028,10 @@
         return;
       }
 
-      const sel = document.getElementById('editScheduleSelect').value;
-      const schedule = sel === 'custom'
-        ? (document.getElementById('editCustomSchedule').value.trim() || 'Always')
-        : sel;
-
       policies[idx] = {
         ...policies[idx],
         action: editActionState,
         rateKbps: rate,
-        schedule,
         note: document.getElementById('editNoteInput').value.trim(),
         enabled: document.getElementById('editEnabledToggle').checked,
         direction: document.getElementById('editDirection').value || 'Both',

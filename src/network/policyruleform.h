@@ -155,6 +155,7 @@ private:
     QLabel *m_scopeLabel = nullptr;
     QLabel *m_sectionActionLabel = nullptr;
     QLabel *m_scheduleLabel = nullptr;
+    QLabel *m_scheduleReadOnly = nullptr;
     QLabel *m_noteLabel = nullptr;
     QLabel *m_impactCaption = nullptr;
     QLabel *m_identityIcon = nullptr;

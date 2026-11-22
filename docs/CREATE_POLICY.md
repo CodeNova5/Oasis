@@ -79,7 +79,7 @@ Target-field behaviour:
 | **Action** | Throttle, Block, Allow cards; Notify, Ask, No action advisory chips | Throttle | `Schedule` exists in the data model but is not offered here |
 | **Direction** | Download, Upload, Both directions | Both | Enabled only for Throttle; stored for every action |
 | **Rate limit** | 1–1000000 KB/s, integer, suffix `KB/s`; preset chips 50 / 250 / 500 / 1024 | 400 | Shown only for Throttle; stored as `KB/s × 8000` bits/s |
-| **Recurring window** | Combo: Always (24/7), Work hours, Overnight, or Custom; Custom accepts `22:00-06:00`, `Mon-Fri 09:00-17:00`, etc. | Always | Validated with `scheduleIsSupported()`; lives in the collapsible group |
+| **Recurring window** | Not offered. A policy that already carries one shows it read-only and saves it back unchanged | Always (24/7) | New policies are always in force; a window is undone by this app, so a rule whose window ended while the app was closed kept enforcing until the next launch |
 | **Expiration** | Optional checkbox + date/time picker (`yyyy-MM-dd HH:mm`, calendar popup) | off; picker defaults to now + 1 h | Must be in the future |
 | **Note** | Single-line text | blank | Saved as `description` |
 | **State** | Enabled toggle in the summary card | on | Disabled policies are stored but not enforced |
@@ -365,8 +365,11 @@ Target, Action, Direction, Rate, Window, Expires, Enforcement, Source.
 - **Direction is only meaningful for Throttle.** Block/Allow always create both
   inbound and outbound rules. Direction is stored but ignored by the firewall
   channel.
-- **Recurring windows are local-time only.** Metered/profile conditions are
-  unsupported and report `Unsupported`.
+- **Recurring windows cannot be created.** The field is gone from the editor;
+  `policyschedule.*` still evaluates stored ones (local time only, metered/profile
+  conditions report `Unsupported`) so existing policies keep their behaviour.
+  A scheduled rule is only withdrawn while the app is running, which is why the
+  window is no longer offered.
 - **Boundary latency**: the 15 s scheduler tick can start or end a window up to
   15 s late.
 - **No import/export UI**, and import performs no schema or provenance

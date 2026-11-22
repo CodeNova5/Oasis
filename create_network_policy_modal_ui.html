@@ -347,7 +347,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span class="text-xs font-medium text-slate-700 dark:text-slate-300">
-                Schedule, Expiration &amp; Note
+                Expiration &amp; Note
               </span>
               <span id="scheduleStatusBadge" class="text-[11px] text-slate-400 dark:text-slate-500 font-normal">
                 (Optional — Always active)
@@ -361,23 +361,6 @@
           <div id="accordionBody" class="accordion-content">
             <div class="accordion-inner">
               <div class="px-3.5 pb-3.5 pt-2 border-t border-slate-200/70 dark:border-slate-800/80 space-y-3">
-                <!-- Recurring Window -->
-                <div class="space-y-1">
-                  <label for="scheduleSelect" class="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                    Recurring Active Window
-                  </label>
-                  <select id="scheduleSelect" onchange="onScheduleChange()"
-                    class="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-[#0f1219] border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
-                    <option value="">Always in force (24/7)</option>
-                    <option value="work-hours">Work hours (Mon–Fri, 09:00–17:00)</option>
-                    <option value="overnight">Overnight (Daily, 22:00–06:00)</option>
-                    <option value="custom">Custom schedule window...</option>
-                  </select>
-                  <input type="text" id="customScheduleInput" oninput="updatePreview()"
-                    placeholder="e.g. Mon,Wed,Fri 18:00-23:00"
-                    class="hidden mt-1.5 w-full px-3 py-1.5 text-xs font-mono rounded-lg bg-white dark:bg-[#0f1219] border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
-                </div>
-
                 <!-- Expiration Toggle + Picker -->
                 <div class="space-y-1.5">
                   <label class="inline-flex items-center gap-2 cursor-pointer select-none">
@@ -593,18 +576,6 @@
       }
     }
 
-    function onScheduleChange() {
-      const select = document.getElementById('scheduleSelect');
-      const customInput = document.getElementById('customScheduleInput');
-      if (select.value === 'custom') {
-        customInput.classList.remove('hidden');
-        customInput.focus();
-      } else {
-        customInput.classList.add('hidden');
-      }
-      updatePreview();
-    }
-
     function toggleExpiration() {
       const checked = document.getElementById('expirationCheckbox').checked;
       const wrap = document.getElementById('expirationPickerWrap');
@@ -630,8 +601,6 @@
       const targetName = getShortTargetName(rawPath);
       const rateVal = parseInt(document.getElementById('rateLimitInput').value, 10) || 0;
       const isEnabled = document.getElementById('policyEnabledSwitch').checked;
-      const scheduleVal = document.getElementById('scheduleSelect').value;
-      const customSchedule = document.getElementById('customScheduleInput').value.trim();
       const hasExpiration = document.getElementById('expirationCheckbox').checked;
       const expirationVal = document.getElementById('expirationInput').value;
 
@@ -641,7 +610,7 @@
       const scheduleStatusBadge = document.getElementById('scheduleStatusBadge');
 
       // Update schedule badge in accordion header
-      if (scheduleVal || hasExpiration) {
+      if (hasExpiration) {
         scheduleStatusBadge.textContent = '(Configured)';
         scheduleStatusBadge.classList.add('text-blue-600', 'dark:text-blue-400', 'font-medium');
       } else {
@@ -659,17 +628,8 @@
         actionPhrase = `Explicitly <strong class="text-emerald-600 dark:text-emerald-400 font-semibold">Allow</strong> all inbound and outbound traffic for <code class="font-mono text-[11px] px-1 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800">${escapeHtml(targetName)}</code>`;
       }
 
-      // Schedule phrase
-      let schedulePhrase = 'active immediately';
-      if (scheduleVal === 'work-hours') {
-        schedulePhrase = 'active during <strong>work hours (Mon–Fri, 09:00–17:00)</strong>';
-      } else if (scheduleVal === 'overnight') {
-        schedulePhrase = 'active <strong>overnight (22:00–06:00)</strong>';
-      } else if (scheduleVal === 'custom') {
-        schedulePhrase = customSchedule
-          ? `active during <code class="font-mono text-[11px]">${escapeHtml(customSchedule)}</code>`
-          : 'active on a custom schedule';
-      }
+      // Recurring windows are not offered any more: new policies are always on.
+      const schedulePhrase = 'active immediately (24/7)';
 
       // Expiration phrase
       let expirationPhrase = 'with no expiration';

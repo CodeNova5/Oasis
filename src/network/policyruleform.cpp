@@ -411,7 +411,7 @@ void PolicyRuleForm::buildUi()
     m_clockIcon->setFixedSize(16, 16);
     m_clockIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
     accordionHead->addWidget(m_clockIcon);
-    auto *accordionTitle = makeLabel(QStringLiteral("Schedule, Expiration & Note"),
+    auto *accordionTitle = makeLabel(QStringLiteral("Expiration & Note"),
                                      QStringLiteral("accordionTitle"),
                                      m_accordionHeader);
     accordionTitle->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -446,6 +446,7 @@ void PolicyRuleForm::buildUi()
 
     m_scheduleLabel = makeLabel(QStringLiteral("Recurring Active Window"),
                                 QStringLiteral("fieldLabel"), m_accordionBody);
+    m_scheduleLabel->setVisible(false);
     m_scheduleCombo = new QComboBox(m_accordionBody);
     m_scheduleCombo->setObjectName(QStringLiteral("fieldCombo"));
     m_scheduleCombo->setCursor(Qt::PointingHandCursor);
@@ -457,6 +458,17 @@ void PolicyRuleForm::buildUi()
                              QStringLiteral("overnight"));
     m_scheduleCombo->addItem(QStringLiteral("Custom schedule window..."),
                              QStringLiteral("custom"));
+
+    // Recurring windows are no longer offered: the window is undone by this
+    // application, so a rule whose window ended while the application was closed
+    // kept enforcing until the next launch. Policies that already carry one are
+    // shown read-only and saved back unchanged (the combo stays as the value
+    // holder for that round trip).
+    m_scheduleCombo->setVisible(false);
+    m_scheduleReadOnly = makeLabel(QString(), QStringLiteral("helperText"), m_accordionBody);
+    m_scheduleReadOnly->setWordWrap(true);
+    m_scheduleReadOnly->setTextFormat(Qt::RichText);
+    m_scheduleReadOnly->setVisible(false);
 
     m_customScheduleWrap = new QWidget(m_accordionBody);
     auto *customLayout = new QVBoxLayout(m_customScheduleWrap);
@@ -564,14 +576,7 @@ void PolicyRuleForm::buildUi()
             this, &PolicyRuleForm::updateImpactPreview);
 
     connect(m_scheduleCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this]() {
-        const bool custom = m_scheduleCombo->currentData().toString() ==
-                            QLatin1String("custom");
-        m_customScheduleWrap->setVisible(custom);
-        if (custom && m_customScheduleEdit->text().trimmed().isEmpty())
-            m_customScheduleEdit->setFocus();
-        updateImpactPreview();
-    });
+            this, &PolicyRuleForm::updateImpactPreview);
     connect(m_customScheduleEdit, &QLineEdit::textChanged,
             this, &PolicyRuleForm::updateImpactPreview);
     connect(m_expiresCheck, &QAbstractButton::toggled, this, [this](bool checked) {
@@ -686,8 +691,6 @@ void PolicyRuleForm::setEditMode(bool editing)
 
     m_sectionActionLabel->setText(editing ? QStringLiteral("Traffic action")
                                           : QStringLiteral("2. TRAFFIC ACTION & LIMIT"));
-    m_scheduleLabel->setText(editing ? QStringLiteral("Schedule")
-                                     : QStringLiteral("Recurring Active Window"));
     m_noteLabel->setText(editing ? QStringLiteral("Note")
                                  : QStringLiteral("Note / Reason"));
     m_impactCaption->setText(editing ? QStringLiteral("Live impact preview")
@@ -715,20 +718,23 @@ void PolicyRuleForm::applyScheduleLayout(bool edit)
 {
     if (!m_accordionGrid) return;
     QWidget *fields[] = {m_accordionLine, m_scheduleLabel, m_scheduleCombo,
-                         m_customScheduleWrap, m_expiresCheck, m_expirationWrap,
-                         m_noteLabel, m_descriptionEdit};
+                         m_scheduleReadOnly, m_customScheduleWrap, m_expiresCheck,
+                         m_expirationWrap, m_noteLabel, m_descriptionEdit};
     for (QWidget *field : fields)
         m_accordionGrid->removeWidget(field);
 
     m_accordionGrid->addWidget(m_accordionLine, 0, 0, 1, 2);
     if (edit) {
-        m_accordionGrid->addWidget(m_scheduleLabel, 1, 0);
-        m_accordionGrid->addWidget(m_noteLabel, 1, 1);
-        m_accordionGrid->addWidget(m_scheduleCombo, 2, 0);
-        m_accordionGrid->addWidget(m_descriptionEdit, 2, 1);
-        m_accordionGrid->addWidget(m_customScheduleWrap, 3, 0);
-        m_accordionGrid->addWidget(m_expiresCheck, 4, 0, 1, 2);
-        m_accordionGrid->addWidget(m_expirationWrap, 5, 0, 1, 2);
+        // The schedule column is gone, so the note uses the full width. A
+        // policy that predates the removal still shows its stored window above
+        // the note, read-only.
+        int row = 1;
+        if (m_scheduleReadOnly->isVisible())
+            m_accordionGrid->addWidget(m_scheduleReadOnly, row++, 0, 1, 2);
+        m_accordionGrid->addWidget(m_noteLabel, row++, 0, 1, 2);
+        m_accordionGrid->addWidget(m_descriptionEdit, row++, 0, 1, 2);
+        m_accordionGrid->addWidget(m_expiresCheck, row++, 0, 1, 2);
+        m_accordionGrid->addWidget(m_expirationWrap, row++, 0, 1, 2);
     } else {
         m_accordionGrid->addWidget(m_scheduleLabel, 1, 0, 1, 2);
         m_accordionGrid->addWidget(m_scheduleCombo, 2, 0, 1, 2);
@@ -737,6 +743,7 @@ void PolicyRuleForm::applyScheduleLayout(bool edit)
         m_accordionGrid->addWidget(m_expirationWrap, 5, 0, 1, 2);
         m_accordionGrid->addWidget(m_noteLabel, 6, 0, 1, 2);
         m_accordionGrid->addWidget(m_descriptionEdit, 7, 0, 1, 2);
+        m_accordionGrid->addWidget(m_scheduleReadOnly, 8, 0, 1, 2);
     }
     m_accordionGrid->invalidate();
 }
@@ -1015,9 +1022,25 @@ void PolicyRuleForm::setScheduleValue(const QString &schedule)
     } else if (index < 0) {
         index = m_scheduleCombo->findData(QStringLiteral("custom"));
         m_customScheduleEdit->setText(value);
-        m_customScheduleWrap->setVisible(true);
     }
     if (index >= 0) m_scheduleCombo->setCurrentIndex(index);
+
+    // A stored window is kept and re-saved, but it cannot be picked or edited
+    // here any more, so it is shown as a read-only fact instead of a control.
+    QString window;
+    if (value == QLatin1String("work-hours"))
+        window = QStringLiteral("work hours (Mon–Fri, 09:00–17:00)");
+    else if (value == QLatin1String("overnight"))
+        window = QStringLiteral("overnight (22:00–06:00)");
+    else
+        window = value;
+    m_scheduleReadOnly->setText(
+        QStringLiteral("Existing schedule: <span style=\"font-family:'JetBrains Mono'; "
+                       "font-size:11px;\">%1</span>. New policies are always in force.")
+            .arg(window.toHtmlEscaped()));
+    m_scheduleReadOnly->setVisible(!value.isEmpty());
+    applyScheduleLayout(m_editMode);
+    emit layoutChanged();
 }
 
 QString PolicyRuleForm::scheduleValue() const

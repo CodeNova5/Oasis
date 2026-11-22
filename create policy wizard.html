@@ -45,7 +45,7 @@
         <button type="button" onclick="goToWizardStep(3)" id="stepperBtn3"
           class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-left transition-all">
           <span id="stepperNum3" class="w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0">3</span>
-          <span class="text-[11px] font-semibold truncate">Schedule &amp; Review</span>
+          <span class="text-[11px] font-semibold truncate">Expiration &amp; Review</span>
         </button>
       </div>
     </div>
@@ -206,26 +206,9 @@
       </div>
 
       <!-- =============================================================== -->
-      <!-- WIZARD STEP 3: SCHEDULE & REVIEW                                -->
+      <!-- WIZARD STEP 3: EXPIRATION & REVIEW                              -->
       <!-- =============================================================== -->
       <div id="wizardStep3" class="hidden step-animate space-y-4">
-        <!-- Recurring Schedule Selector -->
-        <div class="space-y-1.5">
-          <label for="wizScheduleSelect" class="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-            Active Schedule Window
-          </label>
-          <select id="wizScheduleSelect" onchange="onWizardScheduleChange()"
-            class="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-oasis-elevatedDark border border-slate-200 dark:border-oasis-borderDark text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/40">
-            <option value="Always">Always active (24/7)</option>
-            <option value="work-hours">Work hours (Mon–Fri, 09:00–17:00)</option>
-            <option value="22:00-06:00">Overnight (22:00–06:00)</option>
-            <option value="custom">Custom window...</option>
-          </select>
-          <input type="text" id="wizCustomScheduleInput" oninput="updateWizardSummary()"
-            placeholder="e.g. Mon,Wed,Fri 18:00-23:00"
-            class="hidden mt-1.5 w-full px-3 py-2 text-xs font-mono rounded-xl bg-slate-50 dark:bg-oasis-elevatedDark border border-slate-200 dark:border-oasis-borderDark text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/40" />
-        </div>
-
         <!-- Optional Auto-Expire Segmented Choice -->
         <div class="space-y-1.5">
           <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -392,7 +375,6 @@ const wizardState = {
   customPath: '',
   action: 'Throttle',
   rateKbps: 250,
-  schedule: 'Always',
   expireMode: 'never',
   note: ''
 };
@@ -406,7 +388,6 @@ function openWizardModal() {
   wizardState.customPath = '';
   wizardState.action = 'Throttle';
   wizardState.rateKbps = 250;
-  wizardState.schedule = 'Always';
   wizardState.expireMode = 'never';
   wizardState.note = '';
 
@@ -415,9 +396,6 @@ function openWizardModal() {
   document.getElementById('customPathDrawer').classList.add('hidden');
   document.getElementById('customPathChevron').classList.remove('rotate-90');
   document.getElementById('wizRateKbps').value = '250';
-  document.getElementById('wizScheduleSelect').value = 'Always';
-  document.getElementById('wizCustomScheduleInput').value = '';
-  document.getElementById('wizCustomScheduleInput').classList.add('hidden');
   document.getElementById('wizExpireCustomInput').classList.add('hidden');
   document.getElementById('wizNoteInput').value = '';
   document.getElementById('wizDirection').value = 'Both';
@@ -605,7 +583,7 @@ function goToWizardStep(stepNumber) {
   const subtitles = {
     1: 'Step 1 of 3 — Choose an application to control',
     2: 'Step 2 of 3 — Set traffic action and bandwidth limit',
-    3: 'Step 3 of 3 — Optional schedule and final review'
+    3: 'Step 3 of 3 — Optional expiration and final review'
   };
   document.getElementById('wizardStepSubtitle').textContent = subtitles[stepNumber];
 
@@ -659,7 +637,7 @@ function updateWizardButtonsState() {
     nextBtn.disabled = !hasTarget;
   } else if (wizardState.step === 2) {
     backBtn.textContent = '← Back';
-    nextLabel.textContent = 'Next: Schedule & Review';
+    nextLabel.textContent = 'Next: Expiration & Review';
     nextArrow.classList.remove('hidden');
     nextBtn.disabled = false;
   } else {
@@ -726,13 +704,6 @@ function setWizardRatePreset(kbps) {
   updateWizardSummary();
 }
 
-function onWizardScheduleChange() {
-  const val = document.getElementById('wizScheduleSelect').value;
-  const customIn = document.getElementById('wizCustomScheduleInput');
-  customIn.classList.toggle('hidden', val !== 'custom');
-  updateWizardSummary();
-}
-
 function setWizardExpireMode(mode) {
   wizardState.expireMode = mode;
   const buttons = {
@@ -765,20 +736,11 @@ function setWizardExpireMode(mode) {
   updateWizardSummary();
 }
 
-function getEffectiveWizardSchedule() {
-  const sel = document.getElementById('wizScheduleSelect').value;
-  if (sel === 'custom') {
-    return document.getElementById('wizCustomScheduleInput').value.trim() || 'Always';
-  }
-  return sel || 'Always';
-}
-
 function updateWizardSummary() {
   const target = getResolvedWizardTarget();
   if (!target) return;
 
   const rate = parseInt(document.getElementById('wizRateKbps').value, 10) || 250;
-  const schedule = getEffectiveWizardSchedule();
   const isException = Boolean(target.serviceException) || target.exeName.toLowerCase() === 'svchost.exe';
 
   const tag = document.getElementById('wizEnforcementTag');
@@ -799,9 +761,7 @@ function updateWizardSummary() {
     actionText = `<strong>Allow</strong> traffic for <span class="font-semibold text-emerald-600 dark:text-[#3FB982]">${escapeHtml(target.friendlyName)}</span> ${dirPhraseFor(document.getElementById('wizDirection').value)}`;
   }
 
-  const schedText = schedule === 'Always'
-    ? 'active 24/7'
-    : `active during <strong class="font-mono text-[11px]">${escapeHtml(schedule)}</strong>`;
+  const schedText = 'active 24/7';
 
   let expText = 'with no expiration';
   if (wizardState.expireMode === '1h') {
@@ -830,7 +790,7 @@ function commitWizardPolicy() {
   const rate = wizardState.action === 'Throttle'
     ? (parseInt(document.getElementById('wizRateKbps').value, 10) || 250)
     : null;
-  const schedule = getEffectiveWizardSchedule();
+  const schedule = 'Always';
   const note = document.getElementById('wizNoteInput').value.trim();
   const isException = Boolean(target.serviceException) || target.exeName.toLowerCase() === 'svchost.exe';
 
