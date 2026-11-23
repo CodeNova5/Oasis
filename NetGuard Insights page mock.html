@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultimate NetGuard AIO — Insights</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Segoe UI Variable"', '"Segoe UI"', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['"Cascadia Code"', 'Consolas', 'monospace']
+          },
+          colors: {
+            ng: {
+              window: '#111318',
+              sidebar: '#171A21',
+              surface: '#1C2029',
+              elevated: '#242A35',
+              hover: '#2B3240',
+              border: '#343B48',
+              blue: '#4C8DFF',
+              green: '#3FB982',
+              amber: '#E6AD4D',
+              red: '#E36B70',
+              info: '#62B5E8',
+              text: '#F3F5F8',
+              secondary: '#A1A9B7',
+              muted: '#6C7586'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      background-color: #111318;
+      color: #F3F5F8;
+      font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      line-height: 18px;
+      margin: 0;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Custom Fluent Scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2B3240;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #343B48;
+    }
+
+    /* Skeleton pulse animation for AI loading */
+    @keyframes shimmer {
+      0% { opacity: 0.45; }
+      50% { opacity: 0.85; }
+      100% { opacity: 0.45; }
+    }
+    .skeleton-bar {
+      animation: shimmer 1.4s infinite ease-in-out;
+      background-color: #2B3240;
+      border-radius: 4px;
+    }
+
+    /* Subtle transition for cards and modals */
+    .card-transition {
+      transition: background-color 150ms ease, border-color 150ms ease, transform 180ms ease, opacity 180ms ease;
+    }
+    .modal-backdrop {
+      background-color: rgba(9, 11, 15, 0.76);
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col bg-ng-window text-ng-text antialiased">
+
+  <!-- ===================================================================== -->
+  <!-- TOP CUSTOM DESKTOP WINDOW TITLE BAR                                   -->
+  <!-- ===================================================================== -->
+  <header class="h-8 bg-[#0D0F14] border-b border-ng-border flex items-center justify-between px-3 shrink-0">
+    <div class="flex items-center gap-2">
+      <!-- App Shield Mini Logo -->
+      <svg class="w-4 h-4 text-ng-blue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <path d="M9 12l2 2 4-4"/>
+      </svg>
+      <span class="text-[12px] font-medium text-ng-secondary tracking-tight">Ultimate NetGuard AIO</span>
+    </div>
+
+    <!-- Native Windows Window Caption Controls -->
+    <div class="flex items-center h-full -mr-3">
+      <button onclick="showToast('Window minimize simulated in web preview', 'info')" title="Minimize" class="h-full w-11 flex items-center justify-center text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button onclick="showToast('Window maximize simulated in web preview', 'info')" title="Maximize" class="h-full w-11 flex items-center justify-center text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors">
+        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+      </button>
+      <button onclick="showToast('Close button disabled in interactive prototype', 'warning')" title="Close" class="h-full w-11 flex items-center justify-center text-ng-secondary hover:bg-ng-red hover:text-white transition-colors">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN WORKSPACE CONTAINER (SIDEBAR + CONTENT)                          -->
+  <!-- ===================================================================== -->
+  <div class="flex-1 flex min-h-0 overflow-hidden">
+
+    <!-- LEFT EXPANDED SIDEBAR (232px fixed width) -->
+    <aside class="w-[232px] bg-ng-sidebar border-r border-ng-border flex flex-col justify-between shrink-0 select-none">
+      <div class="p-3">
+        <!-- Brand Header -->
+        <div class="flex items-center gap-2.5 px-2.5 py-2 mb-3">
+          <div class="w-8 h-8 rounded-lg bg-ng-blue/15 border border-ng-blue/30 flex items-center justify-center text-ng-blue shrink-0">
+            <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="text-[14px] font-semibold tracking-wide text-ng-text leading-tight">NETGUARD</div>
+            <div class="text-[11px] text-ng-muted leading-tight">Network intelligence</div>
+          </div>
+        </div>
+
+        <!-- MONITOR SECTION -->
+        <div class="mb-4">
+          <div class="px-3 mb-1.5 text-[11px] font-semibold tracking-wider text-ng-muted uppercase">Monitor</div>
+          <nav class="space-y-0.5">
+            <button onclick="navClick('Overview')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors text-left">
+              <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+              <span class="text-[13px]">Overview</span>
+            </button>
+            <button onclick="navClick('Activity')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors text-left">
+              <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span class="text-[13px]">Activity</span>
+            </button>
+            <button onclick="navClick('Applications')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors text-left">
+              <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/></svg>
+              <span class="text-[13px]">Applications</span>
+            </button>
+            <button onclick="navClick('Connections')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors text-left">
+              <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>
+              <span class="text-[13px]">Connections</span>
+            </button>
+          </nav>
+        </div>
+
+        <!-- CONTROL SECTION -->
+        <div class="mb-4">
+          <div class="px-3 mb-1.5 text-[11px] font-semibold tracking-wider text-ng-muted uppercase">Control</div>
+          <nav class="space-y-0.5">
+            <button onclick="navClick('Policies')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors text-left">
+              <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span class="text-[13px]">Policies</span>
+            </button>
+            <!-- ACTIVE NAVIGATION ITEM: Insights -->
+            <button class="relative w-full flex items-center justify-between px-3 py-2 rounded-[6px] bg-ng-blue/15 text-ng-text font-semibold text-left">
+              <span class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-ng-blue"></span>
+              <div class="flex items-center gap-2.5">
+                <svg class="w-[18px] h-[18px] text-ng-blue shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+                <span class="text-[13px]">Insights</span>
+              </div>
+              <span id="sidebarBadgeCount" class="px-1.5 py-0.5 text-[11px] font-semibold rounded bg-ng-blue/20 text-ng-blue">3</span>
+            </button>
+          </nav>
+        </div>
+
+        <!-- HISTORY SECTION -->
+        <div>
+          <div class="px-3 mb-1.5 text-[11px] font-semibold tracking-wider text-ng-muted uppercase">History</div>
+          <nav class="space-y-0.5">
+            <button onclick="navClick('Audit & Reports')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors text-left">
+              <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+              <span class="text-[13px]">Audit &amp; Reports</span>
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      <!-- BOTTOM PINNED SETTINGS & HELP -->
+      <div class="p-3 border-t border-ng-border/60 space-y-0.5">
+        <button onclick="togglePrivacySimulation()" class="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors text-left">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span class="text-[13px]">Settings</span>
+          </div>
+          <span id="sidebarAiBadge" class="text-[10px] px-1.5 py-0.5 rounded bg-ng-elevated text-ng-muted border border-ng-border">AI Off</span>
+        </button>
+        <button onclick="navClick('Help & About')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors text-left">
+          <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span class="text-[13px]">Help &amp; About</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN RIGHT CONTENT AREA -->
+    <div class="flex-1 flex flex-col min-w-0 bg-ng-window">
+
+      <!-- GLOBAL HEADER (60px base + breadcrumb/subtitle row) -->
+      <div class="border-b border-ng-border bg-ng-window px-6 py-3.5 shrink-0">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <!-- Left: Title, Breadcrumb & Subtitle -->
+          <div>
+            <div class="flex items-center gap-1.5 text-[11px] text-ng-muted mb-0.5">
+              <span class="uppercase tracking-wider font-medium">WORKSPACE</span>
+              <span>&gt;</span>
+              <span class="text-ng-secondary">Insights</span>
+            </div>
+            <div class="flex items-baseline gap-3">
+              <h1 class="text-[24px] leading-[30px] font-semibold text-ng-text tracking-tight">Insights</h1>
+              <span class="text-[12px] text-ng-secondary hidden sm:inline">Understand what's happening on your network</span>
+            </div>
+          </div>
+
+          <!-- Right: Global Search, Notification Bell, Monitoring Active Pill -->
+          <div class="flex items-center gap-2.5">
+            <!-- Global Search Input -->
+            <div class="relative hidden md:block w-[220px]">
+              <svg class="w-4 h-4 text-ng-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="globalSearchInput" type="text" oninput="handleSearch(this.value)" placeholder="Filter insights or apps..." class="w-full h-[36px] pl-9 pr-3 rounded-[6px] bg-ng-surface border border-ng-border text-[13px] text-ng-text placeholder-ng-muted focus:outline-none focus:border-ng-blue transition-colors" />
+            </div>
+
+            <!-- Notification Center Button -->
+            <button onclick="showToast('3 unread network insights require review', 'info')" title="Notifications" class="relative h-[36px] w-[36px] rounded-[6px] bg-ng-surface border border-ng-border flex items-center justify-center text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors">
+              <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span class="w-2 h-2 rounded-full bg-ng-blue absolute top-2 right-2"></span>
+            </button>
+
+            <!-- Monitoring Health Pill -->
+            <button onclick="showToast('Capture engine healthy • WFP & QoS drivers active', 'success')" class="h-[36px] px-3 rounded-[6px] bg-ng-green/12 border border-ng-green/30 flex items-center gap-2 text-ng-green hover:bg-ng-green/20 transition-colors">
+              <span class="w-2 h-2 rounded-full bg-ng-green"></span>
+              <span class="text-[12px] font-semibold">Monitoring active</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCROLLABLE INSIGHTS WORKSPACE -->
+      <main class="flex-1 overflow-y-auto px-6 py-6">
+        <div class="max-w-[1040px] mx-auto">
+
+          <!-- TOP TOOLBAR: Segmented Filter Bar + Privacy AI Quick Toggle -->
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <!-- Segmented Pill Filter Bar -->
+            <div id="filterBar" class="inline-flex flex-wrap items-center gap-1.5 bg-ng-sidebar p-1 rounded-[8px] border border-ng-border">
+              <button data-filter="all" onclick="setFilter('all')" class="filter-pill px-3 py-1.5 rounded-[6px] text-[12px] font-semibold transition-colors bg-ng-elevated text-ng-text border border-ng-blue/50">
+                All <span id="count-all" class="ml-1 text-[11px] text-ng-secondary">(4)</span>
+              </button>
+              <button data-filter="recommendation" onclick="setFilter('recommendation')" class="filter-pill px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-colors text-ng-secondary hover:text-ng-text hover:bg-ng-hover border border-transparent">
+                Recommendations <span id="count-recommendation" class="ml-1 text-[11px] text-ng-muted">(1)</span>
+              </button>
+              <button data-filter="anomaly" onclick="setFilter('anomaly')" class="filter-pill px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-colors text-ng-secondary hover:text-ng-text hover:bg-ng-hover border border-transparent">
+                Unusual activity <span id="count-anomaly" class="ml-1 text-[11px] text-ng-muted">(2)</span>
+              </button>
+              <button data-filter="reviewed" onclick="setFilter('reviewed')" class="filter-pill px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-colors text-ng-secondary hover:text-ng-text hover:bg-ng-hover border border-transparent">
+                Reviewed <span id="count-reviewed" class="ml-1 text-[11px] text-ng-muted">(1)</span>
+              </button>
+            </div>
+
+            <!-- Privacy Setting Simulator Control (Helps test AI Disabled vs Enabled states) -->
+            <div class="flex items-center gap-2">
+              <button onclick="resetDemoInsights()" id="resetFeedBtn" class="hidden h-[32px] px-3 rounded-[6px] text-[12px] text-ng-secondary hover:text-ng-text hover:bg-ng-hover transition-colors">
+                Reset demo feed
+              </button>
+              <div class="flex items-center gap-2 px-3 py-1.5 rounded-[6px] bg-ng-surface border border-ng-border text-[12px]">
+                <span class="text-ng-secondary">Privacy AI Provider:</span>
+                <button id="privacyToggleBtn" onclick="togglePrivacySimulation()" class="font-semibold text-ng-amber hover:underline">
+                  Disabled (Default)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- INSIGHT CARDS FEED -->
+          <div id="insightsFeed" class="space-y-4">
+            <!-- Cards injected dynamically by JS -->
+          </div>
+
+          <!-- EMPTY STATE VIEW (Shown when filter yields 0 items) -->
+          <div id="emptyStateView" class="hidden py-16 px-6 rounded-[10px] bg-ng-surface border border-ng-border text-center">
+            <div class="max-w-[420px] mx-auto flex flex-col items-center">
+              <div class="w-12 h-12 rounded-full bg-ng-elevated border border-ng-border flex items-center justify-center text-ng-secondary mb-3">
+                <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+              </div>
+              <h3 class="text-[16px] font-semibold text-ng-text mb-1">No insights in this category</h3>
+              <p id="emptyStateText" class="text-[13px] text-ng-secondary mb-4">
+                Your network activity looks steady. New recommendations or anomalies will appear here automatically.
+              </p>
+              <button onclick="resetDemoInsights()" class="h-[36px] px-4 rounded-[6px] bg-ng-elevated border border-ng-border text-[13px] font-semibold text-ng-text hover:bg-ng-hover transition-colors">
+                Restore sample insights
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- GLOBAL BOTTOM STATUS BAR (28px)                                       -->
+  <!-- ===================================================================== -->
+  <footer class="h-[28px] bg-ng-sidebar border-t border-ng-border px-4 flex items-center justify-between text-[11px] text-ng-secondary shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-ng-green"></span>
+        <span class="text-ng-text font-medium">Monitoring active</span>
+      </div>
+      <span class="text-ng-border">|</span>
+      <span class="text-ng-muted">Local-first telemetry • No packet payloads stored</span>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5 text-ng-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span>Active adapter: <strong class="font-medium text-ng-text">Ethernet</strong></span>
+      </div>
+      <div class="flex items-center gap-1.5 text-ng-green">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span>No degradation detected</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- RECOMMENDATION DETAIL & EVIDENCE MODAL (`RecommendationDialog`)       -->
+  <!-- ===================================================================== -->
+  <div id="recommendationModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
+    <div class="w-full max-w-[760px] max-h-[90vh] bg-ng-elevated border border-ng-border rounded-[12px] shadow-2xl flex flex-col overflow-hidden">
+
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-ng-border flex items-start justify-between gap-4 bg-ng-surface/60 shrink-0">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span id="modalCategoryBadge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[6px] text-[11px] font-semibold"></span>
+            <span id="modalTimestamp" class="text-[11px] text-ng-muted"></span>
+          </div>
+          <h2 id="modalTitle" class="text-[18px] font-semibold text-ng-text leading-snug"></h2>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+          <!-- Interactive Simulator Switch inside Modal -->
+          <button id="modalPrivacySwitch" onclick="togglePrivacySimulation()" class="px-2.5 py-1 rounded-[6px] bg-ng-window border border-ng-border text-[11px] text-ng-secondary hover:text-ng-text transition-colors" title="Toggle simulated Privacy Setting for AI explanations">
+            AI Setting: <span id="modalPrivacyStateLabel" class="font-semibold text-ng-amber">Disabled</span>
+          </button>
+
+          <button onclick="closeModal()" aria-label="Close modal" class="w-8 h-8 rounded-[6px] flex items-center justify-center text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Scrollable Body -->
+      <div class="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+        <!-- SECTION A: DETERMINISTIC EVIDENCE PANEL (7 REQUIRED QUESTIONS) -->
+        <section class="rounded-[10px] bg-ng-surface border border-ng-border p-4 space-y-4">
+          <div class="flex items-center justify-between border-b border-ng-border/80 pb-2.5">
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-ng-blue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <h3 class="text-[14px] font-semibold text-ng-text">Deterministic Telemetry Evidence</h3>
+            </div>
+            <span class="text-[11px] text-ng-muted">Verified local observation</span>
+          </div>
+
+          <!-- Q1: What was observed? -->
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-ng-muted mb-1">1. What was observed</div>
+            <p id="q1Observed" class="text-[13px] text-ng-text leading-relaxed"></p>
+          </div>
+
+          <!-- Q2 & Q4: Application Identity + Attribution Confidence -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-[8px] bg-ng-window border border-ng-border">
+            <div class="sm:col-span-2 flex items-center gap-3">
+              <div id="q2AppIcon" class="w-9 h-9 rounded-lg bg-ng-elevated border border-ng-border flex items-center justify-center text-ng-blue shrink-0"></div>
+              <div class="min-w-0">
+                <div class="text-[11px] text-ng-muted">2. Involved Application / Identity</div>
+                <div id="q2AppName" class="text-[13px] font-semibold text-ng-text truncate"></div>
+                <div id="q2AppMeta" class="text-[11px] text-ng-secondary truncate"></div>
+              </div>
+            </div>
+            <div class="flex flex-col justify-center sm:items-end border-t sm:border-t-0 pt-2 sm:pt-0 border-ng-border">
+              <div class="text-[11px] text-ng-muted mb-1">4. Attribution Confidence</div>
+              <span id="q4ConfidenceBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[6px] text-[11px] font-semibold"></span>
+            </div>
+          </div>
+
+          <!-- Q3: Supporting Evidence (Mini 6-hour SVG Chart + Endpoints) -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-ng-muted">3. Supporting Evidence (Last 6 Hours)</span>
+              <span id="q3VolumeLabel" class="text-[11px] font-medium text-ng-blue"></span>
+            </div>
+
+            <!-- Mini 6-hour Bandwidth Timeline SVG -->
+            <div class="rounded-[8px] bg-ng-window border border-ng-border p-3 mb-2.5">
+              <div id="miniChartContainer" class="w-full h-[88px]"></div>
+              <div class="flex justify-between text-[10px] text-ng-muted mt-1 px-1">
+                <span>-6h</span>
+                <span>-5h</span>
+                <span>-4h</span>
+                <span>-3h</span>
+                <span>-2h</span>
+                <span>-1h</span>
+                <span class="text-ng-text font-medium">Now</span>
+              </div>
+            </div>
+
+            <!-- Observed Endpoints Table -->
+            <div id="q3EndpointsList" class="space-y-1.5 text-[12px]"></div>
+          </div>
+
+          <!-- Q5, Q6, Q7: Suggested Action, Impact, Reversibility -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+            <div class="p-3 rounded-[8px] bg-ng-window border border-ng-border">
+              <div class="text-[11px] font-semibold text-ng-blue mb-1">5. Suggested Action</div>
+              <p id="q5Action" class="text-[12px] text-ng-text font-medium"></p>
+            </div>
+            <div class="p-3 rounded-[8px] bg-ng-window border border-ng-border">
+              <div class="text-[11px] font-semibold text-ng-amber mb-1">6. What Happens If Applied</div>
+              <ul id="q6Impact" class="text-[12px] text-ng-secondary space-y-1 list-disc pl-4"></ul>
+            </div>
+            <div class="p-3 rounded-[8px] bg-ng-window border border-ng-border">
+              <div class="text-[11px] font-semibold text-ng-green mb-1">7. How to Reverse It</div>
+              <p id="q7Reverse" class="text-[12px] text-ng-secondary"></p>
+            </div>
+          </div>
+        </section>
+
+        <!-- SECTION B: OPTIONAL AI EXPLANATION LAYER (`AIDetailPanel`) -->
+        <section class="rounded-[10px] bg-[#181C24] border border-ng-border/90 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-ng-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
+              <h3 class="text-[14px] font-semibold text-ng-text">Optional AI Context Layer</h3>
+            </div>
+            <span class="px-2 py-0.5 rounded bg-ng-elevated border border-ng-border text-[10px] font-medium text-ng-secondary">Non-deterministic • Explicit consent required</span>
+          </div>
+
+          <!-- Dynamic AI Panel Container (Disabled / Prompt / Privacy Gate / Loading / Result) -->
+          <div id="aiPanelContent"></div>
+        </section>
+
+        <!-- Post-Action Enforcement Feedback Banner (Hidden until Apply clicked) -->
+        <div id="enforcementResultBanner" class="hidden rounded-[8px] p-3.5 border"></div>
+
+      </div>
+
+      <!-- Modal Footer Actions -->
+      <div class="px-6 py-3.5 border-t border-ng-border bg-ng-surface/80 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <button onclick="closeModal()" class="h-[36px] px-4 rounded-[6px] text-[13px] font-semibold text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors">
+          Cancel
+        </button>
+
+        <div class="flex items-center gap-2.5">
+          <button id="modalDismissBtn" onclick="dismissCurrentModalInsight()" class="h-[36px] px-4 rounded-[6px] bg-ng-elevated border border-ng-border text-[13px] font-semibold text-ng-text hover:bg-ng-hover transition-colors">
+            Dismiss Insight
+          </button>
+          <button id="modalApplyBtn" onclick="applySuggestedPolicy()" class="h-[36px] px-4 rounded-[6px] bg-ng-blue text-[13px] font-semibold text-white hover:bg-[#3B7DF0] transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <span id="modalApplyBtnText">Apply Suggested Policy</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- NON-BLOCKING NOTIFICATION TOAST (`NotificationToast`)                 -->
+  <!-- ===================================================================== -->
+  <div id="toastContainer" class="fixed bottom-10 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- ===================================================================== -->
+  <!-- INTERACTIVE PROTOTYPE LOGIC                                           -->
+  <!-- ===================================================================== -->
+  <script>
+    // Initial realistic NetGuard insights dataset
+    const INITIAL_INSIGHTS = [
+      {
+        id: 'ins-1',
+        category: 'anomaly', // 'anomaly' | 'recommendation' | 'reviewed'
+        badgeLabel: 'Anomaly Detected',
+        title: 'Background application using significant bandwidth',
+        summary: 'Windows Update (svchost.exe) has downloaded 420 MB in the background over the last 45 minutes, exceeding its 7-day baseline by 310%.',
+        timestamp: '14 minutes ago',
+        confidence: 'Confirmed',
+        app: {
+          name: 'Windows Update (Delivery Optimization)',
+          exe: 'svchost.exe (wuauserv)',
+          publisher: 'Microsoft Windows Publisher',
+          iconType: 'system'
+        },
+        q1: 'Sustained background downstream throughput averaging 1.24 Mbps over 45 minutes (420 MB total) while user input was idle.',
+        volumeLabel: '420 MB down / 14 MB up',
+        chartPoints: [12, 15, 10, 14, 18, 22, 85, 92, 88, 76, 65, 58],
+        anomalyRange: [6, 10],
+        endpoints: [
+          { host: 'au.download.windowsupdate.com', ip: '203.0.113.42:443', source: 'DNS + TLS SNI', bytes: '392 MB', conf: 'Confirmed' },
+          { host: 'fe3cr.delivery.mp.microsoft.com', ip: '198.51.100.19:443', source: 'DNS Correlation', bytes: '28 MB', conf: 'Confirmed' }
+        ],
+        suggestedAction: 'Apply 1.5 Mbps background download throttle',
+        policyEnforcementAvailable: true,
+        impact: [
+          'Caps Windows Update background downloads to 1.5 Mbps.',
+          'Preserves bandwidth for foreground calls and browsing.',
+          'Updates continue downloading at a controlled rate.'
+        ],
+        reverseSteps: 'Open Policies in the sidebar and toggle off or delete "Windows Update Background Cap".',
+        sanitizedPayload: {
+          insight_id: 'ins-1',
+          category: 'bandwidth_anomaly',
+          exe_name: 'svchost.exe',
+          service_tag: 'wuauserv',
+          signer_verified: true,
+          bytes_in_window: 440401920,
+          baseline_ratio: 3.1,
+          attribution_confidence: 'Confirmed',
+          no_packet_payloads: true
+        },
+        aiExplanation: [
+          'Windows Delivery Optimization frequently batches cumulative feature or security updates when the workstation enters an idle state.',
+          'Because the traffic routes to verified Microsoft CDN endpoints over HTTPS (port 443), this pattern is benign operational behavior rather than unauthorized exfiltration.',
+          'Applying a modest download throttle prevents latency spikes on shared connections without breaking OS security patching.'
+        ]
+      },
+      {
+        id: 'ins-2',
+        category: 'recommendation',
+        badgeLabel: 'Suggestion',
+        title: 'Consider a scheduled restriction',
+        summary: 'Google Chrome consistently transfers 600–900 MB nightly between 02:00 and 04:30. A scheduled bandwidth cap can protect metered data.',
+        timestamp: '2 hours ago',
+        confidence: 'Confirmed',
+        app: {
+          name: 'Google Chrome',
+          exe: 'chrome.exe',
+          publisher: 'Google LLC (Verified)',
+          iconType: 'browser'
+        },
+        q1: 'Recurring nightly data transfers averaging 740 MB between 02:00 and 04:30 across 5 of the last 7 days.',
+        volumeLabel: '740 MB nightly avg',
+        chartPoints: [25, 22, 18, 78, 84, 70, 20, 15, 19, 24, 21, 18],
+        anomalyRange: [3, 5],
+        endpoints: [
+          { host: 'redirector.gvt1.com', ip: '192.0.2.88:443', source: 'DNS + Active Socket PID', bytes: '510 MB', conf: 'Confirmed' },
+          { host: 'storage.googleapis.com', ip: '192.0.2.94:443', source: 'TLS SNI', bytes: '230 MB', conf: 'Confirmed' }
+        ],
+        suggestedAction: 'Create 02:00–05:00 schedule (1.0 Mbps limit)',
+        policyEnforcementAvailable: true,
+        impact: [
+          'Limits Chrome background sync and extension updates during overnight hours.',
+          'No restriction is applied between 05:00 and 02:00.'
+        ],
+        reverseSteps: 'Navigate to Policies → "Chrome Overnight Schedule" and click Disable or Delete.',
+        sanitizedPayload: {
+          insight_id: 'ins-2',
+          category: 'recurring_schedule_candidate',
+          exe_name: 'chrome.exe',
+          signer_verified: true,
+          window_utc: '02:00-04:30',
+          avg_bytes: 775946240,
+          attribution_confidence: 'Confirmed',
+          no_packet_payloads: true
+        },
+        aiExplanation: [
+          'Overnight browser transfers typically correspond to background extension updates, component downloads, or progressive web app cache synchronization.',
+          'Scheduling a rate limit during inactive hours prevents unexpected overnight usage on metered or capped internet plans while leaving daytime browsing unaffected.'
+        ]
+      },
+      {
+        id: 'ins-3',
+        category: 'anomaly',
+        badgeLabel: 'Anomaly Detected',
+        title: 'Unresolved network activity detected',
+        summary: '48 MB of outbound UDP traffic on port 443 could not be confidently linked to a signed application identity.',
+        timestamp: '3 hours ago',
+        confidence: 'Unknown',
+        app: {
+          name: 'Unassociated System / Short-lived Socket',
+          exe: 'Unknown process (PID exited)',
+          publisher: 'Unknown publisher',
+          iconType: 'unknown'
+        },
+        q1: '48 MB of outbound QUIC/UDP packets on port 443 observed after socket ownership closed prior to process snapshot.',
+        volumeLabel: '48 MB out / 6 MB in',
+        chartPoints: [5, 4, 6, 5, 8, 9, 10, 62, 54, 12, 8, 6],
+        anomalyRange: [7, 8],
+        endpoints: [
+          { host: '198.51.100.214 (Raw IP — no DNS evidence)', ip: '198.51.100.214:443 (UDP)', source: 'No domain evidence', bytes: '48 MB', conf: 'Unknown' }
+        ],
+        suggestedAction: 'Create notification-only watch rule for 198.51.100.214',
+        policyEnforcementAvailable: false, // Demonstrates honest "Stored only" fallback
+        impact: [
+          'Logs an immediate alert if this IP is contacted again.',
+          'Does not block traffic yet until process identity is confirmed.'
+        ],
+        reverseSteps: 'Remove the watch rule from Policies or inspect endpoint logs in Connections.',
+        sanitizedPayload: {
+          insight_id: 'ins-3',
+          category: 'unresolved_attribution',
+          exe_name: null,
+          protocol: 'UDP',
+          remote_port: 443,
+          bytes_out: 50331648,
+          attribution_confidence: 'Unknown',
+          no_packet_payloads: true
+        },
+        aiExplanation: [
+          'Short-lived UDP sockets (common with HTTP/3 and QUIC) can close before user-mode process enumeration captures the owning PID.',
+          'Because NetGuard avoids guessing domains from raw IP addresses, creating a notification-only rule is safer than an immediate block.'
+        ]
+      },
+      {
+        id: 'ins-4',
+        category: 'reviewed',
+        badgeLabel: 'Reviewed',
+        title: 'High upload rate from cloud sync client',
+        summary: 'OneDrive uploaded 185 MB during active work hours. Reviewed and left unrestricted.',
+        timestamp: 'Yesterday',
+        confidence: 'Likely',
+        app: {
+          name: 'Microsoft OneDrive',
+          exe: 'OneDrive.exe',
+          publisher: 'Microsoft Corporation',
+          iconType: 'cloud'
+        },
+        q1: 'Sustained upstream transfer of 185 MB over 20 minutes matching local workspace folder synchronization.',
+        volumeLabel: '12 MB down / 185 MB up',
+        chartPoints: [14, 18, 55, 68, 62, 30, 16, 14, 15, 12, 14, 13],
+        anomalyRange: [2, 4],
+        endpoints: [
+          { host: 'api.onedrive.com', ip: '203.0.113.77:443', source: 'DNS Correlation', bytes: '185 MB', conf: 'Likely' }
+        ],
+        suggestedAction: 'No action required (Marked as reviewed)',
+        policyEnforcementAvailable: true,
+        impact: [
+          'Keeps existing OneDrive sync behavior unchanged.'
+        ],
+        reverseSteps: 'You can create an upload throttle anytime from Applications → Microsoft OneDrive.',
+        sanitizedPayload: {
+          insight_id: 'ins-4',
+          category: 'upload_spike',
+          exe_name: 'OneDrive.exe',
+          bytes_out: 193986560,
+          attribution_confidence: 'Likely',
+          no_packet_payloads: true
+        },
+        aiExplanation: [
+          'Cloud storage clients periodically batch file changes into compressed upload streams.',
+          'Since this insight was already reviewed, no further action is needed unless upload saturation impacts video calls.'
+        ]
+      }
+    ];
+
+    // Application State
+    let insights = JSON.parse(JSON.stringify(INITIAL_INSIGHTS));
+    let currentFilter = 'all';
+    let searchQuery = '';
+    let activeModalInsightId = null;
+    let aiEnabledInPrivacy = false; // Default false per PRD/Design Spec
+    let aiGateStage = 'prompt'; // 'prompt' | 'gate' | 'loading' | 'loaded'
+    let lastDismissedBackup = null;
+
+    // Helper: Render Standardized Status / Category Badge
+    function renderCategoryBadge(category, label) {
+      if (category === 'anomaly') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[6px] bg-ng-amber/12 border border-ng-amber/30 text-ng-amber text-[11px] font-semibold">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          ${label}
+        </span>`;
+      }
+      if (category === 'recommendation') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[6px] bg-ng-info/12 border border-ng-info/30 text-ng-info text-[11px] font-semibold">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+          ${label}
+        </span>`;
+      }
+      return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[6px] bg-ng-secondary/12 border border-ng-border text-ng-secondary text-[11px] font-semibold">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        ${label}
+      </span>`;
+    }
+
+    // Helper: Render Attribution Confidence Badge
+    function renderConfidenceBadge(confidence) {
+      const styles = {
+        'Confirmed': 'bg-ng-green/12 text-ng-green border-ng-green/30',
+        'Likely': 'bg-ng-info/12 text-ng-info border-ng-info/30',
+        'Possible': 'bg-ng-amber/12 text-ng-amber border-ng-amber/30',
+        'Unknown': 'bg-ng-secondary/12 text-ng-secondary border-ng-border'
+      };
+      const dotColor = {
+        'Confirmed': 'bg-ng-green',
+        'Likely': 'bg-ng-info',
+        'Possible': 'bg-ng-amber',
+        'Unknown': 'bg-ng-secondary'
+      };
+      return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[6px] border text-[11px] font-semibold ${styles[confidence] || styles['Unknown']}">
+        <span class="w-1.5 h-1.5 rounded-full ${dotColor[confidence] || dotColor['Unknown']}"></span>
+        ${confidence}
+      </span>`;
+    }
+
+    // Helper: Render App SVG Icon
+    function getAppIconSvg(type) {
+      if (type === 'browser') {
+        return `<svg class="w-5 h-5 text-ng-blue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>`;
+      }
+      if (type === 'unknown') {
+        return `<svg class="w-5 h-5 text-ng-amber" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+      }
+      if (type === 'cloud') {
+        return `<svg class="w-5 h-5 text-ng-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`;
+      }
+      return `<svg class="w-5 h-5 text-ng-blue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`;
+    }
+
+    // Render Main Feed
+    function renderFeed() {
+      const feedEl = document.getElementById('insightsFeed');
+      const emptyEl = document.getElementById('emptyStateView');
+      const resetBtn = document.getElementById('resetFeedBtn');
+
+      // Update counts
+      const counts = {
+        all: insights.length,
+        recommendation: insights.filter(i => i.category === 'recommendation').length,
+        anomaly: insights.filter(i => i.category === 'anomaly').length,
+        reviewed: insights.filter(i => i.category === 'reviewed').length
+      };
+      document.getElementById('count-all').textContent = `(${counts.all})`;
+      document.getElementById('count-recommendation').textContent = `(${counts.recommendation})`;
+      document.getElementById('count-anomaly').textContent = `(${counts.anomaly})`;
+      document.getElementById('count-reviewed').textContent = `(${counts.reviewed})`;
+
+      const unreviewedCount = counts.recommendation + counts.anomaly;
+      const badgeEl = document.getElementById('sidebarBadgeCount');
+      badgeEl.textContent = unreviewedCount;
+      badgeEl.classList.toggle('hidden', unreviewedCount === 0);
+
+      // Show reset button if items were dismissed/modified
+      resetBtn.classList.toggle('hidden', insights.length === INITIAL_INSIGHTS.length);
+
+      // Filter items
+      const filtered = insights.filter(item => {
+        const matchesCat = currentFilter === 'all' || item.category === currentFilter;
+        const q = searchQuery.trim().toLowerCase();
+        const matchesQuery = !q ||
+          item.title.toLowerCase().includes(q) ||
+          item.summary.toLowerCase().includes(q) ||
+          item.app.name.toLowerCase().includes(q) ||
+          item.app.exe.toLowerCase().includes(q);
+        return matchesCat && matchesQuery;
+      });
+
+      if (filtered.length === 0) {
+        feedEl.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+        return;
+      }
+
+      emptyEl.classList.add('hidden');
+      feedEl.innerHTML = filtered.map(item => `
+        <article id="card-${item.id}" class="card-transition rounded-[10px] bg-ng-surface border border-ng-border hover:border-[#434C5E] p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="space-y-2 min-w-0 flex-1">
+            <!-- Top Metadata Row -->
+            <div class="flex flex-wrap items-center gap-2">
+              ${renderCategoryBadge(item.category, item.badgeLabel)}
+              <span class="text-[11px] text-ng-muted">•</span>
+              <span class="text-[12px] font-medium text-ng-secondary">${item.app.name}</span>
+              <span class="text-[11px] text-ng-muted hidden sm:inline">(${item.app.exe})</span>
+              <span class="text-[11px] text-ng-muted">•</span>
+              <span class="text-[11px] text-ng-muted">${item.timestamp}</span>
+            </div>
+
+            <!-- Card Title (14px Semibold) -->
+            <h2 class="text-[14px] font-semibold text-ng-text leading-snug">
+              ${item.title}
+            </h2>
+
+            <!-- Concise Summary (13px Body) -->
+            <p class="text-[13px] text-ng-secondary leading-relaxed max-w-[740px]">
+              ${item.summary}
+            </p>
+          </div>
+
+          <!-- Right Actions: Dismiss (Ghost) & Review -> (Secondary) -->
+          <div class="flex items-center gap-2 shrink-0 self-end md:self-center pt-2 md:pt-0 border-t md:border-t-0 border-ng-border/60 w-full md:w-auto justify-end">
+            <button onclick="dismissInsight('${item.id}')" class="h-[36px] px-3.5 rounded-[6px] text-[13px] font-semibold text-ng-secondary hover:bg-ng-hover hover:text-ng-text transition-colors">
+              Dismiss
+            </button>
+            <button onclick="openReviewModal('${item.id}')" class="h-[36px] px-4 rounded-[6px] bg-ng-elevated border border-ng-border text-[13px] font-semibold text-ng-text hover:bg-ng-hover hover:border-[#465063] transition-colors flex items-center gap-1.5">
+              <span>Review</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    // Filter Bar Interaction
+    function setFilter(filterKey) {
+      currentFilter = filterKey;
+      document.querySelectorAll('.filter-pill').forEach(btn => {
+        const isActive = btn.dataset.filter === filterKey;
+        if (isActive) {
+          btn.className = 'filter-pill px-3 py-1.5 rounded-[6px] text-[12px] font-semibold transition-colors bg-ng-elevated text-ng-text border border-ng-blue/50';
+        } else {
+          btn.className = 'filter-pill px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-colors text-ng-secondary hover:text-ng-text hover:bg-ng-hover border border-transparent';
+        }
+      });
+      renderFeed();
+    }
+
+    function handleSearch(val) {
+      searchQuery = val;
+      renderFeed();
+    }
+
+    // Dismiss Card with Undo Toast
+    function dismissInsight(id) {
+      const idx = insights.findIndex(i => i.id === id);
+      if (idx === -1) return;
+      const removed = insights[idx];
+      lastDismissedBackup = { item: removed, index: idx };
+      insights.splice(idx, 1);
+      renderFeed();
+      showToast(`Dismissed "${removed.title}" (Logged to Audit)`, 'info', true);
+    }
+
+    function undoLastDismiss() {
+      if (!lastDismissedBackup) return;
+      insights.splice(lastDismissedBackup.index, 0, lastDismissedBackup.item);
+      lastDismissedBackup = null;
+      renderFeed();
+      showToast('Insight restored to feed', 'success');
+    }
+
+    function resetDemoInsights() {
+      insights = JSON.parse(JSON.stringify(INITIAL_INSIGHTS));
+      currentFilter = 'all';
+      searchQuery = '';
+      document.getElementById('globalSearchInput').value = '';
+      setFilter('all');
+      showToast('Demo insights restored', 'info');
+    }
+
+    // Build Mini 6-Hour SVG Sparkline Chart with Anomaly Highlight
+    function buildMiniChartSvg(points, anomalyRange) {
+      const width = 660;
+      const height = 84;
+      const stepX = width / (points.length - 1);
+
+      const coords = points.map((val, idx) => {
+        const x = idx * stepX;
+        const y = height - (val / 100) * (height - 14) - 6;
+        return [x, y];
+      });
+
+      const linePath = coords.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
+      const areaPath = `${linePath} L ${width} ${height} L 0 ${height} Z`;
+
+      const startX = anomalyRange[0] * stepX;
+      const bandWidth = Math.max(24, (anomalyRange[1] - anomalyRange[0]) * stepX);
+
+      return `
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" class="w-full h-full overflow-visible">
+          <defs>
+            <linearGradient id="ngChartGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#4C8DFF" stop-opacity="0.32"/>
+              <stop offset="100%" stop-color="#4C8DFF" stop-opacity="0.0"/>
+            </linearGradient>
+          </defs>
+          <!-- Anomaly Window Highlight -->
+          <rect x="${startX}" y="0" width="${bandWidth}" height="${height}" fill="#E6AD4D" fill-opacity="0.14" rx="4"/>
+          <line x1="${startX}" y1="0" x2="${startX}" y2="${height}" stroke="#E6AD4D" stroke-width="1" stroke-dasharray="3 3"/>
+          <!-- Area & Line -->
+          <path d="${areaPath}" fill="url(#ngChartGrad)"/>
+          <path d="${linePath}" fill="none" stroke="#4C8DFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+    }
+
+    // Open Recommendation Detail Modal
+    function openReviewModal(id) {
+      const item = insights.find(i => i.id === id);
+      if (!item) return;
+
+      activeModalInsightId = id;
+      aiGateStage = 'prompt';
+
+      // Populate Header
+      document.getElementById('modalCategoryBadge').outerHTML = `<span id="modalCategoryBadge">${renderCategoryBadge(item.category, item.badgeLabel)}</span>`;
+      document.getElementById('modalTimestamp').textContent = `Observed ${item.timestamp}`;
+      document.getElementById('modalTitle').textContent = item.title;
+
+      // Populate Q1 - Q7 Deterministic Evidence
+      document.getElementById('q1Observed').textContent = item.q1;
+      document.getElementById('q2AppIcon').innerHTML = getAppIconSvg(item.app.iconType);
+      document.getElementById('q2AppName').textContent = item.app.name;
+      document.getElementById('q2AppMeta').textContent = `${item.app.exe} • ${item.app.publisher}`;
+      document.getElementById('q4ConfidenceBadge').outerHTML = `<span id="q4ConfidenceBadge">${renderConfidenceBadge(item.confidence)}</span>`;
+
+      document.getElementById('q3VolumeLabel').textContent = item.volumeLabel;
+      document.getElementById('miniChartContainer').innerHTML = buildMiniChartSvg(item.chartPoints, item.anomalyRange);
+
+      document.getElementById('q3EndpointsList').innerHTML = item.endpoints.map(ep => `
+        <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-[6px] bg-ng-window border border-ng-border/80">
+          <div class="min-w-0">
+            <span class="font-mono text-[12px] text-ng-text">${ep.host}</span>
+            <span class="text-[11px] text-ng-muted ml-2">${ep.ip}</span>
+          </div>
+          <div class="flex items-center gap-2.5 text-[11px]">
+            <span class="text-ng-secondary">${ep.source}</span>
+            <span class="font-semibold text-ng-text">${ep.bytes}</span>
+            ${renderConfidenceBadge(ep.conf)}
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('q5Action').textContent = item.suggestedAction;
+      document.getElementById('q6Impact').innerHTML = item.impact.map(line => `<li>${line}</li>`).join('');
+      document.getElementById('q7Reverse').textContent = item.reverseSteps;
+
+      // Reset Enforcement Result Banner & Apply Button
+      const banner = document.getElementById('enforcementResultBanner');
+      banner.classList.add('hidden');
+      const applyBtn = document.getElementById('modalApplyBtn');
+      applyBtn.disabled = false;
+      applyBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      document.getElementById('modalApplyBtnText').textContent =
+        item.category === 'reviewed' ? 'Mark Reviewed Again' : 'Apply Suggested Policy';
+
+      renderAiPanel();
+      document.getElementById('recommendationModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('recommendationModal').classList.add('hidden');
+      activeModalInsightId = null;
+    }
+
+    // Toggle Privacy AI Simulation (Disabled vs Enabled)
+    function togglePrivacySimulation() {
+      aiEnabledInPrivacy = !aiEnabledInPrivacy;
+      aiGateStage = 'prompt';
+
+      const topBtn = document.getElementById('privacyToggleBtn');
+      const sideBadge = document.getElementById('sidebarAiBadge');
+      const modalLabel = document.getElementById('modalPrivacyStateLabel');
+
+      if (aiEnabledInPrivacy) {
+        topBtn.textContent = 'Enabled (Preview)';
+        topBtn.className = 'font-semibold text-ng-green hover:underline';
+        sideBadge.textContent = 'AI On';
+        sideBadge.className = 'text-[10px] px-1.5 py-0.5 rounded bg-ng-green/15 text-ng-green border border-ng-green/30';
+        if (modalLabel) {
+          modalLabel.textContent = 'Enabled';
+          modalLabel.className = 'font-semibold text-ng-green';
+        }
+        showToast('Privacy Setting: Remote AI explanations enabled for preview', 'info');
+      } else {
+        topBtn.textContent = 'Disabled (Default)';
+        topBtn.className = 'font-semibold text-ng-amber hover:underline';
+        sideBadge.textContent = 'AI Off';
+        sideBadge.className = 'text-[10px] px-1.5 py-0.5 rounded bg-ng-elevated text-ng-muted border border-ng-border';
+        if (modalLabel) {
+          modalLabel.textContent = 'Disabled';
+          modalLabel.className = 'font-semibold text-ng-amber';
+        }
+        showToast('Privacy Setting: Remote AI disabled (local-only mode)', 'info');
+      }
+
+      if (activeModalInsightId) {
+        renderAiPanel();
+      }
+    }
+
+    // Render Section B: Optional AI Explanation Panel with Explicit Privacy Gate
+    function renderAiPanel() {
+      const container = document.getElementById('aiPanelContent');
+      const item = insights.find(i => i.id === activeModalInsightId);
+      if (!item || !container) return;
+
+      // State 1: Disabled in Privacy Settings (Honest Unwired/Disabled UI)
+      if (!aiEnabledInPrivacy) {
+        container.innerHTML = `
+          <div class="p-3 rounded-[8px] bg-ng-window border border-ng-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-start gap-2.5">
+              <svg class="w-4 h-4 text-ng-muted mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <div>
+                <div class="text-[12px] font-semibold text-ng-secondary">AI Explanation is currently unavailable or disabled in Privacy Settings.</div>
+                <p class="text-[11px] text-ng-muted mt-0.5">NetGuard keeps remote AI providers off by default. Deterministic evidence above remains 100% local.</p>
+              </div>
+            </div>
+            <button onclick="togglePrivacySimulation()" class="h-[32px] px-3 rounded-[6px] bg-ng-elevated border border-ng-border text-[12px] font-semibold text-ng-text hover:bg-ng-hover shrink-0">
+              Enable in Privacy Settings
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      // State 2: Enabled — Initial Prompt
+      if (aiGateStage === 'prompt') {
+        container.innerHTML = `
+          <div class="p-3 rounded-[8px] bg-ng-window border border-ng-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p class="text-[12px] text-ng-secondary">
+              Get AI-powered context on why this telemetry pattern occurs and common Windows behaviors associated with it.
+            </p>
+            <button onclick="openPrivacyGate()" class="h-[34px] px-3.5 rounded-[6px] bg-ng-elevated border border-ng-blue/40 text-[12px] font-semibold text-ng-blue hover:bg-ng-blue/15 transition-colors shrink-0">
+              Explain with AI
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      // State 3: Explicit Privacy Gate (Mandatory Approval Before Transmission)
+      if (aiGateStage === 'gate') {
+        container.innerHTML = `
+          <div class="p-3.5 rounded-[8px] bg-ng-window border border-ng-amber/40 space-y-3">
+            <div class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-ng-amber mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <div>
+                <div class="text-[12px] font-semibold text-ng-text">Privacy Gate — Review Metadata Before Sending</div>
+                <p class="text-[12px] text-ng-secondary mt-0.5">
+                  To generate an explanation, NetGuard will transmit only the sanitized metadata JSON below. <strong>No packet payloads, browsing history, or local files are ever included.</strong>
+                </p>
+              </div>
+            </div>
+
+            <pre class="p-2.5 rounded-[6px] bg-[#111318] border border-ng-border font-mono text-[11px] text-ng-info overflow-x-auto leading-relaxed">${JSON.stringify(item.sanitizedPayload, null, 2)}</pre>
+
+            <div class="flex items-center justify-end gap-2">
+              <button onclick="cancelPrivacyGate()" class="h-[32px] px-3 rounded-[6px] text-[12px] font-semibold text-ng-secondary hover:bg-ng-hover hover:text-ng-text">
+                Cancel
+              </button>
+              <button onclick="approveAiTransmission()" class="h-[32px] px-3.5 rounded-[6px] bg-ng-blue text-[12px] font-semibold text-white hover:bg-[#3B7DF0]">
+                Approve Transmission
+              </button>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      // State 4: Loading Skeleton
+      if (aiGateStage === 'loading') {
+        container.innerHTML = `
+          <div class="p-3.5 rounded-[8px] bg-ng-window border border-ng-border space-y-2.5">
+            <div class="text-[11px] text-ng-muted">Requesting sanitized telemetry interpretation...</div>
+            <div class="skeleton-bar h-3 w-11/12"></div>
+            <div class="skeleton-bar h-3 w-4/5"></div>
+            <div class="skeleton-bar h-3 w-3/5"></div>
+          </div>
+        `;
+        return;
+      }
+
+      // State 5: Populated AI Explanation
+      if (aiGateStage === 'loaded') {
+        container.innerHTML = `
+          <div class="p-3.5 rounded-[8px] bg-ng-window border border-ng-info/30 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-semibold text-ng-info">AI Interpretation (Advisory Only — No Silent Enforcement)</span>
+              <span class="text-[10px] text-ng-muted">Sanitized metadata approved</span>
+            </div>
+            <ul class="text-[12px] text-ng-secondary space-y-1.5 list-disc pl-4 leading-relaxed">
+              ${item.aiExplanation.map(pt => `<li>${pt}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      }
+    }
+
+    function openPrivacyGate() {
+      aiGateStage = 'gate';
+      renderAiPanel();
+    }
+
+    function cancelPrivacyGate() {
+      aiGateStage = 'prompt';
+      renderAiPanel();
+    }
+
+    function approveAiTransmission() {
+      aiGateStage = 'loading';
+      renderAiPanel();
+      setTimeout(() => {
+        if (aiGateStage === 'loading') {
+          aiGateStage = 'loaded';
+          renderAiPanel();
+        }
+      }, 750);
+    }
+
+    // Apply Suggested Policy (Truthful Enforcement Result)
+    function applySuggestedPolicy() {
+      const item = insights.find(i => i.id === activeModalInsightId);
+      if (!item) return;
+
+      const banner = document.getElementById('enforcementResultBanner');
+      const applyBtn = document.getElementById('modalApplyBtn');
+      applyBtn.disabled = true;
+      applyBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+      // Mark item as reviewed in feed
+      item.category = 'reviewed';
+      item.badgeLabel = 'Reviewed';
+      renderFeed();
+
+      if (item.policyEnforcementAvailable) {
+        banner.className = 'rounded-[8px] p-3.5 border bg-ng-green/12 border-ng-green/35 text-ng-text';
+        banner.innerHTML = `
+          <div class="flex items-start gap-2.5">
+            <span class="w-2 h-2 rounded-full bg-ng-green mt-1.5 shrink-0"></span>
+            <div>
+              <div class="text-[13px] font-semibold text-ng-green">Policy Active — Enforced via Windows QoS / WFP</div>
+              <p class="text-[12px] text-ng-secondary mt-0.5">
+                "${item.suggestedAction}" is now active and logged in Audit &amp; Reports. You can adjust or disable it anytime under Policies.
+              </p>
+            </div>
+          </div>
+        `;
+        showToast('Policy enforced and active', 'success');
+      } else {
+        // Honest Stored-Only outcome when target lacks live enforcement support
+        banner.className = 'rounded-[8px] p-3.5 border bg-ng-amber/12 border-ng-amber/35 text-ng-text';
+        banner.innerHTML = `
+          <div class="flex items-start gap-2.5">
+            <span class="w-2 h-2 rounded-full bg-ng-amber mt-1.5 shrink-0"></span>
+            <div>
+              <div class="text-[13px] font-semibold text-ng-amber">Saved as Stored Only — Not Enforced at Packet Layer</div>
+              <p class="text-[12px] text-ng-secondary mt-0.5">
+                Because attribution confidence is <strong>Unknown</strong>, NetGuard saved this rule as a watch policy without blocking traffic.
+              </p>
+            </div>
+          </div>
+        `;
+        showToast('Rule saved as Stored Only (see details)', 'warning');
+      }
+      banner.classList.remove('hidden');
+    }
+
+    function dismissCurrentModalInsight() {
+      const id = activeModalInsightId;
+      closeModal();
+      if (id) dismissInsight(id);
+    }
+
+    // Navigation feedback for non-active sidebar items
+    function navClick(destination) {
+      showToast(`Prototype focuses on Screen 07 — Insights (Clicked: ${destination})`, 'info');
+    }
+
+    // Non-blocking Notification Toast Helper
+    function showToast(message, type = 'info', withUndo = false) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+
+      const borderColors = {
+        success: 'border-ng-green/40',
+        warning: 'border-ng-amber/40',
+        info: 'border-ng-border'
+      };
+      const dotColors = {
+        success: 'bg-ng-green',
+        warning: 'bg-ng-amber',
+        info: 'bg-ng-blue'
+      };
+
+      toast.className = `pointer-events-auto w-[340px] px-3.5 py-2.5 rounded-[8px] bg-ng-elevated border ${borderColors[type] || borderColors.info} shadow-xl flex items-center justify-between gap-3 text-[12px] text-ng-text transition-opacity duration-200`;
+      toast.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2 h-2 rounded-full ${dotColors[type] || dotColors.info} shrink-0"></span>
+          <span class="truncate">${message}</span>
+        </div>
+        ${withUndo ? `<button onclick="undoLastDismiss(); this.parentElement.remove();" class="text-ng-blue font-semibold hover:underline shrink-0">Undo</button>` : ''}
+      `;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 220);
+      }, 3600);
+    }
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && activeModalInsightId) {
+        closeModal();
+      }
+    });
+
+    // Initialize feed on load
+    renderFeed();
+  </script>
+</body>
+</html>
