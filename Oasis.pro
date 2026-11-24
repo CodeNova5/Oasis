@@ -121,7 +121,8 @@ SOURCES += \
     src/hardware/hardwaremonitor.cpp \
     src/taskbar/taskbaroverlay.cpp \
     src/taskbar/systemtrayicon.cpp \
-    src/ui/webview2/datasaverwebpage.cpp
+    src/ui/webview2/webuipage.cpp \
+    src/ui/webview2/webuiwindow.cpp
 
 # ─── Headers ────────────────────────────────────────────────────────────────
 HEADERS += \
@@ -222,7 +223,8 @@ HEADERS += \
     src/hardware/hardwaremonitor.h \
     src/taskbar/taskbaroverlay.h \
     src/taskbar/systemtrayicon.h \
-    src/ui/webview2/datasaverwebpage.h
+    src/ui/webview2/webuipage.h \
+    src/ui/webview2/webuiwindow.h
 
 # ─── Qt Designer UI forms ────────────────────────────────────────────────────
 FORMS += \
@@ -289,7 +291,8 @@ RCC_DIR     = $$OUT_PWD/.rcc
 UI_DIR      = $$OUT_PWD/.ui
 
 # ─── Runtime bundling (WebView2 assets + WinDivert) ──────────────────────────
-# Copies the Preact bundle and the WinDivert runtime next to the executable
+# Copies each Preact bundle (one web/ project per page) and the WinDivert
+# runtime next to the executable
 # after linking. The leading "-" on the WinDivert copies makes make ignore a
 # copy that has become stale (files removed after qmake ran) instead of failing
 # the build.
@@ -298,11 +301,13 @@ UI_DIR      = $$OUT_PWD/.ui
 # (e.g. ".../Documents/Next Js/...") and make would otherwise split the path
 # into separate arguments. Escaped \" quotes do not survive into the Makefile.
 win32 {
-    WEB_ASSET_DIR = $$shell_quote($$shell_path($$DESTDIR/web/datasaver/dist))
-    QMAKE_POST_LINK += $$QMAKE_MKDIR $$WEB_ASSET_DIR $$escape_expand(\\n\\t)
-    WEB_ASSET_BUNDLE = $$files($$PWD/web/datasaver/dist/*)
-    for(web_asset, WEB_ASSET_BUNDLE) {
-        QMAKE_POST_LINK += $$QMAKE_COPY $$shell_quote($$shell_path($$web_asset)) $$WEB_ASSET_DIR $$escape_expand(\\n\\t)
+    for(web_page, ui) {
+        WEB_ASSET_DIR = $$shell_quote($$shell_path($$DESTDIR/web/$$web_page/dist))
+        QMAKE_POST_LINK += $$QMAKE_MKDIR $$WEB_ASSET_DIR $$escape_expand(\\n\\t)
+        WEB_ASSET_BUNDLE = $$files($$PWD/web/$$web_page/dist/*)
+        for(web_asset, WEB_ASSET_BUNDLE) {
+            QMAKE_POST_LINK += $$QMAKE_COPY $$shell_quote($$shell_path($$web_asset)) $$WEB_ASSET_DIR $$escape_expand(\\n\\t)
+        }
     }
     TARGET_DIR = $$shell_quote($$shell_path($$DESTDIR))
     WINDIVERT_BUNDLE = $$files($$PWD/third_party/windivert/WinDivert.dll)

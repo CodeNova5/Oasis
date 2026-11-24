@@ -344,7 +344,10 @@ void MainWindow::buildShell()
 
     // Layout-only WebView2 pilot. The native Data Saver tab remains hidden but
     // alive as the owner of the existing backend services.
-    addScreen(QStringLiteral("Data Saver"), new DataSaverWebPage,
+    addScreen(QStringLiteral("Data Saver"),
+              new WebUiPage(QStringLiteral("web/ui/dist"),
+                            QStringLiteral("datasaver.html"),
+                            QStringLiteral("Data Saver preview")),
               QStringLiteral("Data Saver"),
               QStringLiteral("Layout preview; backend controls are not connected"));
 

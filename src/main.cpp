@@ -38,7 +38,7 @@
 
 // -- Project ------------------------------------------------------------------
 #include "core/version.h"
-#include "core/mainwindow.h"
+#include "ui/webview2/webuiwindow.h"
 #include "ui/theme/thememanager.h"
 #include "core/appinstaller.h"
 #include "hardware/hardwaremonitor.h"    // Q_DECLARE_METATYPE(HardwareSnapshot)
@@ -143,8 +143,12 @@ int main(int argc, char *argv[])
     // matching QPalette + Segoe UI Variable font.
     ThemeManager::instance().apply(&app);
 
-    // -- Show main window -----------------------------------------------------
-    MainWindow w;
+    // -- Show the web UI ------------------------------------------------------
+    // The window hosts the single Preact + HTM bundle edge to edge. The Qt shell
+    // (sidebar, header, status bar and the native pages) is not part of the UI:
+    // everything on screen comes from web/ui.
+    WebUiWindow w(QStringLiteral("web/ui/dist"), QStringLiteral("index.html"),
+                  QStringLiteral("Oasis"));
     w.setWindowIcon(appIcon);
     w.showMaximized();
 

@@ -212,8 +212,8 @@ bool AppInstaller::copyRuntimeFiles()
         setFullPermissions(destination);
     }
 
-    const QString sourceWebDir = QDir(appDir).filePath(QStringLiteral("web/datasaver/dist"));
-    const QString destinationWebDir = QDir(installDir()).filePath(QStringLiteral("web/datasaver/dist"));
+    const QString sourceWebDir = QDir(appDir).filePath(QStringLiteral("web/ui/dist"));
+    const QString destinationWebDir = QDir(installDir()).filePath(QStringLiteral("web/ui/dist"));
     if (QDir(sourceWebDir).exists()) {
         QDir().mkpath(destinationWebDir);
         const QFileInfoList webAssets = QDir(sourceWebDir).entryInfoList(

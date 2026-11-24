@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QLibrary>
 #include <QPointer>
+#include <QString>
 
 #include <string>
 
@@ -11,11 +12,23 @@
 
 class QLabel;
 
-class DataSaverWebPage final : public QWidget
+/**
+ * Hosts one bundled Preact + HTM page inside the Qt shell through WebView2.
+ *
+ * The page is built by the frontend project under web/ui and copied next to
+ * the executable, so the frontend stays fully isolated from the native
+ * widgets: this class only supplies a native window, a profile folder and the
+ * URL to navigate to.
+ */
+class WebUiPage final : public QWidget
 {
 public:
-    explicit DataSaverWebPage(QWidget *parent = nullptr);
-    ~DataSaverWebPage() override;
+    // pageDir is relative to the executable directory ("web/ui/dist") and
+    // pageFile is the page inside it ("index.html", "datasaver.html").
+    // displayName is only used in fallback messages.
+    explicit WebUiPage(const QString &pageDir, const QString &pageFile,
+                       const QString &displayName, QWidget *parent = nullptr);
+    ~WebUiPage() override;
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -34,6 +47,8 @@ private:
         PCWSTR, PCWSTR, ICoreWebView2EnvironmentOptions *,
         ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler *);
 
+    QString m_displayName;
+    QString m_pagePath;
     QLibrary m_loader;
     QLabel *m_status = nullptr;
     ICoreWebView2Environment *m_environment = nullptr;

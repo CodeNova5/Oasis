@@ -106,20 +106,21 @@ fi
 
 cd "$SCRIPT_DIR"
 
-# ─── Data Saver web assets ──────────────────────────────────────────────────
-# The Data Saver page is a Preact app bundled by esbuild into
-# web/datasaver/dist, which qmake's post-link rule copies to
-# bin/web/datasaver/dist. Neither folder is committed, so the bundle has to be
-# rebuilt here whenever its sources change; otherwise the app runs the old UI.
-# build.mjs also writes bin/web/datasaver/dist directly, so a run that does not
-# relink (web-only change) still picks up the new assets.
-rebuild_web_assets() {
-    local web_dir="$SCRIPT_DIR/web/datasaver"
+# ─── Web UI assets ─────────────────────────────────────────────────────────
+# The frontend is one Preact app (web/ui) bundled by esbuild into web/ui/dist,
+# which qmake's post-link rule copies to bin/web/ui/dist. Neither folder is
+# committed, so the bundle has to be rebuilt here whenever its sources change;
+# otherwise the app runs the old UI. build.mjs also writes bin/web/ui/dist
+# directly, so a run that does not relink (web-only change) still picks up the
+# new assets.
+rebuild_web_page() {
+    local page="$1"
+    local web_dir="$SCRIPT_DIR/web/$page"
     local bundle="$web_dir/dist/app.js"
 
     [[ -f "$web_dir/package.json" ]] || return 0
 
-    local sources=("$web_dir/package.json" "$web_dir/build.mjs" "$web_dir/index.html")
+    local sources=("$web_dir/package.json" "$web_dir/build.mjs" "$web_dir/index.html" "$web_dir/datasaver.html")
     local source stale=0 found
 
     if [[ ! -f "$bundle" ]]; then
@@ -141,19 +142,23 @@ rebuild_web_assets() {
     [[ $stale -eq 1 ]] || return 0
 
     if ! command -v npm >/dev/null 2>&1; then
-        echo "The Data Saver assets are out of date, but npm was not found on PATH." >&2
+        echo "The $page assets are out of date, but npm was not found on PATH." >&2
         echo "Install Node.js, or rebuild them manually:" >&2
-        echo "  cd web/datasaver && npm install && npm run build" >&2
+        echo "  cd web/$page && npm install && npm run build" >&2
         exit 1
     fi
 
     if [[ ! -d "$web_dir/node_modules" ]]; then
-        echo "Installing Data Saver dependencies..."
+        echo "Installing $page dependencies..."
         ( cd "$web_dir" && npm install --no-audit --no-fund )
     fi
 
-    echo "Rebuilding Data Saver assets..."
+    echo "Rebuilding $page assets..."
     ( cd "$web_dir" && npm run build )
+}
+
+rebuild_web_assets() {
+    rebuild_web_page "ui"
 }
 
 rebuild_web_assets
@@ -194,10 +199,12 @@ fi
 # repairs these files, but this makes the normal local run path deterministic.
 INSTALL_DIR="/c/Program Files/Oasis"
 if [[ -f "$SCRIPT_DIR/bin/WebView2Loader.dll" ]]; then
-    mkdir -p "$INSTALL_DIR/web/datasaver/dist"
     cp -f "$SCRIPT_DIR/bin/WebView2Loader.dll" "$INSTALL_DIR/WebView2Loader.dll" ||
         echo "WebView2Loader.dll is locked by a running Oasis process; keeping the installed copy."
-    cp -f "$SCRIPT_DIR/bin/web/datasaver/dist/"* "$INSTALL_DIR/web/datasaver/dist/"
+fi
+if [[ -d "$SCRIPT_DIR/bin/web/ui/dist" ]]; then
+    mkdir -p "$INSTALL_DIR/web/ui/dist"
+    cp -f "$SCRIPT_DIR/bin/web/ui/dist/"* "$INSTALL_DIR/web/ui/dist/"
 fi
 
 echo "Launching Oasis as administrator..."

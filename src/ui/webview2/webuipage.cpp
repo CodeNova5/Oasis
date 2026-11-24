@@ -1,4 +1,4 @@
-#include "datasaverwebpage.h"
+#include "webuipage.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -15,7 +15,7 @@ class WebView2EnvironmentHandler final
     : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
 {
 public:
-    explicit WebView2EnvironmentHandler(DataSaverWebPage *page) : m_page(page) {}
+    explicit WebView2EnvironmentHandler(WebUiPage *page) : m_page(page) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **object) override
     {
@@ -50,14 +50,14 @@ public:
 
 private:
     ULONG m_references = 1;
-    QPointer<DataSaverWebPage> m_page;
+    QPointer<WebUiPage> m_page;
 };
 
 class WebView2ControllerHandler final
     : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 {
 public:
-    explicit WebView2ControllerHandler(DataSaverWebPage *page) : m_page(page) {}
+    explicit WebView2ControllerHandler(WebUiPage *page) : m_page(page) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **object) override
     {
@@ -92,7 +92,7 @@ public:
 
 private:
     ULONG m_references = 1;
-    QPointer<DataSaverWebPage> m_page;
+    QPointer<WebUiPage> m_page;
 };
 
 QString errorText(HRESULT errorCode)
@@ -102,8 +102,12 @@ QString errorText(HRESULT errorCode)
 
 } // namespace
 
-DataSaverWebPage::DataSaverWebPage(QWidget *parent)
+WebUiPage::WebUiPage(const QString &pageDir, const QString &pageFile,
+                     const QString &displayName, QWidget *parent)
     : QWidget(parent)
+    , m_displayName(displayName)
+    , m_pagePath(QCoreApplication::applicationDirPath() + QLatin1Char('/')
+                 + pageDir + QLatin1Char('/') + pageFile)
     , m_loader(QStringLiteral("WebView2Loader"))
 {
     setAttribute(Qt::WA_NativeWindow);
@@ -112,7 +116,7 @@ DataSaverWebPage::DataSaverWebPage(QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(24, 24, 24, 24);
 
-    m_status = new QLabel(QStringLiteral("Starting Data Saver preview..."), this);
+    m_status = new QLabel(QStringLiteral("Starting %1...").arg(m_displayName), this);
     m_status->setAlignment(Qt::AlignCenter);
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -122,7 +126,7 @@ DataSaverWebPage::DataSaverWebPage(QWidget *parent)
     initialize();
 }
 
-DataSaverWebPage::~DataSaverWebPage()
+WebUiPage::~WebUiPage()
 {
     if (m_webView)
         m_webView->Release();
@@ -133,7 +137,7 @@ DataSaverWebPage::~DataSaverWebPage()
     m_loader.unload();
 }
 
-void DataSaverWebPage::initialize()
+void WebUiPage::initialize()
 {
     const QString profileFolder = QDir::toNativeSeparators(
         QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
@@ -170,8 +174,8 @@ void DataSaverWebPage::initialize()
         showFailure(QStringLiteral("WebView2 environment creation failed (%1).").arg(errorText(result)));
 }
 
-void DataSaverWebPage::onEnvironmentCreated(HRESULT errorCode,
-                                            ICoreWebView2Environment *environment)
+void WebUiPage::onEnvironmentCreated(HRESULT errorCode,
+                                     ICoreWebView2Environment *environment)
 {
     if (FAILED(errorCode) || !environment) {
         showFailure(QStringLiteral("WebView2 runtime is unavailable (%1).\n"
@@ -191,8 +195,8 @@ void DataSaverWebPage::onEnvironmentCreated(HRESULT errorCode,
         showFailure(QStringLiteral("WebView2 controller creation failed (%1).").arg(errorText(result)));
 }
 
-void DataSaverWebPage::onControllerCreated(HRESULT errorCode,
-                                           ICoreWebView2Controller *controller)
+void WebUiPage::onControllerCreated(HRESULT errorCode,
+                                    ICoreWebView2Controller *controller)
 {
     if (FAILED(errorCode) || !controller) {
         showFailure(QStringLiteral("WebView2 controller is unavailable (%1).").arg(errorText(errorCode)));
@@ -209,27 +213,25 @@ void DataSaverWebPage::onControllerCreated(HRESULT errorCode,
         return;
     }
 
-    const QString pagePath = QCoreApplication::applicationDirPath()
-        + QStringLiteral("/web/datasaver/dist/index.html");
-    if (!QFileInfo::exists(pagePath)) {
-        showFailure(QStringLiteral("Data Saver preview assets were not found.\n"
-                                   "Expected: %1\n"
-                                   "Run `npm run build` in web/datasaver, then relink the application.")
-                        .arg(pagePath));
+    if (!QFileInfo::exists(m_pagePath)) {
+        showFailure(QStringLiteral("%1 assets were not found.\n"
+                                   "Expected: %2\n"
+                                   "Run `npm run build` in the page's web/ project, then relink the application.")
+                        .arg(m_displayName, m_pagePath));
         return;
     }
 
     m_status->hide();
-    m_webView->Navigate(QUrl::fromLocalFile(pagePath).toString().toStdWString().c_str());
+    m_webView->Navigate(QUrl::fromLocalFile(m_pagePath).toString().toStdWString().c_str());
 }
 
-void DataSaverWebPage::resizeEvent(QResizeEvent *event)
+void WebUiPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     resizeController();
 }
 
-void DataSaverWebPage::resizeController()
+void WebUiPage::resizeController()
 {
     if (!m_controller)
         return;
@@ -238,7 +240,7 @@ void DataSaverWebPage::resizeController()
     m_controller->put_Bounds(bounds);
 }
 
-void DataSaverWebPage::showFailure(const QString &message)
+void WebUiPage::showFailure(const QString &message)
 {
     // The WebView2 content surface is a native child window drawn above Qt
     // widgets, so it has to be hidden for the fallback text to be readable.
@@ -247,8 +249,7 @@ void DataSaverWebPage::showFailure(const QString &message)
 
     if (m_status) {
         m_status->setText(message
-            + QStringLiteral("\n\nThe native Data Saver screen is still available. "
-                             "See docs/WEBVIEW2_RUNTIME_SETUP.md for setup details."));
+            + QStringLiteral("\n\nSee docs/WEBVIEW2_RUNTIME_SETUP.md for setup details."));
         m_status->show();
         m_status->raise();
     }

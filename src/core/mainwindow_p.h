@@ -42,7 +42,7 @@
 #include "network/policyscope.h"
 #include "hardware/hardwaremonitor.h"
 #include "taskbar/taskbaroverlay.h"
-#include "ui/webview2/datasaverwebpage.h"
+#include "ui/webview2/webuipage.h"
 
 #include <QCloseEvent>
 #include <QMouseEvent>

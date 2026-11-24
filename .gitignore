@@ -108,7 +108,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # ─── Generated web assets ──────────────────────────────────────────────────
-# Built by `npm run build` in web/datasaver (or the equivalent release job);
-# the qmake post-link rule copies them into bin/web/datasaver/dist.
-web/datasaver/dist/
-bin/web/datasaver/dist/
+# Built by `npm run build` in web/ui (or the equivalent release job); the
+# qmake post-link rule copies them into bin/web/ui/dist.
+web/ui/dist/
+bin/web/ui/dist/
