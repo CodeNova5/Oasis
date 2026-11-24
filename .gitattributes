@@ -16,6 +16,7 @@
 *.ui text eol=lf linguist-language=XML
 *.rc text eol=lf
 *.manifest text eol=lf linguist-language=XML
+*.sh text eol=lf
 
 # ─── Documentation ─────────────────────────────────────────────────────────
 *.md text eol=lf linguist-documentation

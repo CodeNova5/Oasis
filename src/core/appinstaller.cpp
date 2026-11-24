@@ -193,7 +193,8 @@ bool AppInstaller::copyRuntimeFiles()
     const QStringList runtimeFiles{
         QStringLiteral("WinDivert.dll"),
         QStringLiteral("WinDivert64.sys"),
-        QStringLiteral("WinDivert32.sys")
+        QStringLiteral("WinDivert32.sys"),
+        QStringLiteral("WebView2Loader.dll")
     };
 
     for (const QString &fileName : runtimeFiles) {
@@ -209,6 +210,24 @@ bool AppInstaller::copyRuntimeFiles()
         if (!QFile::copy(source, destination))
             return false;
         setFullPermissions(destination);
+    }
+
+    const QString sourceWebDir = QDir(appDir).filePath(QStringLiteral("web/datasaver/dist"));
+    const QString destinationWebDir = QDir(installDir()).filePath(QStringLiteral("web/datasaver/dist"));
+    if (QDir(sourceWebDir).exists()) {
+        QDir().mkpath(destinationWebDir);
+        const QFileInfoList webAssets = QDir(sourceWebDir).entryInfoList(
+            QDir::Files, QDir::Name);
+        for (const QFileInfo &asset : webAssets) {
+            const QString destination = QDir(destinationWebDir).filePath(asset.fileName());
+            if (QFile::exists(destination)) {
+                setFullPermissions(destination);
+                QFile::remove(destination);
+            }
+            if (!QFile::copy(asset.absoluteFilePath(), destination))
+                return false;
+            setFullPermissions(destination);
+        }
     }
 
     return true;

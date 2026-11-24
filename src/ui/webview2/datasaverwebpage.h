@@ -4,6 +4,8 @@
 #include <QLibrary>
 #include <QPointer>
 
+#include <string>
+
 #include <windows.h>
 #include <WebView2.h>
 
@@ -37,4 +39,5 @@ private:
     ICoreWebView2Environment *m_environment = nullptr;
     ICoreWebView2Controller *m_controller = nullptr;
     ICoreWebView2 *m_webView = nullptr;
+    std::wstring m_userDataFolder;
 };

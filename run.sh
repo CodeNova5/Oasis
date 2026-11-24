@@ -106,6 +106,58 @@ fi
 
 cd "$SCRIPT_DIR"
 
+# ─── Data Saver web assets ──────────────────────────────────────────────────
+# The Data Saver page is a Preact app bundled by esbuild into
+# web/datasaver/dist, which qmake's post-link rule copies to
+# bin/web/datasaver/dist. Neither folder is committed, so the bundle has to be
+# rebuilt here whenever its sources change; otherwise the app runs the old UI.
+# build.mjs also writes bin/web/datasaver/dist directly, so a run that does not
+# relink (web-only change) still picks up the new assets.
+rebuild_web_assets() {
+    local web_dir="$SCRIPT_DIR/web/datasaver"
+    local bundle="$web_dir/dist/app.js"
+
+    [[ -f "$web_dir/package.json" ]] || return 0
+
+    local sources=("$web_dir/package.json" "$web_dir/build.mjs" "$web_dir/index.html")
+    local source stale=0 found
+
+    if [[ ! -f "$bundle" ]]; then
+        stale=1
+    else
+        for source in "${sources[@]}"; do
+            [[ -f "$source" ]] || continue
+            if [[ "$source" -nt "$bundle" ]]; then
+                stale=1
+                break
+            fi
+        done
+        if [[ $stale -eq 0 ]]; then
+            found="$(find "$web_dir/src" -type f -newer "$bundle" -print -quit 2>/dev/null || true)"
+            [[ -n "$found" ]] && stale=1
+        fi
+    fi
+
+    [[ $stale -eq 1 ]] || return 0
+
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "The Data Saver assets are out of date, but npm was not found on PATH." >&2
+        echo "Install Node.js, or rebuild them manually:" >&2
+        echo "  cd web/datasaver && npm install && npm run build" >&2
+        exit 1
+    fi
+
+    if [[ ! -d "$web_dir/node_modules" ]]; then
+        echo "Installing Data Saver dependencies..."
+        ( cd "$web_dir" && npm install --no-audit --no-fund )
+    fi
+
+    echo "Rebuilding Data Saver assets..."
+    ( cd "$web_dir" && npm run build )
+}
+
+rebuild_web_assets
+
 echo "Generating release Makefile..."
 "$QMAKE" "$PROJECT_FILE" CONFIG+=release
 

@@ -1,9 +1,11 @@
 #include "datasaverwebpage.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QLabel>
 #include <QResizeEvent>
+#include <QStandardPaths>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -133,6 +135,17 @@ DataSaverWebPage::~DataSaverWebPage()
 
 void DataSaverWebPage::initialize()
 {
+    const QString profileFolder = QDir::toNativeSeparators(
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        + QStringLiteral("/Oasis/WebView2"));
+    if (!QDir().mkpath(profileFolder)) {
+        showFailure(QStringLiteral("WebView2 profile directory could not be created.\n"
+                                   "Expected: %1")
+                        .arg(profileFolder));
+        return;
+    }
+    m_userDataFolder = profileFolder.toStdWString();
+
     if (!m_loader.load()) {
         showFailure(QStringLiteral("WebView2Loader.dll could not be loaded.\n"
                                    "Expected next to Oasis.exe: %1")
@@ -151,7 +164,7 @@ void DataSaverWebPage::initialize()
     }
 
     auto *handler = new WebView2EnvironmentHandler(this);
-    const HRESULT result = createEnvironment(nullptr, nullptr, nullptr, handler);
+    const HRESULT result = createEnvironment(nullptr, m_userDataFolder.c_str(), nullptr, handler);
     handler->Release();
     if (FAILED(result))
         showFailure(QStringLiteral("WebView2 environment creation failed (%1).").arg(errorText(result)));
