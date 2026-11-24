@@ -90,6 +90,23 @@ tree, and it needs no network access or Node at runtime.
 Do not commit the generated `bin/web/datasaver/dist` folder; it is covered by
 `.gitignore` and reproduced on every link.
 
+Every path in that rule is wrapped in qmake's `$$shell_quote()`. Project paths
+that contain spaces (for example `.../Documents/Next Js/...`) otherwise split
+into several arguments and the copy fails with:
+
+```
+cp: cannot stat 'Js/Tecrust/.../app.css': No such file or directory
+cp: -r not specified; omitting directory '/C/Users/.../Next'
+mingw32-make[1]: *** [Makefile.Release:546: bin/Oasis.exe] Error 1
+```
+
+That error appears *after* a successful link, so `bin/Oasis.exe` is already
+valid; only the asset copy failed. Escaped `\"` quotes in `QMAKE_POST_LINK` are
+silently stripped before they reach the Makefile, which is why `$$shell_quote()`
+is used instead. Note that make will not re-run the post-link rule on its own
+because the executable target is up to date — delete `bin/Oasis.exe` (or do a
+clean build) after touching that rule.
+
 ## Troubleshooting
 
 | Symptom in the Data Saver preview | Cause |
@@ -98,3 +115,7 @@ Do not commit the generated `bin/web/datasaver/dist` folder; it is covered by
 | `WebView2 runtime is unavailable (0x...)` | Evergreen Runtime not installed |
 | `Data Saver preview assets were not found.` | `bin/web/datasaver/dist` missing; run `npm run build` and relink |
 | `WebView2 environment factory is unavailable.` | Loader DLL does not export the expected entry points (old/incorrect DLL) |
+
+A build is only complete once `<build dir>/bin/web/datasaver/dist/` contains
+`index.html`, `app.js` and `app.css`. If the folder is missing or empty, the
+post-link copy did not run — see the note on paths with spaces above.

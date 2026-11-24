@@ -119,16 +119,21 @@ Done:
   native child window would otherwise paint over the fallback text.
 - `src/ui/webview2/datasaverwebpage.cpp` compiles cleanly under the Qt 6.11.1
   MinGW kit.
+- Full clean release build of the whole project succeeds, and the post-link rule
+  creates `bin/web/datasaver/dist/` with `index.html`, `app.js` and `app.css` on
+  a clean output directory with no manual copying.
+- The post-link rule is portable across project paths containing spaces. The
+  original rule passed absolute paths to `cp` unquoted, which failed on a root
+  like `.../Documents/Next Js/...` *after* a successful link; all paths now use
+  `$$shell_quote()`. Builds from such a path now link and package cleanly.
 
 Still needs a machine with the full build and a display:
 
-1. Finish a clean release build with the temporary qmake makefile or the normal project build.
-2. Confirm the post-link rule reliably creates `bin/web/datasaver/dist` on a clean output directory without manual copying.
-3. Launch the freshly built executable and navigate to the new Data Saver preview destination.
-4. Verify the page renders from the packaged folder, not the source tree.
-5. Test the preview at the minimum window size and at 125%, 150%, and 200% Windows scaling.
-6. Confirm the WebView2 fallback message is useful when `WebView2Loader.dll` or the page assets are missing.
-7. Verify the existing native Data Saver controls, persistence, notifications, and enforcement behavior are unchanged.
+1. Launch the freshly built executable and navigate to the new Data Saver preview destination.
+2. Verify the page renders from the packaged folder, not the source tree.
+3. Test the preview at the minimum window size and at 125%, 150%, and 200% Windows scaling.
+4. Confirm the WebView2 fallback message is useful when `WebView2Loader.dll` or the page assets are missing.
+5. Verify the existing native Data Saver controls, persistence, notifications, and enforcement behavior are unchanged.
 
 Clean build commands:
 

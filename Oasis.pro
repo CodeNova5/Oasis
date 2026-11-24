@@ -288,21 +288,27 @@ MOC_DIR     = $$OUT_PWD/.moc
 RCC_DIR     = $$OUT_PWD/.rcc
 UI_DIR      = $$OUT_PWD/.ui
 
-# ─── WinDivert runtime bundling ──────────────────────────────────────────────
-# Copies the WinDivert runtime from third_party/windivert/ next to the
-# executable after linking. The leading "-" makes make ignore a copy that has
-# become stale (files removed after qmake ran) instead of failing the build.
+# ─── Runtime bundling (WebView2 assets + WinDivert) ──────────────────────────
+# Copies the Preact bundle and the WinDivert runtime next to the executable
+# after linking. The leading "-" on the WinDivert copies makes make ignore a
+# copy that has become stale (files removed after qmake ran) instead of failing
+# the build.
+#
+# Every path is wrapped in $$shell_quote(): the project root can contain spaces
+# (e.g. ".../Documents/Next Js/...") and make would otherwise split the path
+# into separate arguments. Escaped \" quotes do not survive into the Makefile.
 win32 {
-    WEB_ASSET_DIR = $$shell_path($$DESTDIR/web/datasaver/dist)
-    QMAKE_POST_LINK += $$QMAKE_MKDIR "$$WEB_ASSET_DIR" $$escape_expand(\\n\\t)
+    WEB_ASSET_DIR = $$shell_quote($$shell_path($$DESTDIR/web/datasaver/dist))
+    QMAKE_POST_LINK += $$QMAKE_MKDIR $$WEB_ASSET_DIR $$escape_expand(\\n\\t)
     WEB_ASSET_BUNDLE = $$files($$PWD/web/datasaver/dist/*)
     for(web_asset, WEB_ASSET_BUNDLE) {
-        QMAKE_POST_LINK += $$QMAKE_COPY "$$shell_path($$web_asset)" "$$WEB_ASSET_DIR" $$escape_expand(\\n\\t)
+        QMAKE_POST_LINK += $$QMAKE_COPY $$shell_quote($$shell_path($$web_asset)) $$WEB_ASSET_DIR $$escape_expand(\\n\\t)
     }
+    TARGET_DIR = $$shell_quote($$shell_path($$DESTDIR))
     WINDIVERT_BUNDLE = $$files($$PWD/third_party/windivert/WinDivert.dll)
     WINDIVERT_BUNDLE += $$files($$PWD/third_party/windivert/WinDivert64.sys)
     WINDIVERT_BUNDLE += $$files($$PWD/third_party/windivert/WinDivert32.sys)
     for(windivert_file, WINDIVERT_BUNDLE) {
-        QMAKE_POST_LINK += - $$QMAKE_COPY \"$$shell_path($$windivert_file)\" \"$$shell_path($$DESTDIR)\" $$escape_expand(\\n\\t)
+        QMAKE_POST_LINK += - $$QMAKE_COPY $$shell_quote($$shell_path($$windivert_file)) $$TARGET_DIR $$escape_expand(\\n\\t)
     }
 }
