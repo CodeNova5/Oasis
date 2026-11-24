@@ -80,6 +80,12 @@ export function App() {
         <${ModeControl} value=${mode} onChange=${setMode} />
       </header>
 
+      <div class="stack-proof" role="status">
+        <span class="stack-proof-dot"></span>
+        <strong>PREACT + HTM ONLINE</strong>
+        <span>Frontend bundle is rendering</span>
+      </div>
+
       <section class=${mode === 'enforce' ? 'status-banner enforce' : 'status-banner'}>
         <span class="status-pulse"></span>
         <div><strong>${mode === 'enforce' ? 'Enforcement staged' : 'Data Saver is off'}</strong>

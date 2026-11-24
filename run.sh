@@ -190,6 +190,16 @@ if [[ ! -f "$APP_FILE" ]]; then
     exit 1
 fi
 
+# Keep the installed copy in sync with the build output. The installer also
+# repairs these files, but this makes the normal local run path deterministic.
+INSTALL_DIR="/c/Program Files/Oasis"
+if [[ -f "$SCRIPT_DIR/bin/WebView2Loader.dll" ]]; then
+    mkdir -p "$INSTALL_DIR/web/datasaver/dist"
+    cp -f "$SCRIPT_DIR/bin/WebView2Loader.dll" "$INSTALL_DIR/WebView2Loader.dll" ||
+        echo "WebView2Loader.dll is locked by a running Oasis process; keeping the installed copy."
+    cp -f "$SCRIPT_DIR/bin/web/datasaver/dist/"* "$INSTALL_DIR/web/datasaver/dist/"
+fi
+
 echo "Launching Oasis as administrator..."
 if command -v cygpath >/dev/null 2>&1; then
     APP_WINDOWS_PATH="$(cygpath -w "$APP_FILE")"
