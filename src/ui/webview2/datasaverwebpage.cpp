@@ -108,10 +108,12 @@ DataSaverWebPage::DataSaverWebPage(QWidget *parent)
     setMinimumSize(720, 480);
 
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(24, 24, 24, 24);
 
     m_status = new QLabel(QStringLiteral("Starting Data Saver preview..."), this);
     m_status->setAlignment(Qt::AlignCenter);
+    m_status->setWordWrap(true);
+    m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_status->setStyleSheet(QStringLiteral("color: #8d9996; background: #111416;"));
     layout->addWidget(m_status);
 
@@ -132,14 +134,19 @@ DataSaverWebPage::~DataSaverWebPage()
 void DataSaverWebPage::initialize()
 {
     if (!m_loader.load()) {
-        showFailure(QStringLiteral("WebView2Loader.dll could not be loaded."));
+        showFailure(QStringLiteral("WebView2Loader.dll could not be loaded.\n"
+                                   "Expected next to Oasis.exe: %1")
+                        .arg(QCoreApplication::applicationDirPath() + QStringLiteral("/WebView2Loader.dll"))
+                    + QStringLiteral("\nThe DLL must match the executable architecture (x64 for this build)."));
         return;
     }
 
     auto createEnvironment = reinterpret_cast<CreateEnvironmentFunction>(
         m_loader.resolve("CreateCoreWebView2EnvironmentWithOptions"));
     if (!createEnvironment) {
-        showFailure(QStringLiteral("WebView2 environment factory is unavailable."));
+        showFailure(QStringLiteral("WebView2 environment factory is unavailable.\n"
+                                   "WebView2Loader.dll does not export the expected entry point; "
+                                   "replace it with the loader from the WebView2 SDK."));
         return;
     }
 
@@ -154,7 +161,9 @@ void DataSaverWebPage::onEnvironmentCreated(HRESULT errorCode,
                                             ICoreWebView2Environment *environment)
 {
     if (FAILED(errorCode) || !environment) {
-        showFailure(QStringLiteral("WebView2 runtime is unavailable (%1).").arg(errorText(errorCode)));
+        showFailure(QStringLiteral("WebView2 runtime is unavailable (%1).\n"
+                                   "Install the Microsoft Edge WebView2 Evergreen Runtime.")
+                        .arg(errorText(errorCode)));
         return;
     }
 
@@ -190,7 +199,10 @@ void DataSaverWebPage::onControllerCreated(HRESULT errorCode,
     const QString pagePath = QCoreApplication::applicationDirPath()
         + QStringLiteral("/web/datasaver/dist/index.html");
     if (!QFileInfo::exists(pagePath)) {
-        showFailure(QStringLiteral("Data Saver preview assets were not found."));
+        showFailure(QStringLiteral("Data Saver preview assets were not found.\n"
+                                   "Expected: %1\n"
+                                   "Run `npm run build` in web/datasaver, then relink the application.")
+                        .arg(pagePath));
         return;
     }
 
@@ -215,8 +227,16 @@ void DataSaverWebPage::resizeController()
 
 void DataSaverWebPage::showFailure(const QString &message)
 {
+    // The WebView2 content surface is a native child window drawn above Qt
+    // widgets, so it has to be hidden for the fallback text to be readable.
+    if (m_controller)
+        m_controller->put_IsVisible(FALSE);
+
     if (m_status) {
-        m_status->setText(message);
+        m_status->setText(message
+            + QStringLiteral("\n\nThe native Data Saver screen is still available. "
+                             "See docs/WEBVIEW2_RUNTIME_SETUP.md for setup details."));
         m_status->show();
+        m_status->raise();
     }
 }

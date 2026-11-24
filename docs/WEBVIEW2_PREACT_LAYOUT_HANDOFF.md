@@ -41,6 +41,7 @@ Relevant files:
 - `web/datasaver/dist/app.css`
 - `web/datasaver/package.json`
 - `web/datasaver/package-lock.json`
+- `web/datasaver/build.mjs` — generates `app.js`, `app.css` and `index.html` in `dist/`
 
 ### WebView2 preparation
 
@@ -84,7 +85,7 @@ Relevant files:
 - `WebView2Loader.dll` and the WebView2 header were found in the expected locations.
 - `Oasis.exe` launched and remained running.
 
-The full forced rebuild was intentionally stopped while recompiling the large existing network/backend portion. It had not produced a new WebView2-related error; a clean complete build is still a remaining check.
+The full forced rebuild was intentionally stopped while recompiling the large existing network/backend portion. It had not produced a new WebView2-related error; a clean complete build is still a remaining check. A later clean-build attempt reached ~35 of ~110 translation units with no errors before it was stopped and handed off.
 
 ## Important current behavior
 
@@ -100,6 +101,27 @@ The full forced rebuild was intentionally stopped while recompiling the large ex
 
 ### Stage 1 completion
 
+Done:
+
+- `npm run build` now generates the complete asset set (`app.js`, `app.css`,
+  `index.html`) via `web/datasaver/build.mjs`, and refreshes
+  `bin/web/datasaver/dist`. Previously only `app.js` was generated, so a clean
+  build would have shipped a page without HTML or CSS.
+- Generated assets are no longer committed. `web/datasaver/dist/` and
+  `bin/web/datasaver/dist/` were untracked and added to `.gitignore`; both are
+  reproduced by `npm run build` and by the qmake post-link rule.
+- Build/deployment notes added in `docs/WEBVIEW2_RUNTIME_SETUP.md`: Evergreen
+  Runtime prerequisite, x64 loader requirement, asset build step, output
+  layout, and a fallback-message troubleshooting table.
+- WebView2 fallback messages are actionable: they name the missing file or
+  expected path, the runtime install requirement, and point at the setup doc.
+  The WebView2 content surface is hidden while a failure is shown, because the
+  native child window would otherwise paint over the fallback text.
+- `src/ui/webview2/datasaverwebpage.cpp` compiles cleanly under the Qt 6.11.1
+  MinGW kit.
+
+Still needs a machine with the full build and a display:
+
 1. Finish a clean release build with the temporary qmake makefile or the normal project build.
 2. Confirm the post-link rule reliably creates `bin/web/datasaver/dist` on a clean output directory without manual copying.
 3. Launch the freshly built executable and navigate to the new Data Saver preview destination.
@@ -107,9 +129,20 @@ The full forced rebuild was intentionally stopped while recompiling the large ex
 5. Test the preview at the minimum window size and at 125%, 150%, and 200% Windows scaling.
 6. Confirm the WebView2 fallback message is useful when `WebView2Loader.dll` or the page assets are missing.
 7. Verify the existing native Data Saver controls, persistence, notifications, and enforcement behavior are unchanged.
-8. Decide whether generated `web/datasaver/dist` files are committed to the repository. The recommended release approach is to keep generated assets available without requiring Node at runtime.
-9. Add a short build/deployment note describing the WebView2 Runtime prerequisite and the required loader DLL architecture.
-10. Remove temporary build artifacts or keep them ignored according to the repository’s build conventions.
+
+Clean build commands:
+
+```bash
+cd web/datasaver && npm install --no-audit --no-fund && npm run build && cd ../..
+rm -rf build/stage1 && mkdir -p build/stage1 && cd build/stage1
+/c/Qt/6.11.1/mingw_64/bin/qmake.exe ../../Oasis.pro CONFIG+=release
+PATH="/c/Qt/Tools/mingw1310_64/bin:$PATH" mingw32-make -j8
+```
+
+Temporary artifacts (`Makefile.webview2*`, `.obj`, `.moc`, `.rcc`, `.ui`,
+`build/`, `release/`, `debug/`) are already covered by `.gitignore`; the scratch
+`build/stage1` shadow build directory used for verification can be deleted at
+any time.
 
 ### Stage 2: real Data Saver integration
 
