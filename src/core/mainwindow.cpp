@@ -342,6 +342,12 @@ void MainWindow::buildShell()
               QStringLiteral("Domains, IPs and evidence"));
     m_connectionsIndex = m_screenTitles.size() - 1;
 
+    // Layout-only WebView2 pilot. The native Data Saver tab remains hidden but
+    // alive as the owner of the existing backend services.
+    addScreen(QStringLiteral("Data Saver"), new DataSaverWebPage,
+              QStringLiteral("Data Saver"),
+              QStringLiteral("Layout preview; backend controls are not connected"));
+
     // The legacy tabs behind these destinations (Data Saver, History, Hardware,
     // Settings) are detached and excluded from the build. Their services keep
     // running; only the screens are gone until each is rebuilt.

@@ -30,4 +30,9 @@
         <file alias="JetBrainsMono-Regular.ttf">resources/fonts/JetBrainsMono-Regular.ttf</file>
         <file alias="JetBrainsMono-Medium.ttf">resources/fonts/JetBrainsMono-Medium.ttf</file>
     </qresource>
+    <qresource prefix="/web/datasaver">
+        <file alias="index.html">web/datasaver/dist/index.html</file>
+        <file alias="app.js">web/datasaver/dist/app.js</file>
+        <file alias="app.css">web/datasaver/dist/app.css</file>
+    </qresource>
 </RCC>

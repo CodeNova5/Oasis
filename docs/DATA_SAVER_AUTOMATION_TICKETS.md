@@ -54,14 +54,14 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** DSA-001
-- **Goal:** Persist Off, Monitor, and Enforce Data Saver modes plus profile-level foreground/background policy.
+- **Goal:** Persist Off and Enforce Data Saver modes plus profile-level foreground/background policy.
 - **Implementation:**
   - Persist a versioned settings object in `QSettings`.
   - Support metered hotspot, manual toggle, and battery saver sources.
   - Define foreground and background fallback behavior.
   - Integrate with existing Data Saver mode controls.
 - **Acceptance:**
-  - Missing or malformed settings fall back safely to Off or Monitor.
+  - Missing or malformed settings fall back safely to Off.
   - Settings changes emit one state transition.
   - Disabling Data Saver does not delete user policies.
 
@@ -559,19 +559,21 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
 - **Acceptance:**
   - Flag is disabled by default.
   - Diagnostics expose resolved tier and reason without executing enforcement.
-  - Enabling Monitor mode requires no AI and no cloud key.
+  - Enabling diagnostics mode requires no AI and no cloud key.
+  - Diagnostics do not replace or weaken Enforce mode.
 
-### DSA-081 Add Monitor-to-Enforce migration
+### DSA-081 Add Off-to-Enforce migration
 
 - **Status:** Not started
 - **Type:** feature
 - **Priority:** P1
 - **Dependencies:** DSA-080, DSA-040
-- **Goal:** Encourage but never silently switch from Monitor to Enforce.
+- **Goal:** Make enabling Data Saver immediately enforce eligible profile actions.
 - **Acceptance:**
   - Mode change requires explicit confirmation.
   - Enforce mode lists automatic actions that may apply.
-  - Exit can withdraw automatic controls and retain pinned rules.
+  - Enabling never waits for AI, notification acknowledgment, or a user action.
+  - Disabling withdraws automatic controls while retaining pinned rules.
 
 ### DSA-082 Write user documentation
 

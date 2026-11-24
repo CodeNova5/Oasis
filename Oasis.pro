@@ -120,7 +120,8 @@ SOURCES += \
     src/firewall/firewallmodel.cpp \
     src/hardware/hardwaremonitor.cpp \
     src/taskbar/taskbaroverlay.cpp \
-    src/taskbar/systemtrayicon.cpp
+    src/taskbar/systemtrayicon.cpp \
+    src/ui/webview2/datasaverwebpage.cpp
 
 # ─── Headers ────────────────────────────────────────────────────────────────
 HEADERS += \
@@ -220,7 +221,8 @@ HEADERS += \
     src/firewall/firewallmodel.h \
     src/hardware/hardwaremonitor.h \
     src/taskbar/taskbaroverlay.h \
-    src/taskbar/systemtrayicon.h
+    src/taskbar/systemtrayicon.h \
+    src/ui/webview2/datasaverwebpage.h
 
 # ─── Qt Designer UI forms ────────────────────────────────────────────────────
 FORMS += \
@@ -241,7 +243,8 @@ INCLUDEPATH += \
     src/network \
     src/firewall \
     src/hardware \
-    src/taskbar
+    src/taskbar \
+    third_party/webview2/include
 
 # ─── WinDivert (download shaping) ────────────────────────────────────────────
 # Resolved at runtime, so nothing links against it at build time. Put
@@ -290,6 +293,12 @@ UI_DIR      = $$OUT_PWD/.ui
 # executable after linking. The leading "-" makes make ignore a copy that has
 # become stale (files removed after qmake ran) instead of failing the build.
 win32 {
+    WEB_ASSET_DIR = $$shell_path($$DESTDIR/web/datasaver/dist)
+    QMAKE_POST_LINK += $$QMAKE_MKDIR "$$WEB_ASSET_DIR" $$escape_expand(\\n\\t)
+    WEB_ASSET_BUNDLE = $$files($$PWD/web/datasaver/dist/*)
+    for(web_asset, WEB_ASSET_BUNDLE) {
+        QMAKE_POST_LINK += $$QMAKE_COPY "$$shell_path($$web_asset)" "$$WEB_ASSET_DIR" $$escape_expand(\\n\\t)
+    }
     WINDIVERT_BUNDLE = $$files($$PWD/third_party/windivert/WinDivert.dll)
     WINDIVERT_BUNDLE += $$files($$PWD/third_party/windivert/WinDivert64.sys)
     WINDIVERT_BUNDLE += $$files($$PWD/third_party/windivert/WinDivert32.sys)

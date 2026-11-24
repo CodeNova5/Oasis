@@ -1,0 +1,15 @@
+{
+  "name": "ultimate-netguard-datasaver-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --minify --loader:.js=jsx --outfile=dist/app.js"
+  },
+  "dependencies": {
+    "htm": "^3.1.1",
+    "preact": "^10.26.9"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

@@ -99,3 +99,10 @@ Oasis_History.json
 
 # ─── Logs ──────────────────────────────────────────────────────────────────
 *.log
+
+# ─── Node / frontend tooling ───────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

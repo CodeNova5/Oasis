@@ -67,10 +67,13 @@ Data Saver has two modes for the first implementation:
 | Mode | Behavior |
 | --- | --- |
 | Off | No Data Saver policy evaluation or automatic throttle |
-| Monitor | Observe and classify; notify without restricting a foreground app; apply profile policy only where explicitly allowed |
-| Enforce | Apply resolved allow, notify, throttle, or block decisions according to precedence |
+| Enforce | Apply resolved allow, notify, notify-then-continue, throttle, or block decisions according to precedence |
 
-A local profile may use Monitor or Enforce mode separately for background and foreground traffic. The global mode never overrides a user-pinned policy.
+There is no global Monitor mode. When the system needs to avoid aggressive disruption, it expresses that caution through the resolved `notify`, `notify_then_continue`, or `allow` action, not by disabling enforcement as a whole.
+
+Enforce mode applies immediately to background traffic. Foreground traffic uses a conservative AI-assisted decision pipeline, but never pauses packets or waits for cloud AI before using the safe fallback or profile rule.
+
+The global mode never overrides a user-pinned policy.
 
 ## 6. Canonical Flow Observation
 
@@ -150,7 +153,7 @@ Milestones:
 
 The milestone gate is per `flow_id + process + domain + milestone bucket`. A milestone crossing must be deduplicated for at least one Data Saver evaluation window.
 
-Milestones are evaluation triggers, not automatic enforcement triggers.
+Milestones are evaluation triggers. The policy engine may apply the resolved action immediately; notification-only decisions are exceptions selected by profile, confidence, or UX risk, not by a global observation-only mode.
 
 ## 8. Policy Precedence
 
@@ -347,6 +350,17 @@ Cloud calls execute through a worker thread or Qt concurrent job and never block
 - Provider responses are sanitized and capped.
 - Provider failures fall back to local policy evaluation.
 - Cache entries never store payload bytes or API responses containing free-form remote text unless it is bounded and privacy-reviewed.
+
+### Shoot-first guardrails
+
+The goal is rapid data prevention, not global blind blocking:
+
+- Background qualifying traffic uses profile enforcement immediately.
+- Foreground local signatures apply immediately.
+- Foreground unknown traffic uses the safe fallback immediately and starts optional AI classification asynchronously.
+- Cloud AI classification cannot delay the fallback decision.
+- AI may recommend a future throttle or block, but it must pass local validation and precedence before enforcement.
+- A hard block is reserved for confirmed/dedicated traffic or a pinned/profile rule.
 
 ## 18. State Machine
 
