@@ -1,0 +1,1811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oasis — Data Saver Automation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      /* Flat, consistent midnight palette (no heavy drop shadows) */
+      --bg-canvas: #131426;
+      --bg-surface: #17192E;
+      --bg-surface-hover: #1D203B;
+      --bg-elevated: #202340;
+      --border-hairline: rgba(255, 255, 255, 0.07);
+      --border-strong: rgba(255, 255, 255, 0.14);
+
+      /* Accents */
+      --accent-primary: #7371FC;
+      --accent-primary-soft: rgba(115, 113, 252, 0.14);
+      --accent-secondary: #A594F9;
+      --accent-success: #34D399;
+      --accent-success-soft: rgba(52, 211, 153, 0.13);
+      --accent-warning: #FBBF24;
+      --accent-warning-soft: rgba(251, 191, 36, 0.13);
+      --accent-danger: #F87171;
+      --accent-danger-soft: rgba(248, 113, 113, 0.13);
+
+      /* Text */
+      --text-primary: #FFFFFF;
+      --text-secondary: #9498B8;
+      --text-muted: #5E6282;
+
+      /* Geometry & Spacing */
+      --rail-width: 72px;
+      --radius-card: 16px;
+      --radius-sm: 10px;
+      --radius-pill: 9999px;
+      --gap-grid: 20px;
+      --pad-card: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .tabular {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ================= LEFT RAIL (Matches Overview Style) ================= */
+    .sidebar {
+      width: var(--rail-width);
+      height: 100vh;
+      background-color: var(--bg-canvas);
+      border-right: 1px solid var(--border-hairline);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 0;
+      flex-shrink: 0;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-primary);
+    }
+
+    .nav-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .nav-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-pill);
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .nav-btn:hover {
+      color: var(--text-primary);
+      background: var(--bg-surface-hover);
+    }
+
+    .nav-btn.active {
+      background-color: var(--accent-primary);
+      color: #FFFFFF;
+    }
+
+    /* ================= MAIN WORKSPACE ================= */
+    .workspace {
+      flex: 1;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 28px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    /* Custom subtle scrollbar */
+    .workspace::-webkit-scrollbar,
+    .scroll-area::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .workspace::-webkit-scrollbar-thumb,
+    .scroll-area::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 99px;
+    }
+
+    /* ================= HEADER BAR ================= */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .title-area {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .page-title {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: var(--radius-pill);
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--accent-primary-soft);
+      color: var(--accent-secondary);
+      border: 1px solid rgba(115, 113, 252, 0.25);
+    }
+
+    .status-pill.is-off {
+      background: var(--bg-surface);
+      color: var(--text-secondary);
+      border-color: var(--border-hairline);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: var(--accent-primary);
+    }
+
+    .status-pill.is-off .status-dot {
+      background-color: var(--text-muted);
+    }
+
+    .topbar-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Two-mode Switcher: Off | Enforce */
+    .mode-switch {
+      display: inline-flex;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-pill);
+      padding: 4px;
+      gap: 4px;
+    }
+
+    .mode-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 16px;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      transition: all 0.16s ease;
+    }
+
+    .mode-btn.active {
+      background: var(--accent-primary);
+      color: #FFFFFF;
+    }
+
+    .mode-btn.active.mode-off {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.16s ease, border-color 0.16s ease;
+    }
+
+    .btn-outline:hover {
+      background: var(--bg-surface-hover);
+      border-color: var(--border-strong);
+    }
+
+    .btn-danger-ghost {
+      color: var(--accent-danger);
+      border-color: rgba(248, 113, 113, 0.22);
+    }
+
+    .btn-danger-ghost:hover {
+      background: var(--accent-danger-soft);
+      border-color: rgba(248, 113, 113, 0.4);
+    }
+
+    /* ================= KPI STRIP ================= */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--gap-grid);
+    }
+
+    .flat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-card);
+      padding: var(--pad-card);
+    }
+
+    .kpi-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 12px;
+    }
+
+    .kpi-value {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* ================= SPLIT WORKSPACE ================= */
+    .split-grid {
+      display: grid;
+      grid-template-columns: 1fr 370px;
+      gap: var(--gap-grid);
+      align-items: start;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .panel-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .filter-pills {
+      display: flex;
+      gap: 6px;
+    }
+
+    .pill-tab {
+      background: transparent;
+      border: 1px solid var(--border-hairline);
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 11px;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+    }
+
+    .pill-tab.active {
+      background: var(--accent-primary-soft);
+      border-color: rgba(115, 113, 252, 0.35);
+      color: var(--text-primary);
+    }
+
+    /* ================= DECISIONS TABLE ================= */
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-hairline);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--border-hairline);
+      font-size: 13px;
+      vertical-align: middle;
+    }
+
+    tbody tr {
+      cursor: pointer;
+      transition: background 0.14s ease;
+    }
+
+    tbody tr:hover {
+      background: var(--bg-surface-hover);
+    }
+
+    tbody tr.selected-row {
+      background: rgba(115, 113, 252, 0.08);
+    }
+
+    .proc-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .proc-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-hairline);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-secondary);
+      flex-shrink: 0;
+    }
+
+    .proc-name {
+      font-weight: 600;
+      color: var(--text-primary);
+      display: block;
+    }
+
+    .proc-domain {
+      font-size: 12px;
+      color: var(--text-secondary);
+      display: block;
+      margin-top: 2px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: var(--radius-pill);
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge-fg {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-primary);
+    }
+
+    .badge-bg {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+    }
+
+    .badge-throttle {
+      background: var(--accent-warning-soft);
+      color: var(--accent-warning);
+    }
+
+    .badge-notify {
+      background: var(--accent-primary-soft);
+      color: var(--accent-secondary);
+    }
+
+    .badge-allow {
+      background: var(--accent-success-soft);
+      color: var(--accent-success);
+    }
+
+    .badge-block {
+      background: var(--accent-danger-soft);
+      color: var(--accent-danger);
+    }
+
+    .tier-tag {
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+
+    .row-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-mini {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 9px;
+      border-radius: 7px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.14s ease;
+    }
+
+    .btn-mini:hover {
+      border-color: var(--accent-primary);
+      color: var(--accent-secondary);
+    }
+
+    /* ================= RIGHT INSPECTOR PANEL ================= */
+    .inspector-card {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .inspector-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      border-radius: 10px;
+      padding: 3px;
+    }
+
+    .insp-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+
+    .insp-tab.active {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
+    .reason-box {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .reason-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .reason-text {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-primary);
+    }
+
+    .meta-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .meta-row span:first-child {
+      color: var(--text-secondary);
+    }
+
+    .meta-row span:last-child {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .steps-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .steps-list li {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-secondary);
+      padding-left: 14px;
+      position: relative;
+    }
+
+    .steps-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--accent-primary);
+      font-weight: 700;
+    }
+
+    .inspector-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btn-primary {
+      background: var(--accent-primary);
+      border: none;
+      color: #FFFFFF;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 10px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+    }
+
+    .btn-secondary {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 10px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+    }
+
+    .payload-preview {
+      background: #0F1020;
+      border: 1px solid var(--border-hairline);
+      border-radius: 10px;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--accent-secondary);
+      overflow-x: auto;
+      display: none;
+    }
+
+    .payload-preview.open {
+      display: block;
+    }
+
+    /* ================= BOTTOM SECTION: AI & AUDIT ================= */
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: var(--gap-grid);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .switch {
+      position: relative;
+      width: 42px;
+      height: 24px;
+      background: var(--bg-elevated);
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-hairline);
+      cursor: pointer;
+      transition: background 0.18s ease;
+      flex-shrink: 0;
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #FFFFFF;
+      transition: transform 0.18s ease;
+    }
+
+    .switch.on {
+      background: var(--accent-primary);
+    }
+
+    .switch.on::after {
+      transform: translateX(18px);
+    }
+
+    .audit-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border-hairline);
+      font-size: 12px;
+    }
+
+    .audit-item:last-child {
+      border-bottom: none;
+    }
+
+    /* Enforcement outcome chips — kept separate from the requested action */
+    .badge-enforce-applied {
+      background: var(--accent-success-soft);
+      color: var(--accent-success);
+    }
+
+    .badge-enforce-failed {
+      background: var(--accent-danger-soft);
+      color: var(--accent-danger);
+    }
+
+    .badge-enforce-pending {
+      background: var(--accent-warning-soft);
+      color: var(--accent-warning);
+    }
+
+    .badge-enforce-neutral {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    .banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--accent-warning-soft);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      color: var(--accent-warning);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .empty-cell {
+      color: var(--text-secondary);
+      text-align: center;
+      padding: 26px 12px;
+    }
+
+    .audit-tags {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px;
+      flex-shrink: 0;
+      max-width: 45%;
+    }
+
+    .audit-reason {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    .btn-mini:disabled,
+    .btn-outline:disabled,
+    .btn-primary:disabled,
+    .btn-secondary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    @media (max-width: 1180px) {
+      .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .split-grid,
+      .bottom-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LEFT RAIL NAVIGATION -->
+  <aside class="sidebar">
+    <div class="brand-logo" title="Oasis NetGuard">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <line x1="4" y1="10" x2="4" y2="14"></line>
+        <line x1="8" y1="6" x2="8" y2="18"></line>
+        <line x1="12" y1="3" x2="12" y2="21"></line>
+        <line x1="16" y1="7" x2="16" y2="17"></line>
+        <line x1="20" y1="10" x2="20" y2="14"></line>
+      </svg>
+    </div>
+
+    <nav class="nav-group">
+      <!-- Overview -->
+      <button class="nav-btn" title="Overview">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+        </svg>
+      </button>
+
+      <!-- Data Saver (Active) -->
+      <button class="nav-btn active" title="Data Saver Automation">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+      </button>
+
+      <!-- Activity / Traffic -->
+      <button class="nav-btn" title="Live Traffic">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+      </button>
+
+      <!-- Rules & Policies -->
+      <button class="nav-btn" title="Firewall & Rules">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </nav>
+
+    <button class="nav-btn" title="Service Status">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+        <line x1="12" y1="2" x2="12" y2="12"></line>
+      </svg>
+    </button>
+  </aside>
+
+  <!-- MAIN WORKSPACE -->
+  <main class="workspace">
+
+    <!-- HEADER & MODE CONTROL -->
+    <header class="topbar">
+      <div class="title-area">
+        <h1 class="page-title">Data Saver</h1>
+        <span id="statusPill" class="status-pill">
+          <span class="status-dot"></span>
+          <span id="statusLabel">Enforce • Automatic controls active</span>
+        </span>
+      </div>
+
+      <div class="topbar-controls">
+        <!-- Strictly Two Modes per PRD: Off | Enforce -->
+        <div class="mode-switch" role="group" aria-label="Data Saver Mode">
+          <button id="btnOff" class="mode-btn" onclick="setMode('off')">Off</button>
+          <button id="btnEnforce" class="mode-btn active" onclick="setMode('enforce')">Enforce</button>
+        </div>
+
+        <button id="restoreBtn" class="btn-outline btn-danger-ghost" onclick="emergencyRestore()" title="Withdraw automatic & AI policies while keeping pinned rules">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            <path d="M3 3v5h5"></path>
+          </svg>
+          <span id="restoreLabel">Emergency Restore</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Any control that is not applied (or not withdrawn) is explained here -->
+    <p id="enforcementBanner" class="banner" hidden></p>
+
+    <!-- 4 KPI METRIC CARDS -->
+    <section class="kpi-grid">
+      <div class="flat-card">
+        <div class="kpi-header">
+          <span>Data Saved (Session)</span>
+          <span style="color: var(--accent-success);">↓ Prevented</span>
+        </div>
+        <div class="kpi-value tabular">418.4 MB</div>
+        <div class="kpi-sub">Session total</div>
+      </div>
+
+      <div class="flat-card">
+        <div class="kpi-header">
+          <span>Active Throttles</span>
+          <span style="color: var(--accent-warning);">50 KiB/s cap</span>
+        </div>
+        <div class="kpi-value tabular" id="activeThrottleCount">—</div>
+        <div class="kpi-sub" id="throttleSub">—</div>
+      </div>
+
+      <div class="flat-card">
+        <div class="kpi-header">
+          <span>Milestone Triggers</span>
+          <span>10 MB+ gates</span>
+        </div>
+        <div class="kpi-value tabular" id="milestoneCount">—</div>
+        <div class="kpi-sub" id="milestoneSub">—</div>
+      </div>
+
+      <div class="flat-card">
+        <div class="kpi-header">
+          <span>Pinned &amp; Session</span>
+          <span>5-Tier Engine</span>
+        </div>
+        <div class="kpi-value tabular" id="policyCount">—</div>
+        <div class="kpi-sub" id="policySub">—</div>
+      </div>
+    </section>
+
+    <!-- PRIMARY SPLIT: DECISIONS TABLE + CONTEXTUAL INSPECTOR -->
+    <section class="split-grid">
+
+      <!-- LEFT: ACTIVE & RECENT POLICY DECISIONS -->
+      <div class="flat-card">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Evaluated Flows &amp; Policy Decisions</h2>
+            <p class="panel-subtitle">Click any flow to inspect evidence, precedence tier, or override rules</p>
+          </div>
+          <div class="filter-pills">
+            <button class="pill-tab active" data-filter="all" onclick="filterTable('all', this)">All</button>
+            <button class="pill-tab" data-filter="throttled" onclick="filterTable('throttled', this)">Throttled</button>
+            <button class="pill-tab" data-filter="foreground" onclick="filterTable('foreground', this)">Foreground</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Process &amp; Domain</th>
+                <th>State</th>
+                <th>Milestone / Cap</th>
+                <th>Decision &amp; Tier</th>
+                <th>Quick Override</th>
+              </tr>
+            </thead>
+            <tbody id="decisionsBody">
+              <!-- Populated via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- RIGHT: EVIDENCE & RULE INSPECTOR -->
+      <aside class="flat-card inspector-card">
+        <div class="inspector-tabs">
+          <button id="tabEvidence" class="insp-tab active" onclick="switchInspectorTab('evidence')">Flow Evidence</button>
+          <button id="tabRules" class="insp-tab" onclick="switchInspectorTab('rules')">Pinned &amp; Session</button>
+        </div>
+
+        <!-- TAB 1: SELECTED FLOW EVIDENCE -->
+        <div id="viewEvidence" style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="reason-box">
+            <div class="reason-label" id="inspClass">CLASSIFICATION • APP_UPDATE (0.94)</div>
+            <p class="reason-text" id="inspReason">VS Code core update download detected crossing 10 MB milestone.</p>
+          </div>
+
+          <div class="meta-list">
+            <div class="meta-row">
+              <span>Executable &amp; PID</span>
+              <span class="tabular" id="inspExe">Code.exe (14820)</span>
+            </div>
+            <div class="meta-row">
+              <span>Attribution (SNI / DNS)</span>
+              <span id="inspSni">update.code.visualstudio.com</span>
+            </div>
+            <div class="meta-row">
+              <span>Foreground &amp; UX Profile</span>
+              <span id="inspState">foreground_active • deferrable</span>
+            </div>
+            <div class="meta-row">
+              <span>Precedence &amp; Cache TTL</span>
+              <span id="inspTier">Tier 3 Profile • 30d signature</span>
+            </div>
+            <div class="meta-row">
+              <span>Enforcement Channel</span>
+              <span id="inspChannel">WinDivert (50 KiB/s RX)</span>
+            </div>
+            <div class="meta-row">
+              <span>Enforcement Result</span>
+              <span id="inspEnforcement"><span class="badge badge-enforce-applied">Applied</span></span>
+            </div>
+          </div>
+
+          <p id="inspEnforceNote" class="panel-subtitle">WinDivert rate cap active on the receive direction.</p>
+
+          <div>
+            <div class="reason-label" style="margin-bottom: 8px;">Recommended Next Steps</div>
+            <ul class="steps-list" id="inspSteps">
+              <li>Set Update: Mode to manual or none in VS Code settings</li>
+              <li>Run updates when connected to an unmetered network</li>
+            </ul>
+          </div>
+
+          <div class="inspector-actions">
+            <button id="allowOnceBtn" class="btn-secondary" onclick="allowOnce(selectedId)">Allow Once (Session)</button>
+            <button id="alwaysAllowBtn" class="btn-primary" onclick="alwaysAllow(selectedId)">Always Allow (Pin)</button>
+          </div>
+
+          <button id="payloadBtn" class="btn-outline" style="width: 100%; justify-content: center;" onclick="togglePayloadPreview()" hidden>
+            Preview Bounded AI Payload
+          </button>
+          <p id="payloadHint" class="panel-subtitle">Optional AI classifier is off (default); no request leaves this machine.</p>
+
+          <pre id="payloadBox" class="payload-preview"></pre>
+        </div>
+
+        <!-- TAB 2: PINNED & SESSION OVERRIDES -->
+        <div id="viewRules" style="display: none; flex-direction: column; gap: 12px;">
+          <p class="panel-subtitle">Tier 1 pinned rules override AI and profile rules and survive Emergency Restore.</p>
+          <div class="reason-label" style="margin-top: 4px;">Pinned rules</div>
+          <div id="rulesList" class="meta-list"></div>
+
+          <div class="reason-label" style="margin-top: 4px;">Session overrides</div>
+          <div id="sessionsList" class="meta-list"></div>
+          <p class="panel-subtitle">Session overrides expire when the app exits and never become pinned rules.</p>
+        </div>
+      </aside>
+    </section>
+
+    <!-- BOTTOM: GROQ OPT-IN CONFIG + IMMUTABLE AUDIT LOG -->
+    <section class="bottom-grid">
+      <!-- GROQ CLOUD AI OPT-IN -->
+      <div class="flat-card">
+        <div class="panel-header" style="margin-bottom: 8px;">
+          <div>
+            <h2 class="panel-title">Optional AI Classifier</h2>
+            <p class="panel-subtitle">Advisory only • Local rules run first</p>
+          </div>
+          <div id="aiSwitch" class="switch" role="switch" tabindex="0" aria-checked="false" aria-label="Opt in to the optional AI classifier" onclick="toggleAiOptIn()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleAiOptIn(); }" title="Toggle Cloud AI Opt-In"></div>
+        </div>
+
+        <div class="meta-list" style="margin-top: 10px;">
+          <div class="meta-row">
+            <span>Classifier State</span>
+            <span id="aiStateLabel">Off (default)</span>
+          </div>
+          <div class="meta-row">
+            <span>Provider Endpoint</span>
+            <span>api.groq.com (HTTPS)</span>
+          </div>
+          <div class="meta-row">
+            <span>API Key Source</span>
+            <span style="color: var(--accent-success);">ENV: GROQ_API_KEY</span>
+          </div>
+          <div class="meta-row">
+            <span>Privacy Guardrail</span>
+            <span>No paths, IPs, or payloads</span>
+          </div>
+          <div class="meta-row">
+            <span>Timeout Fallback</span>
+            <span>Safe local rule (15s cap)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- IMMUTABLE METADATA AUDIT TRAIL -->
+      <div class="flat-card">
+        <div class="panel-header" style="margin-bottom: 8px;">
+          <div>
+            <h2 class="panel-title">Policy Audit Trail</h2>
+            <p class="panel-subtitle">Metadata-only immutable commit log</p>
+          </div>
+          <span class="tier-tag">Schema v1.0</span>
+        </div>
+
+        <div id="auditList"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // ---------------------------------------------------------------------
+    // Prototype state.
+    // Every mutation records its precedence tier, decision origin and an
+    // explicit enforcement outcome, so the screen never reports a control as
+    // applied unless the (mock) enforcement channel confirmed it.
+    // ---------------------------------------------------------------------
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[ch]));
+
+    const seedFlows = [
+      {
+        id: 'obs_9f82a1',
+        exe: 'Code.exe',
+        pid: 14820,
+        domain: 'update.code.visualstudio.com',
+        state: 'foreground_active',
+        stateLabel: 'Foreground',
+        milestone: '10 MB',
+        rate: '50 KiB/s',
+        action: 'throttle',
+        actionLabel: 'Throttle 50 KiB/s',
+        tier: 'Tier 3 • Profile',
+        tierNum: 3,
+        origin: 'automatic',
+        enforcement: 'Applied',
+        enforcementNote: 'WinDivert rate cap active on the receive direction.',
+        channelHealthy: true,
+        classification: 'APP_UPDATE (0.94)',
+        ux: 'foreground_active • deferrable',
+        channel: 'WinDivert (50 KiB/s RX)',
+        reason: 'VS Code core update download detected crossing the 10 MB milestone.',
+        steps: [
+          'Set Update: Mode to manual or none in VS Code settings',
+          'Run updates when connected to an unmetered network'
+        ],
+        payload: {
+          exe_name: 'Code.exe',
+          exe_version: '1.95.2',
+          domain_token: 'update.code.visualstudio.com',
+          foreground_state: 'foreground_active',
+          process_role: 'main',
+          receive_bucket: '10_25MB',
+          duration_bucket: 'burst_<10s',
+          ux_signals: { deferrable: true, blocking_to_user: false, latency_sensitive: false }
+        }
+      },
+      {
+        id: 'obs_4c11b8',
+        exe: 'svchost.exe',
+        pid: 890,
+        domain: 'dl.delivery.mp.microsoft.com',
+        state: 'background',
+        stateLabel: 'Background',
+        milestone: '25 MB',
+        rate: '50 KiB/s',
+        action: 'throttle',
+        actionLabel: 'Throttle 50 KiB/s',
+        tier: 'Tier 3 • Profile',
+        tierNum: 3,
+        origin: 'automatic',
+        enforcement: 'NotApplied',
+        enforcementNote: 'QoS class unavailable and the WinDivert handle could not be opened; no rate cap is active.',
+        channelHealthy: false,
+        classification: 'APP_UPDATE (0.98)',
+        ux: 'background • deferrable',
+        channel: 'QoS + WinDivert (50 KiB/s RX)',
+        reason: 'Background Windows Delivery Optimization transfer exceeded 25 MB, but the throttle could not be confirmed.',
+        steps: [
+          'Pause Windows Update downloads until unmetered Wi-Fi is available'
+        ],
+        payload: {
+          exe_name: 'svchost.exe',
+          exe_version: '10.0.19045',
+          domain_token: 'dl.delivery.mp.microsoft.com',
+          foreground_state: 'background',
+          process_role: 'service',
+          receive_bucket: '25_50MB',
+          duration_bucket: 'sustained_10_60s',
+          ux_signals: { deferrable: true, blocking_to_user: false, latency_sensitive: false }
+        }
+      },
+      {
+        id: 'obs_7a03d2',
+        exe: 'node.exe (npm)',
+        pid: 6140,
+        domain: 'registry.npmjs.org',
+        state: 'foreground_active',
+        stateLabel: 'Foreground',
+        milestone: '50 MB',
+        rate: '1.8 MB/s',
+        action: 'notify',
+        actionLabel: 'Notify & Allow',
+        tier: 'Tier 5 • Safe Fallback',
+        tierNum: 5,
+        origin: 'ai',
+        enforcement: 'Applied',
+        enforcementNote: 'Notification delivered; no rate change was applied.',
+        channelHealthy: true,
+        classification: 'PACKAGE_INSTALL (0.89)',
+        ux: 'foreground_active • blocking_to_user',
+        channel: 'Unthrottled (User Interactive)',
+        reason: 'Interactive package installation detected; protected from blind volume blocking.',
+        steps: [
+          'Use --prefer-offline flag when reinstalling cached packages'
+        ],
+        payload: {
+          exe_name: 'node.exe',
+          exe_version: '20.11.0',
+          domain_token: 'registry.npmjs.org',
+          foreground_state: 'foreground_active',
+          process_role: 'child',
+          receive_bucket: '50_100MB',
+          duration_bucket: 'sustained_10_60s',
+          ux_signals: { deferrable: false, blocking_to_user: true, latency_sensitive: false }
+        }
+      },
+      {
+        id: 'obs_1e99f0',
+        exe: 'chrome.exe',
+        pid: 1024,
+        domain: 'github.com',
+        state: 'foreground_active',
+        stateLabel: 'Foreground',
+        milestone: '10 MB',
+        rate: '3.4 MB/s',
+        action: 'allow',
+        actionLabel: 'Pinned Allow',
+        tier: 'Tier 1 • User Pinned',
+        tierNum: 1,
+        origin: 'pinned',
+        enforcement: 'Applied',
+        enforcementNote: 'Bypassed by the user-pinned Tier 1 rule; no automatic control is applied.',
+        channelHealthy: true,
+        classification: 'POLICY_ACTION (1.00)',
+        ux: 'foreground_active • interactive',
+        channel: 'Bypassed (Tier 1 Override)',
+        reason: 'Matched persistent user-pinned allow rule for chrome.exe + github.com.',
+        steps: [
+          'Manage or remove this pin in the Pinned & Session tab'
+        ],
+        payload: {
+          exe_name: 'chrome.exe',
+          exe_version: '130.0.0',
+          domain_token: 'github.com',
+          foreground_state: 'foreground_active',
+          process_role: 'main',
+          receive_bucket: '10_25MB',
+          duration_bucket: 'burst_<10s',
+          ux_signals: { deferrable: false, blocking_to_user: true, latency_sensitive: true }
+        }
+      }
+    ];
+
+    const seedPinnedRules = [
+      { id: 'pin_chrome_github', exe: 'chrome.exe', domain: 'github.com' },
+      { id: 'pin_git_all', exe: 'git.exe', domain: '*' }
+    ];
+
+    let flows = clone(seedFlows);
+    let pinnedRules = clone(seedPinnedRules);
+    let sessionOverrides = [];
+    let auditEvents = [
+      {
+        time: '12:04:51',
+        target: 'svchost.exe (wuauserv)',
+        summary: 'Milestone 25 MB → Throttle 50 KiB/s',
+        tier: 'Tier 3',
+        origin: 'Automatic',
+        outcome: 'NotApplied',
+        reason: 'QoS class unavailable and the WinDivert handle could not be opened; no rate cap is active.'
+      },
+      {
+        time: '11:58:02',
+        target: 'Code.exe',
+        summary: 'update.code.visualstudio.com (10 MB) → Throttle 50 KiB/s',
+        tier: 'Tier 3',
+        origin: 'Automatic',
+        outcome: 'Applied',
+        reason: 'Cumulative receive volume crossed the 10 MB milestone; background profile selected.'
+      },
+      {
+        time: '11:52:30',
+        target: 'node.exe (npm)',
+        summary: 'registry.npmjs.org (50 MB) → Notify & Continue',
+        tier: 'Tier 5',
+        origin: 'AI advisory (validated locally)',
+        outcome: 'Applied',
+        reason: 'Foreground interactive package install; provider recommendation was capped to notify.'
+      }
+    ];
+    let selectedId = flows[0].id;
+    let currentFilter = 'all';
+    let dataSaverMode = 'enforce';
+    let aiEnabled = false;
+    let restorePending = false;
+    const pendingFlowIds = new Set();
+
+    const findFlow = (id) => flows.find((flow) => flow.id === id);
+    const outcomeLabel = (outcome) => (outcome === 'NotApplied' ? 'Not applied' : outcome);
+
+    function outcomeBadgeClass(outcome) {
+      if (outcome === 'Applied') return 'badge-enforce-applied';
+      if (outcome === 'NotApplied' || outcome === 'Failed') return 'badge-enforce-failed';
+      if (outcome === 'Pending') return 'badge-enforce-pending';
+      return 'badge-enforce-neutral';
+    }
+
+    function tierFromLabel(label) {
+      const match = String(label).match(/Tier\s+(\d+)/);
+      return match ? Number(match[1]) : 5;
+    }
+
+    // Reverts a flow to its seed decision, demoting a removed pin to the safe
+    // fallback tier instead of leaving a stale Tier 1 bypass behind.
+    function revertToAutomatic(flow) {
+      Object.assign(flow, clone(seedFlows.find((seed) => seed.id === flow.id)));
+      if (flow.tierNum === 1) {
+        flow.action = 'allow';
+        flow.actionLabel = 'Allow (Fallback)';
+        flow.tier = 'Tier 5 • Safe Fallback';
+        flow.tierNum = 5;
+        flow.origin = 'automatic';
+        flow.rate = 'Unthrottled';
+        flow.channel = 'No control active';
+        flow.enforcement = 'Applied';
+        flow.enforcementNote = 'Pinned rule removed; automatic evaluation resumes at the next milestone.';
+        flow.classification = 'UNCLASSIFIED';
+        flow.reason = 'Pinned rule removed; this flow is re-evaluated automatically.';
+        flow.steps = [
+          'No pinned rule applies to this flow anymore',
+          'Wait for the next volume milestone to re-evaluate'
+        ];
+      }
+    }
+
+    function logAudit(entry) {
+      const time = new Date().toLocaleTimeString([], { hour12: false });
+      auditEvents.unshift(Object.assign({ time }, entry));
+      renderAudit();
+    }
+
+    // ---------------------------------------------------------------------
+    // Rendering
+    // ---------------------------------------------------------------------
+
+    function renderTable() {
+      const tbody = document.getElementById('decisionsBody');
+
+      document.querySelectorAll('.pill-tab').forEach((btn) => {
+        const filter = btn.dataset.filter;
+        if (filter === 'all') btn.textContent = `All (${flows.length})`;
+        if (filter === 'throttled') btn.textContent = `Throttled (${flows.filter((flow) => flow.action === 'throttle').length})`;
+        if (filter === 'foreground') btn.textContent = `Foreground (${flows.filter((flow) => flow.state === 'foreground_active').length})`;
+      });
+
+      const filtered = flows.filter((flow) => {
+        if (currentFilter === 'throttled') return flow.action === 'throttle';
+        if (currentFilter === 'foreground') return flow.state === 'foreground_active';
+        return true;
+      });
+
+      if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">No evaluated flows match this filter.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = filtered.map((flow) => {
+        const actionClass =
+          flow.action === 'throttle' ? 'badge-throttle' :
+          flow.action === 'notify' ? 'badge-notify' :
+          flow.action === 'block' ? 'badge-block' : 'badge-allow';
+        const stateClass = flow.state === 'foreground_active' ? 'badge-fg' : 'badge-bg';
+        const busy = pendingFlowIds.has(flow.id);
+        const locked = flow.tierNum === 1 || busy;
+
+        return `
+          <tr class="${flow.id === selectedId ? 'selected-row' : ''}" onclick="selectFlow('${flow.id}')">
+            <td>
+              <div class="proc-cell">
+                <div class="proc-icon">${esc(flow.exe.slice(0, 2).toUpperCase())}</div>
+                <div>
+                  <span class="proc-name">${esc(flow.exe)}</span>
+                  <span class="proc-domain">${esc(flow.domain)}</span>
+                </div>
+              </div>
+            </td>
+            <td><span class="badge ${stateClass}">${esc(flow.stateLabel)}</span></td>
+            <td class="tabular">
+              <div style="font-weight: 600;">${esc(flow.milestone)}</div>
+              <div style="font-size: 11px; color: var(--text-secondary);">${esc(flow.rate)}</div>
+            </td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 5px; align-items: flex-start;">
+                <span class="badge ${actionClass}">${esc(flow.actionLabel)}</span>
+                <span class="tier-tag">${esc(flow.tier)}</span>
+                <span class="badge ${outcomeBadgeClass(flow.enforcement)}">${outcomeLabel(flow.enforcement)}</span>
+              </div>
+            </td>
+            <td onclick="event.stopPropagation()">
+              <div class="row-actions">
+                <button class="btn-mini" ${locked ? 'disabled' : ''} onclick="allowOnce('${flow.id}')">${busy ? 'Pending…' : 'Allow Once'}</button>
+                <button class="btn-mini" ${locked ? 'disabled' : ''} onclick="alwaysAllow('${flow.id}')" title="Requires confirmation">Always</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderInspector() {
+      const flow = findFlow(selectedId);
+      if (!flow) return;
+
+      document.getElementById('inspClass').textContent = `CLASSIFICATION • ${flow.classification}`;
+      document.getElementById('inspReason').textContent = flow.reason;
+      document.getElementById('inspExe').textContent = `${flow.exe} (${flow.pid})`;
+      document.getElementById('inspSni').textContent = flow.domain;
+      document.getElementById('inspState').textContent = flow.ux;
+      document.getElementById('inspTier').textContent = flow.tier;
+      document.getElementById('inspChannel').textContent = flow.channel;
+      document.getElementById('inspEnforcement').innerHTML =
+        `<span class="badge ${outcomeBadgeClass(flow.enforcement)}">${outcomeLabel(flow.enforcement)}</span>`;
+      document.getElementById('inspEnforceNote').textContent = flow.enforcementNote;
+
+      const steps = flow.steps.slice();
+      if (flow.enforcement === 'NotApplied' || flow.enforcement === 'Failed') {
+        steps.unshift('No restriction is active for this flow; the next volume milestone retries enforcement.');
+      }
+      document.getElementById('inspSteps').innerHTML = steps.map((step) => `<li>${esc(step)}</li>`).join('');
+
+      const busy = pendingFlowIds.has(flow.id) || restorePending;
+      const locked = flow.tierNum === 1 || busy;
+      const allowOnceBtn = document.getElementById('allowOnceBtn');
+      const alwaysAllowBtn = document.getElementById('alwaysAllowBtn');
+      allowOnceBtn.disabled = locked;
+      alwaysAllowBtn.disabled = locked;
+      allowOnceBtn.textContent = pendingFlowIds.has(flow.id) ? 'Applying…' : 'Allow Once (Session)';
+      allowOnceBtn.title = flow.tierNum === 1 ? 'Pinned rules cannot be downgraded to a session override' : '';
+
+      // The bounded payload preview only exists when the optional AI path is
+      // enabled, and pinned decisions never leave the machine.
+      const payloadEligible = aiEnabled && flow.tierNum !== 1;
+      const payloadBtn = document.getElementById('payloadBtn');
+      const payloadHint = document.getElementById('payloadHint');
+      payloadBtn.hidden = !payloadEligible;
+      payloadHint.hidden = payloadEligible;
+      payloadHint.textContent = aiEnabled
+        ? 'Pinned decisions are resolved locally; no classifier request is made for this flow.'
+        : 'Optional AI classifier is off (default); no request leaves this machine.';
+      if (!payloadEligible) document.getElementById('payloadBox').classList.remove('open');
+      document.getElementById('payloadBox').textContent = JSON.stringify(flow.payload, null, 2);
+    }
+
+    function renderRules() {
+      document.getElementById('rulesList').innerHTML = pinnedRules.length
+        ? pinnedRules.map((rule, idx) => `
+          <div class="meta-row">
+            <div>
+              <div style="font-weight: 600; color: var(--text-primary);">${esc(rule.exe)}</div>
+              <div style="font-size: 11px; color: var(--text-secondary);">${esc(rule.domain)} • Tier 1 • survives restore</div>
+            </div>
+            <button class="btn-mini" onclick="removePinnedRule(${idx})">Remove</button>
+          </div>
+        `).join('')
+        : '<p class="panel-subtitle">No pinned rules.</p>';
+
+      document.getElementById('sessionsList').innerHTML = sessionOverrides.length
+        ? sessionOverrides.map((override, idx) => `
+          <div class="meta-row">
+            <div>
+              <div style="font-weight: 600; color: var(--text-primary);">${esc(override.exe)}</div>
+              <div style="font-size: 11px; color: var(--text-secondary);">${esc(override.domain)} • Tier 2 • expires ${esc(override.expires)}</div>
+            </div>
+            <button class="btn-mini" onclick="removeSessionOverride(${idx})">End</button>
+          </div>
+        `).join('')
+        : '<p class="panel-subtitle">No session overrides.</p>';
+    }
+
+    function renderAudit() {
+      document.getElementById('auditList').innerHTML = auditEvents.map((event) => `
+        <div class="audit-item">
+          <div>
+            <strong>${esc(event.target)}</strong> • <span style="color: var(--text-secondary);">${esc(event.summary)}</span>
+            <div class="audit-reason">${esc(event.time)} • ${esc(event.reason)}</div>
+          </div>
+          <div class="audit-tags">
+            <span class="badge ${outcomeBadgeClass(event.outcome)}">${outcomeLabel(event.outcome)}</span>
+            <span class="tier-tag">${esc(event.tier)}</span>
+            <span class="tier-tag">${esc(event.origin)}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderKpis() {
+      const appliedThrottles = flows.filter((flow) => flow.action === 'throttle' && flow.enforcement === 'Applied').length;
+      const failedThrottles = flows.filter((flow) => flow.action === 'throttle' && flow.enforcement !== 'Applied').length;
+
+      document.getElementById('activeThrottleCount').textContent =
+        `${appliedThrottles} Flow${appliedThrottles === 1 ? '' : 's'}`;
+      document.getElementById('throttleSub').textContent = failedThrottles
+        ? `${appliedThrottles} applied • ${failedThrottles} not applied`
+        : `${appliedThrottles} applied via WinDivert/QoS`;
+
+      const foreground = flows.filter((flow) => flow.state === 'foreground_active').length;
+      document.getElementById('milestoneCount').textContent = `${flows.length} Evaluated`;
+      document.getElementById('milestoneSub').textContent =
+        `${foreground} foreground • ${flows.length - foreground} background`;
+
+      document.getElementById('policyCount').textContent =
+        `${pinnedRules.length + sessionOverrides.length} Active`;
+      document.getElementById('policySub').textContent =
+        `${pinnedRules.length} pinned • ${sessionOverrides.length} session`;
+    }
+
+    function renderBanner() {
+      const banner = document.getElementById('enforcementBanner');
+      const failing = flows.filter((flow) => flow.enforcement === 'NotApplied' || flow.enforcement === 'Failed');
+      if (!failing.length) {
+        banner.hidden = true;
+        banner.textContent = '';
+        return;
+      }
+      banner.hidden = false;
+      banner.textContent = `${failing.length} automatic control${failing.length === 1 ? '' : 's'} could not be applied or withdrawn (${failing.map((flow) => flow.exe).join(', ')}). See the flow evidence or the audit trail for the reason.`;
+    }
+
+    function renderModeChrome() {
+      const isEnforce = dataSaverMode === 'enforce';
+      const offBtn = document.getElementById('btnOff');
+      const enforceBtn = document.getElementById('btnEnforce');
+
+      enforceBtn.classList.toggle('active', isEnforce);
+      offBtn.classList.toggle('active', !isEnforce);
+      offBtn.classList.toggle('mode-off', !isEnforce);
+      enforceBtn.setAttribute('aria-pressed', String(isEnforce));
+      offBtn.setAttribute('aria-pressed', String(!isEnforce));
+
+      document.getElementById('statusPill').classList.toggle('is-off', !isEnforce);
+      document.getElementById('statusLabel').textContent = isEnforce
+        ? 'Enforce • Automatic controls active'
+        : 'Off • Automatic controls withdrawn';
+
+      document.getElementById('restoreBtn').disabled = restorePending;
+      document.getElementById('restoreLabel').textContent = restorePending ? 'Restoring…' : 'Emergency Restore';
+    }
+
+    function renderAll() {
+      renderModeChrome();
+      renderKpis();
+      renderBanner();
+      renderTable();
+      renderInspector();
+      renderRules();
+      renderAudit();
+    }
+
+    // ---------------------------------------------------------------------
+    // Interaction
+    // ---------------------------------------------------------------------
+
+    function selectFlow(id) {
+      selectedId = id;
+      renderAll();
+    }
+
+    function filterTable(filter, btn) {
+      currentFilter = filter;
+      document.querySelectorAll('.pill-tab').forEach((tab) => tab.classList.remove('active'));
+      btn.classList.add('active');
+      renderTable();
+    }
+
+    function switchInspectorTab(tab) {
+      const isEvidence = tab === 'evidence';
+      document.getElementById('tabEvidence').classList.toggle('active', isEvidence);
+      document.getElementById('tabRules').classList.toggle('active', !isEvidence);
+      document.getElementById('viewEvidence').style.display = isEvidence ? 'flex' : 'none';
+      document.getElementById('viewRules').style.display = isEvidence ? 'none' : 'flex';
+      renderRules();
+    }
+
+    function togglePayloadPreview() {
+      document.getElementById('payloadBox').classList.toggle('open');
+    }
+
+    // Allow Once is a bounded session override: it never touches disk and it
+    // never demotes an existing pinned rule.
+    function allowOnce(id) {
+      const flow = findFlow(id);
+      if (!flow || pendingFlowIds.has(id) || flow.tierNum === 1) return;
+
+      pendingFlowIds.add(id);
+      renderAll();
+
+      window.setTimeout(() => {
+        pendingFlowIds.delete(id);
+        flow.action = 'allow';
+        flow.actionLabel = 'Session Allow';
+        flow.tier = 'Tier 2 • Session Override';
+        flow.tierNum = 2;
+        flow.origin = 'session';
+        flow.rate = 'Unthrottled';
+        flow.channel = 'Session Override (expires at app exit)';
+        flow.enforcement = 'Applied';
+        flow.enforcementNote = 'Session override applied; it expires when the app exits and is never persisted.';
+        sessionOverrides.unshift({ exe: flow.exe, domain: flow.domain, expires: 'app exit' });
+        logAudit({
+          target: flow.exe,
+          summary: `${flow.domain} → Allow Once (session)`,
+          tier: 'Tier 2',
+          origin: 'User (session)',
+          outcome: 'Applied',
+          reason: 'User allowed this flow for the current session only.'
+        });
+        renderAll();
+      }, 450);
+    }
+
+    // Always Allow is the only path to a persistent Tier 1 pin, and it needs
+    // explicit confirmation.
+    function alwaysAllow(id) {
+      const flow = findFlow(id);
+      if (!flow || pendingFlowIds.has(id) || flow.tierNum === 1) return;
+
+      const confirmed = window.confirm(
+        `Create a persistent Tier 1 allow rule for ${flow.exe} (${flow.domain})?\n\n` +
+        'Pinned rules override automatic, cached and AI decisions, and Emergency Restore never removes them.'
+      );
+      if (!confirmed) return;
+
+      pendingFlowIds.add(id);
+      renderAll();
+
+      window.setTimeout(() => {
+        pendingFlowIds.delete(id);
+        pinnedRules.unshift({ id: `pin_${flow.id}`, exe: flow.exe, domain: flow.domain });
+        flow.action = 'allow';
+        flow.actionLabel = 'Pinned Allow';
+        flow.tier = 'Tier 1 • User Pinned';
+        flow.tierNum = 1;
+        flow.origin = 'pinned';
+        flow.rate = 'Unthrottled';
+        flow.channel = 'Bypassed (Tier 1 Override)';
+        flow.enforcement = 'Applied';
+        flow.enforcementNote = 'Pinned allow rule stored; mode changes and Emergency Restore preserve it.';
+        sessionOverrides = sessionOverrides.filter((override) =>
+          !(override.exe === flow.exe && override.domain === flow.domain));
+        logAudit({
+          target: flow.exe,
+          summary: `${flow.domain} → Always Allow (pinned)`,
+          tier: 'Tier 1',
+          origin: 'User (pin)',
+          outcome: 'Applied',
+          reason: 'User confirmed a persistent pinned allow rule.'
+        });
+        renderAll();
+      }, 450);
+    }
+
+    function removePinnedRule(idx) {
+      const rule = pinnedRules[idx];
+      if (!rule) return;
+      pinnedRules.splice(idx, 1);
+
+      flows.filter((flow) => flow.origin === 'pinned' && flow.exe === rule.exe &&
+        (rule.domain === '*' || flow.domain === rule.domain)).forEach(revertToAutomatic);
+
+      logAudit({
+        target: rule.exe,
+        summary: `Pinned rule removed (${rule.domain})`,
+        tier: 'Tier 1',
+        origin: 'User (pin)',
+        outcome: 'Applied',
+        reason: 'Pinned rule deleted; automatic evaluation resumes for this target.'
+      });
+      renderAll();
+    }
+
+    function removeSessionOverride(idx) {
+      const override = sessionOverrides[idx];
+      if (!override) return;
+      sessionOverrides.splice(idx, 1);
+
+      flows.filter((flow) => flow.origin === 'session' && flow.exe === override.exe &&
+        flow.domain === override.domain).forEach(revertToAutomatic);
+
+      logAudit({
+        target: override.exe,
+        summary: `Session override ended (${override.domain})`,
+        tier: 'Tier 2',
+        origin: 'User (session)',
+        outcome: 'Applied',
+        reason: 'Session override ended early; automatic evaluation resumes.'
+      });
+      renderAll();
+    }
+
+    // Off withdraws only Data Saver-owned controls. Enforce re-applies the
+    // decision that was suspended, and neither path touches pinned rules.
+    function setMode(mode) {
+      if (mode === dataSaverMode) return;
+      dataSaverMode = mode;
+
+      if (mode === 'off') {
+        flows.filter((flow) => flow.origin === 'automatic' || flow.origin === 'ai').forEach((flow) => {
+          const healthy = flow.channelHealthy !== false;
+          const priorTier = flow.tier;
+          const suspended = clone(flow);
+          delete suspended.suspended;
+          flow.suspended = suspended;
+
+          flow.action = 'allow';
+          flow.actionLabel = healthy ? 'Withdrawn' : 'Withdraw Failed';
+          flow.tier = 'Tier 5 • Withdrawn';
+          flow.tierNum = 5;
+          flow.rate = 'Unthrottled';
+          flow.enforcement = healthy ? 'Withdrawn' : 'Failed';
+          flow.enforcementNote = healthy
+            ? 'Automatic control withdrawn because Data Saver is Off; the decision returns when you re-enforce.'
+            : 'Withdrawal not confirmed: the enforcement channel is unavailable.';
+
+          logAudit({
+            target: flow.exe,
+            summary: `${flow.domain} → withdrawn (Data Saver Off)`,
+            tier: 'Tier ' + tierFromLabel(priorTier),
+            origin: flow.origin === 'ai' ? 'AI advisory' : 'Automatic',
+            outcome: flow.enforcement,
+            reason: healthy
+              ? 'Mode changed to Off; Data Saver-owned automatic controls were withdrawn.'
+              : 'Mode changed to Off, but the enforcement channel did not confirm the withdrawal.'
+          });
+        });
+      } else {
+        flows.filter((flow) => flow.suspended).forEach((flow) => {
+          const suspended = flow.suspended;
+          delete flow.suspended;
+          Object.assign(flow, suspended);
+
+          if (flow.action === 'throttle' || flow.action === 'block') {
+            flow.enforcement = flow.channelHealthy === false ? 'NotApplied' : 'Applied';
+            flow.enforcementNote = flow.channelHealthy === false
+              ? 'Re-apply failed: the enforcement channel is unavailable; no restriction is active.'
+              : 'Automatic control re-applied after returning to Enforce.';
+          } else {
+            flow.enforcement = 'Applied';
+            flow.enforcementNote = 'Automatic decision re-applied after returning to Enforce; no rate change.';
+          }
+
+          logAudit({
+            target: flow.exe,
+            summary: `${flow.domain} → re-applied (${flow.actionLabel})`,
+            tier: 'Tier ' + tierFromLabel(flow.tier),
+            origin: flow.origin === 'ai' ? 'AI advisory' : 'Automatic',
+            outcome: flow.enforcement,
+            reason: 'Mode returned to Enforce; the suspended automatic decision was validated and re-applied.'
+          });
+        });
+      }
+      renderAll();
+    }
+
+    function emergencyRestore() {
+      if (restorePending) return;
+      const confirmed = window.confirm(
+        'Withdraw every automatic and AI-applied control?\n\n' +
+        'Tier 1 pinned rules and your session overrides are preserved.'
+      );
+      if (!confirmed) return;
+
+      restorePending = true;
+      renderAll();
+
+      window.setTimeout(() => {
+        restorePending = false;
+        flows.filter((flow) => flow.origin === 'automatic' || flow.origin === 'ai').forEach((flow) => {
+          const healthy = flow.channelHealthy !== false;
+          const priorTier = flow.tier;
+
+          flow.action = 'allow';
+          flow.actionLabel = healthy ? 'Restored' : 'Restore Failed';
+          flow.tier = 'Tier 5 • Withdrawn';
+          flow.tierNum = 5;
+          flow.rate = 'Unthrottled';
+          flow.channel = healthy ? 'No control active' : flow.channel;
+          flow.enforcement = healthy ? 'Withdrawn' : 'Failed';
+          flow.enforcementNote = healthy
+            ? 'Emergency Restore withdrew this automatic control.'
+            : 'Withdrawal not confirmed: the enforcement channel is unavailable. Remove the rule manually.';
+
+          logAudit({
+            target: flow.exe,
+            summary: `${flow.domain} → Emergency Restore`,
+            tier: 'Tier ' + tierFromLabel(priorTier),
+            origin: flow.origin === 'ai' ? 'AI advisory' : 'Automatic',
+            outcome: flow.enforcement,
+            reason: healthy
+              ? 'User withdrew all automatic controls; pinned rules were untouched.'
+              : 'Emergency Restore could not confirm withdrawal for this control.'
+          });
+        });
+        renderAll();
+      }, 500);
+    }
+
+    function toggleAiOptIn() {
+      aiEnabled = !aiEnabled;
+      const toggle = document.getElementById('aiSwitch');
+      toggle.classList.toggle('on', aiEnabled);
+      toggle.setAttribute('aria-checked', String(aiEnabled));
+      document.getElementById('aiStateLabel').textContent = aiEnabled
+        ? 'Opted in (advisory only)'
+        : 'Off (default)';
+      document.getElementById('payloadBox').classList.remove('open');
+      renderInspector();
+    }
+
+    // Init
+    renderAll();
+  </script>
+</body>
+</html>
