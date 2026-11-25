@@ -187,3 +187,100 @@ export function advanceTelemetry(previous, now = Date.now()) {
 export function countProcesses(processes) {
   return processes.reduce((sum, process) => sum + 1 + process.subprocesses.length, 0);
 }
+
+/* ==========================================================================
+   Native bridge payloads
+   ==========================================================================
+   `overview.status` returns the contract in docs/overview-architecture.md.
+   These helpers normalise it for the components: missing values become zeroes
+   and each row gets the monogram/tint the table needs, since the backend only
+   sends the measurements. */
+
+const PREVIEW_TINTS = [
+  '#5a8dee', '#3dd598', '#8e92b2', '#7371fc', '#5ce1e6',
+  '#4cc3e0', '#ffb547', '#a594f9', '#ff5c75', '#ff9e64',
+];
+
+function tintFor(name) {
+  let hash = 0;
+  for (let index = 0; index < name.length; index += 1) {
+    hash = (hash * 31 + name.charCodeAt(index)) >>> 0;
+  }
+  return PREVIEW_TINTS[hash % PREVIEW_TINTS.length];
+}
+
+function monogramFor(name) {
+  const clean = String(name || '').replace(/\.exe$/i, '').trim();
+  const words = clean.split(/[\s._-]+/).filter(Boolean);
+  if (words.length >= 2) return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  return clean.slice(0, 2) || '??';
+}
+
+function normalizeProcess(row, tint) {
+  const name = String(row?.name || 'Unknown process');
+  const subprocesses = Array.isArray(row?.subprocesses) ? row.subprocesses : [];
+
+  return {
+    id: String(row?.id || `${name}-${row?.pid || 0}`),
+    name,
+    pid: Number(row?.pid) || 0,
+    downBps: Number(row?.downBps) || 0,
+    upBps: Number(row?.upBps) || 0,
+    totalBytes: Number(row?.totalBytes) || 0,
+    monogram: monogramFor(name),
+    tint,
+    subprocesses: subprocesses.map((child) => normalizeProcess(child, tint)),
+  };
+}
+
+function timestampToMs(timestamp, fallback) {
+  const match = typeof timestamp === 'string'
+    ? /^(\d{1,2}):(\d{2}):(\d{2})$/.exec(timestamp.trim())
+    : null;
+  if (!match) return fallback;
+
+  const date = new Date(fallback);
+  date.setHours(Number(match[1]), Number(match[2]), Number(match[3]), 0);
+  return date.getTime();
+}
+
+/** Sixty empty points keep the chart's rolling window shape before the first beat. */
+export function createEmptyTelemetry(now = Date.now()) {
+  const history = [];
+  for (let index = 0; index < HISTORY_LENGTH; index += 1) {
+    history.push({ time: now - (HISTORY_LENGTH - 1 - index) * 1000, downBps: 0, upBps: 0 });
+  }
+
+  return {
+    summary: { totalBytes: 0, uploadBytes: 0, downloadBytes: 0 },
+    history,
+    processes: [],
+    processCount: 0,
+  };
+}
+
+export function applyOverviewPayload(previous, payload, now = Date.now()) {
+  const summaryPayload = payload?.summary || {};
+  const realtime = payload?.realtime || {};
+  const rows = Array.isArray(payload?.processes) ? payload.processes : [];
+
+  const processes = rows.map((row) => normalizeProcess(row, tintFor(String(row?.name || ''))));
+  const point = {
+    time: timestampToMs(realtime.timestamp, now),
+    downBps: Number(realtime.downBps) || 0,
+    upBps: Number(realtime.upBps) || 0,
+  };
+
+  return {
+    summary: {
+      totalBytes: Number(summaryPayload.totalBytes) || 0,
+      uploadBytes: Number(summaryPayload.uploadBytes) || 0,
+      downloadBytes: Number(summaryPayload.downloadBytes) || 0,
+    },
+    history: previous.history.length
+      ? [...previous.history.slice(1), point]
+      : [point],
+    processes,
+    processCount: countProcesses(processes),
+  };
+}

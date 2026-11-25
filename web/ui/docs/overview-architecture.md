@@ -82,7 +82,7 @@ All numbers use `font-variant-numeric: tabular-nums` and auto-scale between `B`,
 ---
 
 ## 4. Backend Telemetry Payload Contract
-The native backend pushes this JSON payload every `1000ms` to `overviewStore.js`:
+The page calls the native bridge method `overview.status` once per second over the existing WebView2 message bridge. When the bridge is unavailable (a plain browser, or a build without the method), `overviewStore.js` falls back to locally generated preview data. The reply's `result` uses this shape:
 
 ```json
 {

@@ -5,11 +5,13 @@
 
 #include "webuibridge.h"
 
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPointer>
 #include <QStringList>
+#include <QTime>
 
 #include <string>
 
@@ -137,6 +139,117 @@ QJsonObject appStatus(ServiceHost *services)
     return result;
 }
 
+QJsonObject overviewProcess(const TopConsumers::Consumer &consumer, const QString &name)
+{
+    QJsonObject row;
+    row.insert(QStringLiteral("id"),
+               QStringLiteral("%1-%2").arg(consumer.name).arg(consumer.pid));
+    row.insert(QStringLiteral("name"), name);
+    row.insert(QStringLiteral("pid"), static_cast<int>(consumer.pid));
+    row.insert(QStringLiteral("downBps"),
+               QJsonValue(static_cast<qint64>(consumer.rxBytesPerSecond)));
+    row.insert(QStringLiteral("upBps"),
+               QJsonValue(static_cast<qint64>(consumer.txBytesPerSecond)));
+    row.insert(QStringLiteral("totalBytes"),
+               QJsonValue(static_cast<qint64>(consumer.totalBytes())));
+    return row;
+}
+
+// The Overview page renders the same once-a-second beat the native dashboard
+// already builds. Consumers are grouped by executable path so the table can
+// show one application row with its other processes nested underneath; a
+// single process keeps an empty subprocess list.
+QJsonObject overviewStatus(ServiceHost *services)
+{
+    NetworkWidget *network = services ? services->network() : nullptr;
+    const TopConsumers::Summary summary =
+        network ? network->dashboardSummary() : TopConsumers::Summary();
+
+    QJsonObject summaryObject;
+    summaryObject.insert(QStringLiteral("totalBytes"),
+                         QJsonValue(static_cast<qint64>(summary.totalRxBytes + summary.totalTxBytes)));
+    summaryObject.insert(QStringLiteral("uploadBytes"),
+                         QJsonValue(static_cast<qint64>(summary.totalTxBytes)));
+    summaryObject.insert(QStringLiteral("downloadBytes"),
+                         QJsonValue(static_cast<qint64>(summary.totalRxBytes)));
+
+    QJsonObject realtime;
+    realtime.insert(QStringLiteral("timestamp"),
+                    QTime::currentTime().toString(QStringLiteral("HH:mm:ss")));
+    realtime.insert(QStringLiteral("downBps"),
+                    QJsonValue(static_cast<qint64>(summary.totalRxBytesPerSecond)));
+    realtime.insert(QStringLiteral("upBps"),
+                    QJsonValue(static_cast<qint64>(summary.totalTxBytesPerSecond)));
+
+    struct Group
+    {
+        QList<const TopConsumers::Consumer *> members;
+    };
+
+    QHash<QString, int> groupIndex;
+    QList<Group> groups;
+    for (const TopConsumers::Consumer &consumer : summary.consumers) {
+        if (consumer.name.trimmed().isEmpty() && consumer.pid == 0)
+            continue;
+
+        QString key = consumer.path.trimmed().toLower();
+        if (key.isEmpty())
+            key = QStringLiteral("name:%1").arg(consumer.name.trimmed().toLower());
+
+        auto existing = groupIndex.constFind(key);
+        if (existing == groupIndex.constEnd()) {
+            groupIndex.insert(key, groups.size());
+            Group group;
+            group.members.append(&consumer);
+            groups.append(group);
+        } else {
+            groups[existing.value()].members.append(&consumer);
+        }
+    }
+
+    QJsonArray processes;
+    for (const Group &group : groups) {
+        if (group.members.isEmpty())
+            continue;
+
+        // The busiest instance represents the application; the others are its
+        // subprocess rows. This is a display grouping, not a restored parent
+        // tree: the capture model does not expose parent PIDs on this path.
+        int primary = 0;
+        for (int index = 1; index < group.members.size(); ++index) {
+            const TopConsumers::Consumer *candidate = group.members.at(index);
+            const TopConsumers::Consumer *current = group.members.at(primary);
+            if (candidate->totalBytes() > current->totalBytes()
+                || (candidate->totalBytes() == current->totalBytes()
+                    && candidate->totalBytesPerSecond() > current->totalBytesPerSecond())) {
+                primary = index;
+            }
+        }
+
+        const TopConsumers::Consumer &lead = *group.members.at(primary);
+        const QString displayName = lead.identity.trimmed().isEmpty()
+            ? lead.name : lead.identity.trimmed();
+        QJsonObject parent = overviewProcess(lead, displayName);
+
+        QJsonArray subprocesses;
+        for (int index = 0; index < group.members.size(); ++index) {
+            if (index == primary)
+                continue;
+            subprocesses.append(overviewProcess(*group.members.at(index),
+                                                group.members.at(index)->name));
+        }
+        parent.insert(QStringLiteral("subprocesses"), subprocesses);
+        processes.append(parent);
+    }
+
+    QJsonObject result;
+    result.insert(QStringLiteral("schemaVersion"), 1);
+    result.insert(QStringLiteral("summary"), summaryObject);
+    result.insert(QStringLiteral("realtime"), realtime);
+    result.insert(QStringLiteral("processes"), processes);
+    return result;
+}
+
 QJsonObject dataSaverStatus(ServiceHost *services)
 {
     NetworkWidget *network = services ? services->network() : nullptr;
@@ -249,6 +362,8 @@ QJsonObject WebUiBridge::dispatch(const QJsonObject &request, ServiceHost *servi
         return okReply(id, appStatus(services));
     if (method == QStringLiteral("datasaver.status"))
         return okReply(id, dataSaverStatus(services));
+    if (method == QStringLiteral("overview.status"))
+        return okReply(id, overviewStatus(services));
 
     return errorReply(id, QStringLiteral("unknown_method"),
                       QStringLiteral("No bridge method named \"%1\".").arg(method));
