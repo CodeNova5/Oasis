@@ -1,5 +1,7 @@
 #include "webuipage.h"
 
+#include "webuibridge.h"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -103,9 +105,11 @@ QString errorText(HRESULT errorCode)
 } // namespace
 
 WebUiPage::WebUiPage(const QString &pageDir, const QString &pageFile,
-                     const QString &displayName, QWidget *parent)
+                     const QString &displayName, ServiceHost *services,
+                     QWidget *parent)
     : QWidget(parent)
     , m_displayName(displayName)
+    , m_services(services)
     , m_pagePath(QCoreApplication::applicationDirPath() + QLatin1Char('/')
                  + pageDir + QLatin1Char('/') + pageFile)
     , m_loader(QStringLiteral("WebView2Loader"))
@@ -128,6 +132,11 @@ WebUiPage::WebUiPage(const QString &pageDir, const QString &pageFile,
 
 WebUiPage::~WebUiPage()
 {
+    // The bridge holds a WebMessageReceived registration on the WebView2
+    // object, so it has to go before the interfaces are released.
+    delete m_bridge;
+    m_bridge = nullptr;
+
     if (m_webView)
         m_webView->Release();
     if (m_controller)
@@ -220,6 +229,10 @@ void WebUiPage::onControllerCreated(HRESULT errorCode,
                         .arg(m_displayName, m_pagePath));
         return;
     }
+
+    // Register the message handler before the first navigation, so a page that
+    // asks for status as soon as it loads is never missed.
+    m_bridge = new WebUiBridge(m_webView, m_services, this);
 
     m_status->hide();
     m_webView->Navigate(QUrl::fromLocalFile(m_pagePath).toString().toStdWString().c_str());

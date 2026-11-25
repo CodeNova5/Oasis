@@ -41,6 +41,7 @@
 #include "ui/webview2/webuiwindow.h"
 #include "ui/theme/thememanager.h"
 #include "core/appinstaller.h"
+#include "core/servicehost.h"
 #include "hardware/hardwaremonitor.h"    // Q_DECLARE_METATYPE(HardwareSnapshot)
 #include "network/packetparser.h"        // Q_DECLARE_METATYPE(ParsedPacket)
 
@@ -143,14 +144,30 @@ int main(int argc, char *argv[])
     // matching QPalette + Segoe UI Variable font.
     ThemeManager::instance().apply(&app);
 
+    // -- Start the backend services -------------------------------------------
+    // Capture, policy, enforcement and notifications used to be owned by
+    // MainWindow. They now start without any window, so the web UI is the only
+    // front end and the services still run for the whole process lifetime.
+    ServiceHost services;
+    services.start();
+
     // -- Show the web UI ------------------------------------------------------
     // The window hosts the single Preact + HTM bundle edge to edge. The Qt shell
     // (sidebar, header, status bar and the native pages) is not part of the UI:
     // everything on screen comes from web/ui.
     WebUiWindow w(QStringLiteral("web/ui/dist"), QStringLiteral("index.html"),
-                  QStringLiteral("Oasis"));
+                  QStringLiteral("Oasis"), &services);
+    // The single-instance guard above finds the running window by this exact
+    // title, so it has to keep the "App Version x.y.z" form.
+    w.setWindowTitle(QStringLiteral("%1 Version %2").arg(APP_NAME, APP_VERSION_STR));
     w.setWindowIcon(appIcon);
     w.showMaximized();
 
-    return app.exec();
+    const int exitCode = app.exec();
+
+    // The window is gone but the capture thread is still running; stop it while
+    // the application object is alive so its workers shut down in order.
+    services.stop();
+
+    return exitCode;
 }

@@ -2,6 +2,8 @@
 
 #include <QMainWindow>
 
+class ServiceHost;
+
 /**
  * The application window for the web UI.
  *
@@ -12,7 +14,9 @@ class WebUiWindow final : public QMainWindow
 {
 public:
     // pageDir is relative to the executable directory, e.g. "web/ui/dist".
-    // pageFile is the page inside that folder, e.g. "index.html".
+    // pageFile is the page inside that folder, e.g. "index.html". services is
+    // the backend the page can query over the JSON message bridge.
     explicit WebUiWindow(const QString &pageDir, const QString &pageFile,
-                         const QString &displayName, QWidget *parent = nullptr);
+                         const QString &displayName, ServiceHost *services = nullptr,
+                         QWidget *parent = nullptr);
 };

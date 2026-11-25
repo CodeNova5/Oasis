@@ -53,6 +53,7 @@ SOURCES += \
     src/activity/detectionprofile.cpp \
     src/core/updatechecker.cpp \
     src/core/appinstaller.cpp \
+    src/core/servicehost.cpp \
     src/core/windowsicon.cpp \
     src/network/networkmonitor.cpp \
     src/network/networkmonitor_adapters.cpp \
@@ -122,6 +123,7 @@ SOURCES += \
     src/taskbar/taskbaroverlay.cpp \
     src/taskbar/systemtrayicon.cpp \
     src/ui/webview2/webuipage.cpp \
+    src/ui/webview2/webuibridge.cpp \
     src/ui/webview2/webuiwindow.cpp
 
 # ─── Headers ────────────────────────────────────────────────────────────────
@@ -156,6 +158,7 @@ HEADERS += \
     src/activity/detectionprofile.h \
     src/core/updatechecker.h \
     src/core/appinstaller.h \
+    src/core/servicehost.h \
     src/core/windowsicon.h \
     src/network/networkmonitor.h \
     src/network/bandwidthguard.h \
@@ -224,6 +227,7 @@ HEADERS += \
     src/taskbar/taskbaroverlay.h \
     src/taskbar/systemtrayicon.h \
     src/ui/webview2/webuipage.h \
+    src/ui/webview2/webuibridge.h \
     src/ui/webview2/webuiwindow.h
 
 # ─── Qt Designer UI forms ────────────────────────────────────────────────────

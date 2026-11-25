@@ -11,6 +11,8 @@
 #include <WebView2.h>
 
 class QLabel;
+class ServiceHost;
+class WebUiBridge;
 
 /**
  * Hosts one bundled Preact + HTM page inside the Qt shell through WebView2.
@@ -25,9 +27,12 @@ class WebUiPage final : public QWidget
 public:
     // pageDir is relative to the executable directory ("web/ui/dist") and
     // pageFile is the page inside it ("index.html", "datasaver.html").
-    // displayName is only used in fallback messages.
+    // displayName is only used in fallback messages. services, when supplied,
+    // is what the page can read through the JSON message bridge; without it the
+    // page still loads and the bridge reports the services as unavailable.
     explicit WebUiPage(const QString &pageDir, const QString &pageFile,
-                       const QString &displayName, QWidget *parent = nullptr);
+                       const QString &displayName, ServiceHost *services = nullptr,
+                       QWidget *parent = nullptr);
     ~WebUiPage() override;
 
 protected:
@@ -51,6 +56,8 @@ private:
     QString m_pagePath;
     QLibrary m_loader;
     QLabel *m_status = nullptr;
+    ServiceHost *m_services = nullptr;
+    WebUiBridge *m_bridge = nullptr;
     ICoreWebView2Environment *m_environment = nullptr;
     ICoreWebView2Controller *m_controller = nullptr;
     ICoreWebView2 *m_webView = nullptr;

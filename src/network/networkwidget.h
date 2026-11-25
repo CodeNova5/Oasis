@@ -156,6 +156,12 @@ public:
     // list stored policies, whose executables are often not running.
     QIcon executableIcon(const QString &executablePath);
     bool isCapturing() const { return m_capturing; }
+    // 0 = off, 1 = monitor, 2 = enforce. The legacy three-state control predates
+    // the Data Saver automation PRD; a host maps it to its own vocabulary.
+    int dataSaverMode() const { return m_dataSaverMode; }
+    // Normalized paths the throttle manager is currently shaping, so a status
+    // reader reports what is actually limited rather than what was requested.
+    QStringList throttledPaths() const { return m_throttlePolicies ? m_throttlePolicies->activePaths() : QStringList(); }
     // NG-050: the persisted audit log behind the audit view and its export.
     AuditEventStore *auditStore() { return &m_auditStore; }
     // NG-036: attribution privacy controls and the history they bound.
