@@ -21,7 +21,7 @@ function compareProcesses(left, right, key) {
   return (left[key] || 0) - (right[key] || 0);
 }
 
-export function ProcessTable({ processes, processCount }) {
+export function ProcessTable({ processes, processCount, icons }) {
   const [sort, setSort] = useState({ key: 'downBps', direction: 'desc' });
   const [expanded, setExpanded] = useState(() => new Set());
 
@@ -80,9 +80,15 @@ export function ProcessTable({ processes, processCount }) {
           </thead>
           <tbody>
             ${sorted.map((process) => html`
-              <${ProcessRow} key=${process.id} process=${process} expanded=${expanded.has(process.id)} onToggle=${toggle} />
+              <${ProcessRow}
+                key=${process.id}
+                process=${process}
+                icons=${icons}
+                expanded=${expanded.has(process.id)}
+                onToggle=${toggle}
+              />
               ${expanded.has(process.id) && process.subprocesses.map((child) => html`
-                <${ProcessRow} key=${child.id} process=${child} subprocess />
+                <${ProcessRow} key=${child.id} process=${child} icons=${icons} subprocess />
               `)}
             `)}
           </tbody>
@@ -92,9 +98,10 @@ export function ProcessTable({ processes, processCount }) {
   `;
 }
 
-function ProcessIcon({ process }) {
-  if (process.icon) {
-    return html`<img class="proc-icon" src=${process.icon} alt="" width="26" height="26" draggable="false" />`;
+function ProcessIcon({ process, icons }) {
+  const icon = process.iconKey ? icons?.[process.iconKey] : null;
+  if (icon) {
+    return html`<img class="proc-icon" src=${icon} alt="" width="26" height="26" draggable="false" />`;
   }
 
   return html`
@@ -108,7 +115,7 @@ function ProcessIcon({ process }) {
   `;
 }
 
-function ProcessRow({ process, subprocess = false, expanded = false, onToggle }) {
+function ProcessRow({ process, icons, subprocess = false, expanded = false, onToggle }) {
   const hasChildren = process.subprocesses && process.subprocesses.length > 0;
 
   return html`
@@ -129,7 +136,7 @@ function ProcessRow({ process, subprocess = false, expanded = false, onToggle })
                   ${hasChildren ? chevron : html`<span class="toggle-spacer"></span>`}
                 </button>
               `}
-          <${ProcessIcon} process=${process} />
+          <${ProcessIcon} process=${process} icons=${icons} />
           <span class="proc-name">${process.name}</span>
         </div>
       </td>

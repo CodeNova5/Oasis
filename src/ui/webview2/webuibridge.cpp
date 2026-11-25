@@ -188,9 +188,10 @@ QJsonObject overviewProcess(const TopConsumers::Consumer &consumer, const QStrin
                QStringLiteral("%1-%2").arg(consumer.name).arg(consumer.pid));
     row.insert(QStringLiteral("name"), name);
     row.insert(QStringLiteral("pid"), static_cast<int>(consumer.pid));
-    const QString icon = overviewIcon(consumer);
-    if (!icon.isEmpty())
-        row.insert(QStringLiteral("icon"), icon);
+    // Only advertise an icon that is already resolved; the page fetches the
+    // pixels separately so the once-a-second status stays small.
+    if (!consumer.icon.isNull() && !consumer.name.trimmed().isEmpty())
+        row.insert(QStringLiteral("iconKey"), consumer.name);
     row.insert(QStringLiteral("downBps"),
                QJsonValue(static_cast<qint64>(consumer.rxBytesPerSecond)));
     row.insert(QStringLiteral("upBps"),
@@ -200,10 +201,36 @@ QJsonObject overviewProcess(const TopConsumers::Consumer &consumer, const QStrin
     return row;
 }
 
+// Fetches one executable's icon by the key advertised in overview.status.
+// Names are matched case-insensitively because the row carries the model's
+// spelling while the page echoes the key back verbatim.
+QJsonObject overviewIconReply(ServiceHost *services, const QString &name)
+{
+    QJsonObject result;
+    NetworkWidget *network = services ? services->network() : nullptr;
+    if (!network)
+        return result;
+
+    const TopConsumers::Summary summary = network->dashboardSummary();
+    for (const TopConsumers::Consumer &consumer : summary.consumers) {
+        if (consumer.icon.isNull()
+            || consumer.name.compare(name, Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+
+        const QString icon = overviewIcon(consumer);
+        if (!icon.isEmpty()) {
+            result.insert(QStringLiteral("icon"), icon);
+            break;
+        }
+    }
+    return result;
+}
+
 // The Overview page renders the same once-a-second beat the native dashboard
-// already builds. Consumers are grouped by executable path so the table can
-// show one application row with its other processes nested underneath; a
-// single process keeps an empty subprocess list.
+// already builds. Consumers are grouped under their real parent PID so the
+// table can show one application row with its children nested underneath; a
+// process whose parent is not consuming on this beat becomes a root row.
 QJsonObject overviewStatus(ServiceHost *services)
 {
     NetworkWidget *network = services ? services->network() : nullptr;
@@ -420,6 +447,17 @@ QJsonObject WebUiBridge::dispatch(const QJsonObject &request, ServiceHost *servi
         return okReply(id, dataSaverStatus(services));
     if (method == QStringLiteral("overview.status"))
         return okReply(id, overviewStatus(services));
+    if (method == QStringLiteral("overview.icon")) {
+        const QString name = paramsValue.toObject()
+                                 .value(QStringLiteral("name"))
+                                 .toString()
+                                 .trimmed();
+        if (name.isEmpty()) {
+            return errorReply(id, QStringLiteral("invalid_params"),
+                              QStringLiteral("overview.icon needs a non-empty \"name\"."));
+        }
+        return okReply(id, overviewIconReply(services, name));
+    }
 
     return errorReply(id, QStringLiteral("unknown_method"),
                       QStringLiteral("No bridge method named \"%1\".").arg(method));

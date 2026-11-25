@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { html } from 'htm/preact';
 import { Sidebar } from './components/Sidebar.js';
 import { SummaryCard } from './components/SummaryCard.js';
@@ -7,6 +7,7 @@ import { ProcessTable } from './components/ProcessTable.js';
 import {
   advanceTelemetry,
   applyOverviewPayload,
+  collectIconKeys,
   createEmptyTelemetry,
   createInitialTelemetry,
 } from './state/overviewStore.js';
@@ -22,6 +23,8 @@ export function App() {
     nativeAvailable ? createEmptyTelemetry : createInitialTelemetry,
   );
   const [paused, setPaused] = useState(false);
+  const [icons, setIcons] = useState({});
+  const requestedIcons = useRef(new Set());
 
   useEffect(() => {
     if (paused) return undefined;
@@ -30,6 +33,31 @@ export function App() {
       let cancelled = false;
       let inFlight = false;
 
+      // Icons travel outside the one-second status: each executable is asked
+      // for once and its data URI is kept for the life of the page.
+      const requestIcons = (payload) => {
+        for (const key of collectIconKeys(payload?.processes)) {
+          if (requestedIcons.current.has(key)) continue;
+          requestedIcons.current.add(key);
+
+          request('overview.icon', { name: key }, { timeoutMs: 5000 })
+            .then((result) => {
+              const icon = result?.icon;
+              if (typeof icon !== 'string' || !icon.startsWith('data:image/')) {
+                requestedIcons.current.delete(key);
+                return;
+              }
+              setIcons((previous) => (
+                previous[key] === icon ? previous : { ...previous, [key]: icon }
+              ));
+            })
+            .catch((error) => {
+              requestedIcons.current.delete(key);
+              console.warn(`overview.icon unavailable for ${key}.`, error);
+            });
+        }
+      };
+
       const poll = async () => {
         if (inFlight) return;
         inFlight = true;
@@ -37,6 +65,7 @@ export function App() {
           const payload = await request('overview.status');
           if (!cancelled) {
             setTelemetry((previous) => applyOverviewPayload(previous, payload));
+            requestIcons(payload);
           }
         } catch (error) {
           if (!cancelled) {
@@ -111,7 +140,11 @@ export function App() {
 
         <${TrafficChart} history=${telemetry.history} />
 
-        <${ProcessTable} processes=${telemetry.processes} processCount=${telemetry.processCount} />
+        <${ProcessTable}
+          processes=${telemetry.processes}
+          processCount=${telemetry.processCount}
+          icons=${icons}
+        />
       </main>
     </div>
   `;

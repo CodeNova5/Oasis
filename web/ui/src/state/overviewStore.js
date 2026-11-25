@@ -186,6 +186,22 @@ export function countProcesses(processes) {
   return processes.reduce((sum, process) => sum + 1 + process.subprocesses.length, 0);
 }
 
+/** Distinct `iconKey`s in a status payload, including nested subprocesses. */
+export function collectIconKeys(processes) {
+  const keys = new Set();
+
+  const visit = (rows) => {
+    for (const row of rows) {
+      if (typeof row?.iconKey === 'string' && row.iconKey.trim())
+        keys.add(row.iconKey);
+      if (Array.isArray(row?.subprocesses)) visit(row.subprocesses);
+    }
+  };
+
+  if (Array.isArray(processes)) visit(processes);
+  return [...keys];
+}
+
 /* ==========================================================================
    Native bridge payloads
    ==========================================================================
@@ -209,9 +225,7 @@ function tintFor(name) {
 function normalizeProcess(row, tint) {
   const name = String(row?.name || 'Unknown process');
   const subprocesses = Array.isArray(row?.subprocesses) ? row.subprocesses : [];
-  const icon = typeof row?.icon === 'string' && /^data:image\/[a-z0-9.+-]+;base64,/i.test(row.icon)
-    ? row.icon
-    : null;
+  const iconKey = typeof row?.iconKey === 'string' ? row.iconKey.trim() : '';
 
   return {
     id: String(row?.id || `${name}-${row?.pid || 0}`),
@@ -220,7 +234,7 @@ function normalizeProcess(row, tint) {
     downBps: Number(row?.downBps) || 0,
     upBps: Number(row?.upBps) || 0,
     totalBytes: Number(row?.totalBytes) || 0,
-    icon,
+    iconKey: iconKey || null,
     tint,
     subprocesses: subprocesses.map((child) => normalizeProcess(child, tint)),
   };
