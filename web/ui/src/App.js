@@ -1,64 +1,70 @@
+import { useEffect, useState } from 'preact/hooks';
 import { html } from 'htm/preact';
-import { useState } from 'preact/hooks';
-
-function ProofPill({ label, value }) {
-  return html`
-    <div class="proof-pill">
-      <span class="proof-label">${label}</span>
-      <strong class="proof-value">${value}</strong>
-    </div>
-  `;
-}
+import { Sidebar } from './components/Sidebar.js';
+import { SummaryCard } from './components/SummaryCard.js';
+import { TrafficChart } from './components/TrafficChart.js';
+import { ProcessTable } from './components/ProcessTable.js';
+import { advanceTelemetry, createInitialTelemetry } from './state/overviewStore.js';
+import { formatBytes } from './utils/formatters.js';
 
 export function App() {
-  const [renders, setRenders] = useState(0);
+  const [telemetry, setTelemetry] = useState(createInitialTelemetry);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (paused) return undefined;
+    const timer = setInterval(() => setTelemetry(advanceTelemetry), 1000);
+    return () => clearInterval(timer);
+  }, [paused]);
+
+  const total = formatBytes(telemetry.summary.totalBytes);
+  const download = formatBytes(telemetry.summary.downloadBytes);
+  const upload = formatBytes(telemetry.summary.uploadBytes);
 
   return html`
-    <div class="landing">
-      <div class="landing-glow" aria-hidden="true"></div>
+    <div class="app-shell">
+      <${Sidebar} paused=${paused} onTogglePause=${() => setPaused((value) => !value)} />
 
-      <header class="landing-header">
-        <span class="brand-mark">OA</span>
-        <span class="brand-name">Oasis</span>
-        <span class="brand-tag">Frontend preview</span>
-      </header>
+      <main class="workspace">
+        <header class="workspace-header">
+          <h1 class="workspace-title">Overview</h1>
+          <span class=${`status-pill${paused ? ' is-paused' : ''}`} role="status">
+            <span class="status-dot"></span>
+            ${paused ? 'Monitoring Paused' : 'Monitoring Active'}
+          </span>
+        </header>
 
-      <main class="hero">
-        <div class="stack-badge" role="status">
-          <span class="stack-dot"></span>
-          PREACT + HTM ONLINE
-        </div>
-
-        <h1>PREACT + HTM works</h1>
-        <p class="hero-copy">
-          This screen is rendered by the isolated <code>web/ui</code> bundle:
-          Preact components written with HTM template literals, bundled by esbuild
-          and hosted inside the native shell. No Qt widgets are drawn here.
-        </p>
-
-        <div class="hero-actions">
-          <button
-            class="primary-action"
-            type="button"
-            onClick=${() => setRenders(renders + 1)}
-          >
-            ${renders === 0 ? 'Click to prove interactivity' : `Re-rendered ${renders} time${renders === 1 ? '' : 's'}`}
-          </button>
-          <span class="action-hint">State and event handlers are live.</span>
-        </div>
-
-        <section class="proof-grid" aria-label="Bundle facts">
-          <${ProofPill} label="Renderer" value="Preact 10" />
-          <${ProofPill} label="Templating" value="HTM" />
-          <${ProofPill} label="Bundler" value="esbuild" />
-          <${ProofPill} label="Host" value="WebView2" />
+        <section class="summary-grid" aria-label="Session totals">
+          <${SummaryCard}
+            label="Total Data Usage"
+            icon="gauge"
+            tint="#a594f9"
+            value=${total.value}
+            unit=${total.unit}
+            caption="Session Total"
+          />
+          <${SummaryCard}
+            label="Download"
+            icon="down"
+            tint="#7371fc"
+            value=${download.value}
+            unit=${download.unit}
+            caption="Total Received"
+          />
+          <${SummaryCard}
+            label="Upload"
+            icon="up"
+            tint="#5ce1e6"
+            value=${upload.value}
+            unit=${upload.unit}
+            caption="Total Sent"
+          />
         </section>
-      </main>
 
-      <footer class="landing-footer">
-        <span class="footer-dot"></span>
-        Standalone UI bundle · no backend calls, no Qt widget dependencies
-      </footer>
+        <${TrafficChart} history=${telemetry.history} />
+
+        <${ProcessTable} processes=${telemetry.processes} processCount=${telemetry.processCount} />
+      </main>
     </div>
   `;
 }
