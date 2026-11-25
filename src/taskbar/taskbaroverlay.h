@@ -56,7 +56,7 @@ private:
     QPoint m_dragPos;
 
 signals:
-    // ─── Signals for Menu Actions (Connect these in your MainWindow) ───
+    // ─── Signals for menu actions handled by the application shell ───
     void showMainWindowRequested();
     void minimizeRequested();
     void exitRequested();

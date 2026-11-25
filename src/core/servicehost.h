@@ -25,6 +25,7 @@
 class NetworkWidget;
 class NetworkMonitor;
 class AuditEventStore;
+class ActivityService;
 
 class ServiceHost final : public QObject
 {
@@ -46,6 +47,8 @@ public:
     // later layers (the WebView2 bridge) can read state without ServiceHost
     // growing one accessor per field. Ownership stays here.
     NetworkWidget *network() const { return m_network; }
+    // Activity collection remains available independently of frontend lifetime.
+    ActivityService *activity() const { return m_activity; }
     NetworkMonitor *monitor() const;
     AuditEventStore *auditStore() const;
 
@@ -80,6 +83,7 @@ private:
                              const QString &message);
 
     NetworkWidget *m_network = nullptr;
+    ActivityService *m_activity = nullptr;
     NotificationCoordinator m_notifications;
     bool m_started = false;
 };

@@ -5,6 +5,7 @@
 
 #include "servicehost.h"
 
+#include "activity/activityservice.h"
 #include "network/auditeventstore.h"
 
 #include <QDateTime>
@@ -19,6 +20,8 @@ ServiceHost::ServiceHost(QObject *parent)
 ServiceHost::~ServiceHost()
 {
     stop();
+    delete m_activity;
+    m_activity = nullptr;
     delete m_network;
     m_network = nullptr;
 }
@@ -32,6 +35,7 @@ void ServiceHost::start()
     // enforcement coordinator, the throttle manager and the audit store. It is
     // constructed but never shown: nothing here needs a visible widget.
     m_network = new NetworkWidget;
+    m_activity = new ActivityService(m_network, this);
     connect(m_network, &NetworkWidget::enforcementFailed,
             this, &ServiceHost::onEnforcementFailed);
 
@@ -52,6 +56,8 @@ void ServiceHost::stop()
         monitor->stopCapture();
         monitor->wait(1500);
     }
+    if (m_activity)
+        m_activity->save();
 
     m_started = false;
     emit stopped();

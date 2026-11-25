@@ -26,30 +26,11 @@ RC_FILE  = appicon.rc
 # ─── Source files ───────────────────────────────────────────────────────────
 SOURCES += \
     src/main.cpp \
-    src/core/mainwindow.cpp \
-    src/core/mainwindowpages.cpp \
-    src/core/mainwindowpanels.cpp \
-    src/core/mainwindowtray.cpp \
     src/ui/theme/thememanager.cpp \
-    src/ui/shell/appsidebar.cpp \
-    src/ui/shell/appheader.cpp \
-    src/ui/shell/systemstatusbar.cpp \
-    src/ui/components/statusbadge.cpp \
-    src/ui/components/metriccard.cpp \
-    src/ui/components/emptystatewidget.cpp \
-    src/ui/components/trafficchart.cpp \
-    src/ui/pages/overview/overviewpage.cpp \
-    src/ui/pages/activity/activitypage.cpp \
-    src/ui/pages/applications/applicationspage.cpp \
-    src/ui/pages/applications/applicationspage_models.cpp \
-    src/ui/pages/policies/policiespage.cpp \
-    src/ui/pages/connections/connectionspage.cpp \
-    src/ui/pages/connections/connectionstable.cpp \
-    src/ui/pages/activity/activitytimeline.cpp \
-    src/ui/pages/settings/settingspage.cpp \
     src/activity/activityevent.cpp \
     src/activity/activityseries.cpp \
     src/activity/activitydetector.cpp \
+    src/activity/activityservice.cpp \
     src/activity/detectionprofile.cpp \
     src/core/updatechecker.cpp \
     src/core/appinstaller.cpp \
@@ -129,32 +110,15 @@ SOURCES += \
 # ─── Headers ────────────────────────────────────────────────────────────────
 HEADERS += \
     src/core/version.h \
-    src/core/mainwindow.h \
     src/core/guitiming.h \
     src/ui/theme/colors.h \
     src/ui/theme/typography.h \
     src/ui/theme/dimensions.h \
     src/ui/theme/thememanager.h \
-    src/ui/shell/appsidebar.h \
-    src/ui/shell/appheader.h \
-    src/ui/shell/systemstatusbar.h \
-    src/ui/components/statusbadge.h \
-    src/ui/components/metriccard.h \
-    src/ui/components/emptystatewidget.h \
-    src/ui/components/trafficchart.h \
-    src/ui/pages/overview/overviewpage.h \
-    src/ui/pages/activity/activitypage.h \
-    src/ui/pages/applications/applicationspage.h \
-    src/ui/pages/applications/applicationspage_p.h \
-    src/ui/pages/policies/policiespage.h \
-    src/ui/pages/connections/connectionspage.h \
-    src/ui/pages/connections/connectionstable.h \
-    src/ui/pages/connections/connectionicons.h \
-    src/ui/pages/activity/activitytimeline.h \
-    src/ui/pages/settings/settingspage.h \
     src/activity/activityevent.h \
     src/activity/activityseries.h \
     src/activity/activitydetector.h \
+    src/activity/activityservice.h \
     src/activity/detectionprofile.h \
     src/core/updatechecker.h \
     src/core/appinstaller.h \
@@ -232,7 +196,6 @@ HEADERS += \
 
 # ─── Qt Designer UI forms ────────────────────────────────────────────────────
 FORMS += \
-    src/ui/mainwindow.ui \
     src/ui/networkwidget.ui
 
 # ─── Resources ──────────────────────────────────────────────────────────────
@@ -243,9 +206,6 @@ INCLUDEPATH += \
     src \
     src/core \
     src/ui/theme \
-    src/ui/shell \
-    src/ui/components \
-    src/ui/pages/overview \
     src/network \
     src/firewall \
     src/hardware \

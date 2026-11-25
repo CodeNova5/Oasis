@@ -37,7 +37,7 @@ public:
     static QString readInstalledVersion();
 
     /**
-     * @brief  Entry point called from main() BEFORE MainWindow.
+    * @brief  Entry point called from main() before backend and UI startup.
      * @return true  → continue normal startup (we are in install dir)
      *         false → app was relaunched from install dir; caller must return 0
      */

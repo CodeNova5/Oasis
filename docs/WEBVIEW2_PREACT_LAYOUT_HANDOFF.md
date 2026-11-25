@@ -1,5 +1,19 @@
 # WebView2 + Preact Layout Handoff
 
+## Current State
+
+- `src/main.cpp` starts `ServiceHost` and `WebUiWindow`; the legacy `MainWindow` and its native Overview, Activity, Applications, Connections, Policies, and Settings pages have been removed from the application build.
+- The active Preact/HTM project is `web/ui`. Run `npm run build` there to generate the primary `index.html` bundle and separate Data Saver preview assets under `dist/`.
+- qmake packages `web/ui/dist` beside the executable at `bin/web/ui/dist`; `WebUiWindow` loads `index.html` from that directory.
+- `ActivityService`, owned by `ServiceHost`, continues sampling network summaries, applying the saved detection profile, retaining the time series, and aggregating relevant audit events independently of any page.
+- The existing WebView bridge currently exposes status reads. The Preact pages do not yet consume Activity data or provide full backend command integration; add that through the bridge as the new layouts are implemented.
+- There is no native-page fallback. If WebView2 cannot start, the host displays an error state while backend services remain independent.
+
+The remaining sections are historical notes from the earlier Data Saver-only preview. Their paths, validation results, and native-fallback instructions do not describe the current project state.
+
+<details>
+<summary>Historical Data Saver-only migration notes</summary>
+
 ## Goal
 
 Prepare the first presentation-only stage of the Ultimate NetGuard AIO UI migration:
@@ -171,3 +185,5 @@ any time.
 ## Known repository state
 
 At the time this document was written, `git status` also showed modifications to the Data Saver PRD and ticket documents. Those changes were not part of this WebView2 layout implementation and should be preserved and reviewed separately.
+
+</details>

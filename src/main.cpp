@@ -145,16 +145,14 @@ int main(int argc, char *argv[])
     ThemeManager::instance().apply(&app);
 
     // -- Start the backend services -------------------------------------------
-    // Capture, policy, enforcement and notifications used to be owned by
-    // MainWindow. They now start without any window, so the web UI is the only
-    // front end and the services still run for the whole process lifetime.
+    // Capture, policy, enforcement, notifications, and Activity collection
+    // run independently of the web window for the whole process lifetime.
     ServiceHost services;
     services.start();
 
     // -- Show the web UI ------------------------------------------------------
-    // The window hosts the single Preact + HTM bundle edge to edge. The Qt shell
-    // (sidebar, header, status bar and the native pages) is not part of the UI:
-    // everything on screen comes from web/ui.
+    // The window hosts the single Preact + HTM bundle edge to edge; all visible
+    // application UI comes from web/ui.
     WebUiWindow w(QStringLiteral("web/ui/dist"), QStringLiteral("index.html"),
                   QStringLiteral("Oasis"), &services);
     // The single-instance guard above finds the running window by this exact

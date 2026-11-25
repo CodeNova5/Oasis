@@ -1,5 +1,18 @@
 # WebView2 Runtime Setup and Deployment
 
+## Current Runtime Layout
+
+The active app opens the Preact/HTM frontend from `web/ui/dist/index.html` beside the executable (`bin/web/ui/dist/index.html` in the qmake output). Build the frontend from `web/ui` with `npm run build` before qmake packages the application; the build script also refreshes the checked-out tree's `bin/web/ui/dist` copy.
+
+`Oasis.pro` copies the contents of `web/ui/dist` to `$$DESTDIR/web/ui/dist` after linking. The primary shell uses `index.html`; `datasaver.html` is a separate preview page. The Qt resource file embeds the primary page's assets as resources, while the WebView2 host loads the packaged files beside the executable.
+
+`ServiceHost` starts capture and backend services independently of the WebView2 window. Activity sampling and time-series persistence are owned by `ActivityService`. The legacy native page fallback has been removed. The WebView bridge currently supports `app.status` and `datasaver.status`; Activity and other screen-specific APIs still need to be added before the new frontend can consume those services.
+
+The sections below preserve the earlier Data Saver-only deployment notes and refer to a superseded `web/datasaver` layout. Use the current paths above for this checkout.
+
+<details>
+<summary>Historical Data Saver-only runtime notes</summary>
+
 The Data Saver preview page is hosted in an embedded Microsoft Edge WebView2
 control. This note covers what a build or installation must provide, and how the
 page assets are produced.
@@ -119,3 +132,5 @@ clean build) after touching that rule.
 A build is only complete once `<build dir>/bin/web/datasaver/dist/` contains
 `index.html`, `app.js` and `app.css`. If the folder is missing or empty, the
 post-link copy did not run — see the note on paths with spaces above.
+
+</details>

@@ -94,7 +94,7 @@ void AppInstaller::setFullPermissions(const QString &path)
 }
 
 // ============================================================================
-//  run()  — called from main() before MainWindow
+//  run()  — called from main() before backend and UI startup
 // ============================================================================
 
 bool AppInstaller::run()

@@ -3,24 +3,11 @@
         <file>icons/app.ico</file>
         <file>icons/Oasis.png</file>
     </qresource>
-    <qresource prefix="/icons/sidebar">
-        <file alias="activity.svg">resources/icons/sidebar/activity.svg</file>
-        <file alias="app-image.png">resources/icons/sidebar/app-image.png</file>
-        <file alias="app-window.svg">resources/icons/sidebar/app-window.svg</file>
-        <file alias="clipboard.svg">resources/icons/sidebar/clipboard.svg</file>
-        <file alias="connections.svg">resources/icons/sidebar/connections.svg</file>
-        <file alias="insight.svg">resources/icons/sidebar/insight.svg</file>
-        <file alias="layout-grid.svg">resources/icons/sidebar/layout-grid.svg</file>
-        <file alias="settings.svg">resources/icons/sidebar/settings.svg</file>
-        <file alias="shield.svg">resources/icons/sidebar/shield.svg</file>
-    </qresource>
     <qresource prefix="/theme">
         <file alias="styles/base.qss">src/ui/theme/styles/base.qss</file>
         <file alias="styles/controls.qss">src/ui/theme/styles/controls.qss</file>
         <file alias="styles/data.qss">src/ui/theme/styles/data.qss</file>
         <file alias="styles/overlays.qss">src/ui/theme/styles/overlays.qss</file>
-        <file alias="styles/overview.qss">src/ui/theme/styles/overview.qss</file>
-        <file alias="styles/activity.qss">src/ui/theme/styles/activity.qss</file>
     </qresource>
     <qresource prefix="/fonts">
         <file alias="Inter-Regular.ttf">resources/fonts/Inter-Regular.ttf</file>

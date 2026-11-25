@@ -108,7 +108,6 @@ QString ThemeManager::loadTemplate()
     static const char *const parts[] = {
         ":/theme/styles/base.qss",     ":/theme/styles/controls.qss",
         ":/theme/styles/data.qss",     ":/theme/styles/overlays.qss",
-        ":/theme/styles/overview.qss", ":/theme/styles/activity.qss",
     };
 
     QString templ;
