@@ -89,7 +89,6 @@ function instantiateProcess(blueprint, timestamp) {
     id: `${blueprint.key}-${blueprint.pid}`,
     name: blueprint.name,
     pid: blueprint.pid,
-    monogram: blueprint.monogram,
     tint: blueprint.tint,
     downBps: rate(blueprint.down, timestamp, 0),
     upBps: rate(blueprint.up, timestamp, 1.4),
@@ -100,7 +99,6 @@ function instantiateProcess(blueprint, timestamp) {
       id: `${child.key}-${child.pid}`,
       name: child.name,
       pid: child.pid,
-      monogram: blueprint.monogram,
       tint: blueprint.tint,
       downBps: rate(child.down, timestamp, 0.4 + index * 0.2),
       upBps: rate(child.up, timestamp, 1.8 + index * 0.2),
@@ -192,9 +190,8 @@ export function countProcesses(processes) {
    Native bridge payloads
    ==========================================================================
    `overview.status` returns the contract in docs/overview-architecture.md.
-   These helpers normalise it for the components: missing values become zeroes
-   and each row gets the monogram/tint the table needs, since the backend only
-   sends the measurements. */
+   These helpers normalise it for the components: missing values become zeroes,
+   and each row gets the icon or fallback tint the table needs. */
 
 const PREVIEW_TINTS = [
   '#5a8dee', '#3dd598', '#8e92b2', '#7371fc', '#5ce1e6',
@@ -209,16 +206,12 @@ function tintFor(name) {
   return PREVIEW_TINTS[hash % PREVIEW_TINTS.length];
 }
 
-function monogramFor(name) {
-  const clean = String(name || '').replace(/\.exe$/i, '').trim();
-  const words = clean.split(/[\s._-]+/).filter(Boolean);
-  if (words.length >= 2) return `${words[0][0]}${words[1][0]}`.toUpperCase();
-  return clean.slice(0, 2) || '??';
-}
-
 function normalizeProcess(row, tint) {
   const name = String(row?.name || 'Unknown process');
   const subprocesses = Array.isArray(row?.subprocesses) ? row.subprocesses : [];
+  const icon = typeof row?.icon === 'string' && /^data:image\/[a-z0-9.+-]+;base64,/i.test(row.icon)
+    ? row.icon
+    : null;
 
   return {
     id: String(row?.id || `${name}-${row?.pid || 0}`),
@@ -227,7 +220,7 @@ function normalizeProcess(row, tint) {
     downBps: Number(row?.downBps) || 0,
     upBps: Number(row?.upBps) || 0,
     totalBytes: Number(row?.totalBytes) || 0,
-    monogram: monogramFor(name),
+    icon,
     tint,
     subprocesses: subprocesses.map((child) => normalizeProcess(child, tint)),
   };

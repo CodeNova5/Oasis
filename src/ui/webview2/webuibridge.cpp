@@ -5,10 +5,14 @@
 
 #include "webuibridge.h"
 
+#include <QBuffer>
 #include <QHash>
+#include <QIcon>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPair>
+#include <QPixmap>
 #include <QPointer>
 #include <QSet>
 #include <QStringList>
@@ -140,6 +144,43 @@ QJsonObject appStatus(ServiceHost *services)
     return result;
 }
 
+// Process icons are the executable's own 32 px shell image. They change only
+// when Windows re-resolves the file, so the encoded data URI is cached by
+// executable name instead of being re-encoded on every one-second beat.
+QString overviewIcon(const TopConsumers::Consumer &consumer)
+{
+    if (consumer.icon.isNull())
+        return QString();
+
+    static QHash<QString, QPair<qint64, QString>> cache;
+    const QString key = consumer.name.trimmed().isEmpty()
+        ? QStringLiteral("pid:%1").arg(consumer.pid)
+        : consumer.name.trimmed().toLower();
+    const qint64 cacheKey = consumer.icon.cacheKey();
+    const auto found = cache.constFind(key);
+    if (found != cache.constEnd() && found->first == cacheKey)
+        return found->second;
+
+    const QPixmap pixmap = consumer.icon.pixmap(32, 32);
+    if (pixmap.isNull())
+        return QString();
+
+    QByteArray png;
+    QBuffer buffer(&png);
+    if (!buffer.open(QIODevice::WriteOnly)
+        || !pixmap.toImage().save(&buffer, "PNG")) {
+        return QString();
+    }
+    buffer.close();
+
+    if (cache.size() >= 256)
+        cache.clear();
+    const QString uri = QStringLiteral("data:image/png;base64,")
+        + QString::fromLatin1(png.toBase64());
+    cache.insert(key, qMakePair(cacheKey, uri));
+    return uri;
+}
+
 QJsonObject overviewProcess(const TopConsumers::Consumer &consumer, const QString &name)
 {
     QJsonObject row;
@@ -147,6 +188,9 @@ QJsonObject overviewProcess(const TopConsumers::Consumer &consumer, const QStrin
                QStringLiteral("%1-%2").arg(consumer.name).arg(consumer.pid));
     row.insert(QStringLiteral("name"), name);
     row.insert(QStringLiteral("pid"), static_cast<int>(consumer.pid));
+    const QString icon = overviewIcon(consumer);
+    if (!icon.isEmpty())
+        row.insert(QStringLiteral("icon"), icon);
     row.insert(QStringLiteral("downBps"),
                QJsonValue(static_cast<qint64>(consumer.rxBytesPerSecond)));
     row.insert(QStringLiteral("upBps"),

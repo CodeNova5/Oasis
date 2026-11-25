@@ -92,6 +92,22 @@ export function ProcessTable({ processes, processCount }) {
   `;
 }
 
+function ProcessIcon({ process }) {
+  if (process.icon) {
+    return html`<img class="proc-icon" src=${process.icon} alt="" width="26" height="26" draggable="false" />`;
+  }
+
+  return html`
+    <span class="proc-icon proc-icon-fallback" style=${{ color: process.tint }} aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="16" rx="2.5" />
+        <path d="M3 9h18" />
+        <path d="M7 6.5h.01M10 6.5h.01" />
+      </svg>
+    </span>
+  `;
+}
+
 function ProcessRow({ process, subprocess = false, expanded = false, onToggle }) {
   const hasChildren = process.subprocesses && process.subprocesses.length > 0;
 
@@ -113,13 +129,7 @@ function ProcessRow({ process, subprocess = false, expanded = false, onToggle })
                   ${hasChildren ? chevron : html`<span class="toggle-spacer"></span>`}
                 </button>
               `}
-          <span
-            class="proc-monogram"
-            style=${{ color: process.tint, backgroundColor: `${process.tint}26` }}
-            aria-hidden="true"
-          >
-            ${process.monogram}
-          </span>
+          <${ProcessIcon} process=${process} />
           <span class="proc-name">${process.name}</span>
         </div>
       </td>

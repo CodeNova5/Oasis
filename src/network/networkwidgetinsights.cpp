@@ -31,6 +31,7 @@ void NetworkWidget::refreshDashboard()
         TopConsumers::Consumer consumer;
         consumer.pid = snap.pid;
         consumer.parentPid = snap.parentPid;
+        consumer.icon = snap.icon;
         consumer.name = snap.name;
         consumer.identity = snap.identityName.trimmed().isEmpty()
             ? snap.publisher.trimmed() : snap.identityName.trimmed();

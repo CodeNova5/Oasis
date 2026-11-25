@@ -101,6 +101,7 @@ The page calls the native bridge method `overview.status` once per second over t
       "id": "chrome.exe-1024",
       "name": "chrome.exe",
       "pid": 1024,
+      "icon": "data:image/png;base64,...",
       "downBps": 1562500,
       "upBps": 100000,
       "totalBytes": 1288490188,
@@ -109,6 +110,7 @@ The page calls the native bridge method `overview.status` once per second over t
           "id": "chrome.exe-2048",
           "name": "chrome.exe (GPU Process)",
           "pid": 2048,
+          "icon": "data:image/png;base64,...",
           "downBps": 120000,
           "upBps": 25000,
           "totalBytes": 210000000
@@ -118,3 +120,5 @@ The page calls the native bridge method `overview.status` once per second over t
   ]
 }
 ```
+
+`icon` is the executable's own 32 px shell image encoded as a PNG data URI. `overview.status` omits it when the icon has not resolved yet; the table then renders a generic application glyph. The native side caches the encoded URI per executable, so only the first beat after resolution pays the encoding cost.

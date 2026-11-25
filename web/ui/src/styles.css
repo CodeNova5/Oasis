@@ -589,16 +589,23 @@ button {
   background-color: var(--border-strong);
 }
 
-.proc-monogram {
-  display: grid;
-  place-items: center;
+.proc-icon {
+  display: block;
   width: 26px;
   height: 26px;
   flex-shrink: 0;
   border-radius: var(--radius-sm);
-  font-size: 10.5px;
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.01em;
+  object-fit: contain;
+}
+
+.proc-icon-fallback {
+  display: grid;
+  place-items: center;
+  background-color: var(--bg-surface-hover);
+}
+
+.proc-icon-fallback svg {
+  display: block;
 }
 
 .proc-name {

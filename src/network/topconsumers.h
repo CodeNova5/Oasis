@@ -17,6 +17,7 @@
 #pragma once
 
 #include <QDateTime>
+#include <QIcon>
 #include <QList>
 #include <QString>
 
@@ -36,6 +37,7 @@ struct Consumer
     // PID of the process that started this one, 0 when the lineage is unknown.
     // The Overview page uses it to nest child processes under their real parent.
     quint32 parentPid = 0;
+    QIcon icon;                 // executable's own icon, empty until resolved
     QString name;               // "chrome.exe"
     QString identity;           // "Google Chrome" when resolved, else empty
     QString path;               // executable path, empty when unresolved
