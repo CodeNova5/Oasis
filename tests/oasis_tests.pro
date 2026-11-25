@@ -29,6 +29,7 @@ INCLUDEPATH += $$PWD/../src
 SOURCES += \
     main.cpp \
     ../src/network/policy.cpp \
+    ../src/network/datasavermode.cpp \
     ../src/network/auditeventstore.cpp \
     ../src/network/evidenceexport.cpp \
     ../src/network/auditlogmodel.cpp \
@@ -66,6 +67,7 @@ SOURCES += \
 
 HEADERS += \
     ../src/network/policy.h \
+    ../src/network/datasavermode.h \
     ../src/network/auditeventstore.h \
     ../src/network/evidenceexport.h \
     ../src/network/auditlogmodel.h \

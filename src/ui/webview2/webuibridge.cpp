@@ -23,6 +23,7 @@
 #include "core/servicehost.h"
 #include "core/version.h"
 #include "network/auditeventstore.h"
+#include "network/datasavermode.h"
 #include "network/networkmonitor.h"
 #include "network/networkwidget.h"
 
@@ -104,17 +105,12 @@ QJsonObject okReply(const QJsonValue &id, const QJsonObject &result)
     return reply;
 }
 
-// The legacy control has three states; the automation PRD only has Off and
-// Enforce. Reporting the raw value keeps the bridge honest instead of hiding
-// the intermediate state.
-QString dataSaverModeLabel(int mode)
+// The automation contract exposes only Off and Enforce. An invalid stored mode
+// has already failed closed to Off by the time the bridge reads it, so a
+// "monitor" label can no longer be produced.
+QString dataSaverModeLabel(DataSaverMode::Mode mode)
 {
-    switch (mode) {
-    case 0: return QStringLiteral("off");
-    case 1: return QStringLiteral("monitor");
-    case 2: return QStringLiteral("enforce");
-    default: return QStringLiteral("unknown");
-    }
+    return DataSaverMode::token(mode);
 }
 
 QJsonObject appStatus(ServiceHost *services)
@@ -336,10 +332,15 @@ QJsonObject overviewStatus(ServiceHost *services)
 QJsonObject dataSaverStatus(ServiceHost *services)
 {
     NetworkWidget *network = services ? services->network() : nullptr;
-    const int mode = network ? network->dataSaverMode() : 0;
+    const DataSaverMode::Mode mode = network ? network->dataSaverMode()
+                                             : DataSaverMode::Mode::Off;
+    const bool enforcing = mode == DataSaverMode::Mode::Enforce;
 
     QJsonObject modeObject;
-    modeObject.insert(QStringLiteral("value"), mode);
+    // `token` is canonical; `value` is the deprecated legacy encoding and never
+    // reports the old Monitor state.
+    modeObject.insert(QStringLiteral("token"), DataSaverMode::token(mode));
+    modeObject.insert(QStringLiteral("value"), enforcing ? 2 : 0);
     modeObject.insert(QStringLiteral("label"), dataSaverModeLabel(mode));
 
     QJsonArray throttled;
@@ -360,7 +361,7 @@ QJsonObject dataSaverStatus(ServiceHost *services)
     result.insert(QStringLiteral("schemaVersion"), 1);
     result.insert(QStringLiteral("servicesAvailable"), services != nullptr);
     result.insert(QStringLiteral("mode"), modeObject);
-    result.insert(QStringLiteral("enforcing"), mode == 2);
+    result.insert(QStringLiteral("enforcing"), enforcing);
     result.insert(QStringLiteral("throttledExecutables"), throttled);
     result.insert(QStringLiteral("auditEvents"), audit ? audit->count() : 0);
     result.insert(QStringLiteral("capture"), capture);

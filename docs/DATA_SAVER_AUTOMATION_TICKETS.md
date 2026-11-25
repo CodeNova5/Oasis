@@ -14,7 +14,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
 
 ### DS-001 Resolve automation contracts and measurement units
 
-- **Status:** Not started
+- **Status:** Done
 - **Type:** documentation
 - **Priority:** P0
 - **Dependencies:** None
@@ -24,11 +24,11 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
   - Choose canonical units for byte thresholds and rates. In particular, reconcile the 50 KiB/s default with the example `rx_kbps: 64`, and state whether each 10/25/50/100 MB threshold uses decimal MB or MiB.
   - Define how `notify_then_continue` maps to the existing policy/action model and how AI/profile decisions are distinguished from user-pinned policy origins.
   - Document the migration mapping for the existing three-state Data Saver setting to the required `Off` and `Enforce` modes.
-- **Validation:** PRD addendum or contract document reviewed against existing `NetworkPolicy`, `ActivityObservation`, enforcement-rate units, and stored mode values.
+- **Validation:** Recorded in [DATA_SAVER_CONTRACT.md](DATA_SAVER_CONTRACT.md); reviewed against `NetworkPolicy`, `ActivityObservation`, `EnforcementResult`, the 409,600 bit/s throttle default, and the stored mode values.
 
 ### DS-002 Migrate Data Saver to safe Off/Enforce modes
 
-- **Status:** Not started
+- **Status:** Done
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** DS-001
@@ -39,7 +39,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
   - `Off` stops Data Saver evaluation and withdraws only Data Saver-owned automatic controls; user-pinned policies remain active.
   - `Enforce` starts evaluation without changing or bypassing higher-priority user policies.
   - Invalid or newer stored values fail closed to `Off` and produce a diagnosable result.
-- **Validation:** Unit tests cover old values, malformed/newer values, restart persistence, idempotency, and user-policy preservation.
+- **Validation:** `tests/main.cpp` `testDataSaverModeContract` covers legacy 0/1/2 values, malformed and newer stored values, idempotent migration, and Off/Enforce persistence across reloads. `Off` withdraws automatic controls through `restoreAllDataSaverPolicies`; user-policy preservation on that path is covered by `testEmergencyRestorePlan`.
 
 ## Phase 1: Observation and milestones
 

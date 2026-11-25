@@ -15,6 +15,7 @@
 #include "networkmonitor.h"
 #include "networkmodel.h"
 #include "bandwidthguard.h"
+#include "datasavermode.h"
 #include "throttlepolicymanager.h"
 #include "diagnostics.h"
 #include "enforcementrestore.h"
@@ -64,7 +65,7 @@ public:
     // redesigned Overview screen's "Start monitoring" action, which may be
     // pressed before the first automatic start has happened.
     void startMonitoring();
-    void setDataSaverMode(int mode);
+    void setDataSaverMode(DataSaverMode::Mode mode);
     // Takes back the controls the product applied on its own (NG-026) and
     // reports which policies were removed, which were kept, and what failed.
     void restoreAllDataSaverPolicies();
@@ -156,9 +157,10 @@ public:
     // list stored policies, whose executables are often not running.
     QIcon executableIcon(const QString &executablePath);
     bool isCapturing() const { return m_capturing; }
-    // 0 = off, 1 = monitor, 2 = enforce. The legacy three-state control predates
-    // the Data Saver automation PRD; a host maps it to its own vocabulary.
-    int dataSaverMode() const { return m_dataSaverMode; }
+    // The two enforceable modes from the automation contract (DS-001). Loaded
+    // from versioned settings at construction; the legacy Monitor state no
+    // longer exists and a stored one migrates to Off.
+    DataSaverMode::Mode dataSaverMode() const { return m_dataSaverMode; }
     // Normalized paths the throttle manager is currently shaping, so a status
     // reader reports what is actually limited rather than what was requested.
     QStringList throttledPaths() const { return m_throttlePolicies ? m_throttlePolicies->activePaths() : QStringList(); }
@@ -271,7 +273,7 @@ private:
     QList<AdapterInfo>      m_adapters;
     bool                    m_capturing = false;
     quint64                 m_totalPkts = 0;
-    int                     m_dataSaverMode = 1;
+    DataSaverMode::Mode     m_dataSaverMode = DataSaverMode::Mode::Off;
     // Batches arrive several times a second; the destination resolver behind it
     // shares a mutex with the capture thread, so it runs at most once per
     // kDomainRefreshMs from the batch path.

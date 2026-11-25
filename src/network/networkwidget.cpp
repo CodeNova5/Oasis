@@ -9,6 +9,8 @@
  */
 #include "networkwidget_p.h"
 
+#include <QSettings>
+
 namespace {
 
 // NG-050: audit records use plain words so they stay readable after export.
@@ -56,6 +58,39 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     , ui(new Ui::NetworkWidget)
 {
     ui->setupUi(this);
+
+    // Data Saver starts Off unless a valid stored mode says otherwise. The load
+    // performs the one-time legacy migration (off/monitor/enforce -> Off/Enforce)
+    // and writes the versioned keys, so a second start never re-reads the old
+    // three-state value.
+    QSettings dataSaverSettings;
+    const DataSaverMode::LoadResult storedMode = DataSaverMode::load(dataSaverSettings);
+    m_dataSaverMode = storedMode.mode;
+    if (storedMode.migrated || storedMode.invalid || storedMode.writeFailed) {
+        AuditEvent modeAudit;
+        modeAudit.type = AuditEvent::EventType::PolicyChange;
+        modeAudit.scope = QStringLiteral("Data Saver mode");
+        modeAudit.reason = storedMode.invalid
+            ? QStringLiteral("stored Data Saver mode rejected; automation remains off")
+            : (storedMode.migrated
+                   ? QStringLiteral("legacy Data Saver mode migrated")
+                   : QStringLiteral("Data Saver mode could not be written to settings"));
+        modeAudit.result = storedMode.invalid
+            ? QStringLiteral("rejected")
+            : DataSaverMode::token(storedMode.mode);
+        if (!storedMode.diagnostic.isEmpty())
+            modeAudit.errorInfo = storedMode.diagnostic;
+        if (storedMode.writeFailed) {
+            const QString writeError = QStringLiteral("the mode could not be written to settings");
+            modeAudit.errorInfo = modeAudit.errorInfo.isEmpty()
+                                      ? writeError
+                                      : modeAudit.errorInfo + QStringLiteral("; ") + writeError;
+        }
+        if (storedMode.legacyValueKnown)
+            modeAudit.details = QStringLiteral("legacy mode %1 migrated").arg(storedMode.legacyValue);
+        m_auditStore.append(modeAudit);
+    }
+
     // ── Ensure Windows Firewall Inbound Rule for Application Traffic ──
     QString appPath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
     QProcess::execute("netsh", {"advfirewall", "firewall", "add", "rule", "name=Oasis", "dir=in", "action=allow", "program=" + appPath, "enable=yes"});

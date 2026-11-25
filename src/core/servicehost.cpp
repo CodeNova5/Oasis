@@ -73,7 +73,7 @@ AuditEventStore *ServiceHost::auditStore() const
     return m_network ? m_network->auditStore() : nullptr;
 }
 
-void ServiceHost::setDataSaverMode(int mode)
+void ServiceHost::setDataSaverMode(DataSaverMode::Mode mode)
 {
     if (m_network)
         m_network->setDataSaverMode(mode);

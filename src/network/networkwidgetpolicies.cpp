@@ -8,6 +8,8 @@
  */
 #include "networkwidget_p.h"
 
+#include <QSettings>
+
 namespace {
 
 static QString bandwidthUsageText(const BandwidthEvent &event)
@@ -825,13 +827,13 @@ void NetworkWidget::exemptProcess(const QString &processName, int durationSecond
 
 void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
 {
-    if (m_dataSaverMode == 0) return;
+    if (m_dataSaverMode == DataSaverMode::Mode::Off) return;
 
     const QString usageText = bandwidthUsageText(event);
 
     // Only background updaters are acted on automatically. User-facing apps
     // remain notification-only until the user chooses a context-menu action.
-    if (m_dataSaverMode != 2 || event.category != ProcessCategory::AutoCandidate) {
+    if (m_dataSaverMode != DataSaverMode::Mode::Enforce || event.category != ProcessCategory::AutoCandidate) {
         ui->lblStatus->setText("⚠ " + usageText);
         emit bandwidthAlert(event);
         return;
@@ -865,20 +867,35 @@ void NetworkWidget::onBandwidthDetected(const BandwidthEvent &event)
     m_throttlePolicies->apply(event.executablePath, true);
 }
 
-void NetworkWidget::setDataSaverMode(int mode)
+void NetworkWidget::setDataSaverMode(DataSaverMode::Mode mode)
 {
-    const bool leavingEnforceMode = m_dataSaverMode == 2 && mode != 2;
-    m_dataSaverMode = qBound(0, mode, 2);
+    if (mode == m_dataSaverMode)
+        return;
+
+    const bool leavingEnforceMode = m_dataSaverMode == DataSaverMode::Mode::Enforce;
+    m_dataSaverMode = mode;
+
+    // Persist before withdrawing anything. If the process exits during the
+    // restore, the next start must not come back enforcing a mode the user
+    // already left.
+    QSettings settings;
+    const bool persisted = DataSaverMode::save(settings, mode);
 
     if (leavingEnforceMode)
         restoreAllDataSaverPolicies();
 
-    if (m_dataSaverMode == 0)
-        ui->lblStatus->setText("Data Saver is off.");
-    else if (m_dataSaverMode == 1)
-        ui->lblStatus->setText("Data Saver is monitoring.");
-    else
-        ui->lblStatus->setText("Data Saver enforcement is enabled.");
+    ui->lblStatus->setText(mode == DataSaverMode::Mode::Off
+                               ? QStringLiteral("Data Saver is off.")
+                               : QStringLiteral("Data Saver enforcement is enabled."));
+
+    AuditEvent audit;
+    audit.type = AuditEvent::EventType::PolicyChange;
+    audit.scope = QStringLiteral("Data Saver mode");
+    audit.reason = QStringLiteral("mode changed");
+    audit.result = DataSaverMode::token(mode);
+    if (!persisted)
+        audit.errorInfo = QStringLiteral("the mode could not be written to settings");
+    m_auditStore.append(audit);
 }
 
 void NetworkWidget::restoreAllDataSaverPolicies()

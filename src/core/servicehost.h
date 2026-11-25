@@ -20,6 +20,7 @@
 #include <QObject>
 #include <QString>
 
+#include "network/datasavermode.h"
 #include "network/notificationcoordinator.h"
 
 class NetworkWidget;
@@ -54,7 +55,7 @@ public:
 
     // Data Saver controls. The mode is persisted and applied by the existing
     // NetworkWidget policy path; this is only the headless entry point.
-    void setDataSaverMode(int mode);
+    void setDataSaverMode(DataSaverMode::Mode mode);
     void restoreDataSaverPolicies();
 
     // Notifications: one dedupe/priority coordinator for the whole process.

@@ -47,6 +47,7 @@
 #include "network/evidenceexport.h"
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
+#include "network/datasavermode.h"
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
@@ -6101,6 +6102,181 @@ void testActivityDetector()
     }
 }
 
+// ─── DS-002: Data Saver Off/Enforce persistence and migration ──────────────
+// The automation contract has exactly two modes. The legacy three-state control
+// maps Monitor to Off, an unsupported value fails closed, and the migration runs
+// exactly once.
+
+void clearDataSaverModeSettings()
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(DataSaverMode::Store::kGroup));
+    settings.remove(QString());
+    settings.endGroup();
+    settings.sync();
+}
+
+QString storedDataSaverMode()
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(DataSaverMode::Store::kGroup));
+    const QString value = settings.value(QLatin1String(DataSaverMode::Store::kModeKey)).toString();
+    settings.endGroup();
+    return value;
+}
+
+int storedDataSaverVersion()
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(DataSaverMode::Store::kGroup));
+    const int value = settings.value(QLatin1String(DataSaverMode::Store::kVersionKey), -1).toInt();
+    settings.endGroup();
+    return value;
+}
+
+void testDataSaverModeContract()
+{
+    clearDataSaverModeSettings();
+
+    // Clean install. There is no Monitor default any more, and the versioned
+    // form is written so the next start does not have to guess.
+    QSettings settings;
+    DataSaverMode::LoadResult fresh = DataSaverMode::load(settings);
+    check(fresh.mode == DataSaverMode::Mode::Off,
+          QStringLiteral("a clean install starts Off"));
+    check(!fresh.migrated && !fresh.invalid && !fresh.writeFailed,
+          QStringLiteral("a clean install is neither a migration nor a rejection"));
+    checkEqual(storedDataSaverVersion(), DataSaverMode::Store::kCurrentVersion,
+               QStringLiteral("the versioned mode is written on first start"));
+    checkEqual(storedDataSaverMode(), QStringLiteral("off"),
+               QStringLiteral("the stored token for a clean install is off"));
+
+    // Legacy Monitor migrates to Off, and the raw value is retained for support.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), 1);
+    settings.sync();
+    DataSaverMode::LoadResult monitor = DataSaverMode::load(settings);
+    check(monitor.mode == DataSaverMode::Mode::Off,
+          QStringLiteral("legacy Monitor migrates to Off"));
+    check(monitor.migrated && monitor.legacyValueKnown && monitor.legacyValue == 1,
+          QStringLiteral("the migration reports the legacy value it saw"));
+    checkEqual(storedDataSaverMode(), QStringLiteral("off"),
+               QStringLiteral("Monitor is persisted as off"));
+    checkEqual(settings.value(QStringLiteral("Oasis/DataSaver/legacyValue")).toInt(), 1,
+               QStringLiteral("the legacy value is retained for diagnostics"));
+
+    // Idempotent: once version 2 exists the old key is ignored, even if an old
+    // build writes a Monitor value back.
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), 1);
+    settings.sync();
+    DataSaverMode::LoadResult again = DataSaverMode::load(settings);
+    check(again.mode == DataSaverMode::Mode::Off,
+          QStringLiteral("a resubmitted legacy Monitor value stays Off"));
+    check(!again.migrated,
+          QStringLiteral("an existing versioned mode is not migrated a second time"));
+    checkEqual(storedDataSaverMode(), QStringLiteral("off"),
+               QStringLiteral("a reload leaves the stored mode untouched"));
+
+    // Legacy Enforce keeps enforcing.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), 2);
+    settings.sync();
+    DataSaverMode::LoadResult legacyEnforce = DataSaverMode::load(settings);
+    check(legacyEnforce.mode == DataSaverMode::Mode::Enforce && legacyEnforce.migrated,
+          QStringLiteral("legacy Enforce migrates to Enforce"));
+    checkEqual(storedDataSaverMode(), QStringLiteral("enforce"),
+               QStringLiteral("Enforce is persisted as a token"));
+
+    // Legacy Off stays Off.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), 0);
+    settings.sync();
+    check(DataSaverMode::load(settings).mode == DataSaverMode::Mode::Off,
+          QStringLiteral("legacy Off stays Off"));
+
+    // An out-of-range legacy value fails closed and is diagnosable.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), 7);
+    settings.sync();
+    DataSaverMode::LoadResult invalidLegacy = DataSaverMode::load(settings);
+    check(invalidLegacy.mode == DataSaverMode::Mode::Off && invalidLegacy.invalid,
+          QStringLiteral("an unsupported legacy value fails closed to Off"));
+    check(!invalidLegacy.diagnostic.isEmpty(),
+          QStringLiteral("an unsupported legacy value produces a diagnostic"));
+
+    // A string in the legacy slot is not guessed at.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), QStringLiteral("enforce"));
+    settings.sync();
+    DataSaverMode::LoadResult stringLegacy = DataSaverMode::load(settings);
+    check(stringLegacy.mode == DataSaverMode::Mode::Off && stringLegacy.invalid,
+          QStringLiteral("a string legacy value fails closed"));
+
+    // Enforce survives a restart.
+    clearDataSaverModeSettings();
+    check(DataSaverMode::save(settings, DataSaverMode::Mode::Enforce),
+          QStringLiteral("saving Enforce succeeds"));
+    settings.sync();
+    checkEqual(storedDataSaverMode(), QStringLiteral("enforce"),
+               QStringLiteral("Enforce is written as a token"));
+    check(DataSaverMode::load(settings).mode == DataSaverMode::Mode::Enforce,
+          QStringLiteral("Enforce survives a reload"));
+
+    // A newer version is rejected whole and left for the newer build.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/modeVersion"), 3);
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), QStringLiteral("enforce"));
+    settings.sync();
+    DataSaverMode::LoadResult newer = DataSaverMode::load(settings);
+    check(newer.mode == DataSaverMode::Mode::Off && newer.invalid,
+          QStringLiteral("a newer stored mode version fails closed"));
+    checkEqual(storedDataSaverVersion(), 3,
+               QStringLiteral("a newer version is not overwritten"));
+    checkEqual(storedDataSaverMode(), QStringLiteral("enforce"),
+               QStringLiteral("a newer version's mode value is not overwritten"));
+
+    // A version 2 payload with the retired Monitor token fails closed.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/modeVersion"), 2);
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), QStringLiteral("monitor"));
+    settings.sync();
+    DataSaverMode::LoadResult monitorToken = DataSaverMode::load(settings);
+    check(monitorToken.mode == DataSaverMode::Mode::Off && monitorToken.invalid,
+          QStringLiteral("the retired monitor token fails closed"));
+    checkEqual(storedDataSaverMode(), QStringLiteral("off"),
+               QStringLiteral("an unsupported current-version token is repaired to off"));
+
+    // Missing mode under version 2 fails closed.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/modeVersion"), 2);
+    settings.sync();
+    check(DataSaverMode::load(settings).mode == DataSaverMode::Mode::Off,
+          QStringLiteral("a missing mode under version 2 fails closed"));
+
+    // A non-numeric version is not coerced.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/modeVersion"), QStringLiteral("2"));
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), QStringLiteral("enforce"));
+    settings.sync();
+    DataSaverMode::LoadResult stringVersion = DataSaverMode::load(settings);
+    check(stringVersion.mode == DataSaverMode::Mode::Off && stringVersion.invalid,
+          QStringLiteral("a string version fails closed"));
+
+    // Tokens are normalized; an explicit Off persists.
+    clearDataSaverModeSettings();
+    settings.setValue(QStringLiteral("Oasis/DataSaver/modeVersion"), 2);
+    settings.setValue(QStringLiteral("Oasis/DataSaver/mode"), QStringLiteral("ENFORCE"));
+    settings.sync();
+    check(DataSaverMode::load(settings).mode == DataSaverMode::Mode::Enforce,
+          QStringLiteral("a stored token is read case-insensitively"));
+    check(DataSaverMode::save(settings, DataSaverMode::Mode::Off),
+          QStringLiteral("saving Off succeeds"));
+    check(DataSaverMode::load(settings).mode == DataSaverMode::Mode::Off,
+          QStringLiteral("Off survives a reload"));
+
+    clearDataSaverModeSettings();
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -6117,6 +6293,7 @@ int main(int argc, char *argv[])
     testThrottleResultRoundTrip();
     testAuditEventRoundTrip();
     testSchemaVersionGate();
+    testDataSaverModeContract();
 
     testFixtures();
     testDiagnosticsExportSchema();
