@@ -51,6 +51,7 @@
 #include "network/flowobservation.h"
 #include "network/volumemilestone.h"
 #include "network/datasaverrules.h"
+#include "network/datasaverprofiles.h"
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
@@ -7178,6 +7179,215 @@ void testDataSaverRules()
     clearPinnedRuleStore();
 }
 
+// ─── DS-006: local signatures and profile rules ─────────────────────────────
+
+void testLocalSignatures()
+{
+    FlowObservation updaterObservation = makeMilestoneObservation(
+        QStringLiteral("flow_aaaaaaaaaaaaaaaa"), QStringLiteral("pid:100:1000"),
+        QStringLiteral("update.googleapis.com"), 12 * VolumeMilestone::kMiB);
+    updaterObservation.process.exeName = QStringLiteral("chromeupdate.exe");
+    updaterObservation.process.foregroundState = FlowForegroundState::Background;
+    updaterObservation.process.interactionState = FlowInteractionState::Idle;
+
+    ActivityQuery updaterQuery;
+    updaterQuery.executableName = QStringLiteral("chromeupdate.exe");
+    updaterQuery.publisher = QStringLiteral("Google LLC");
+    updaterQuery.publisherVerified = true;
+    updaterQuery.product = QStringLiteral("Google Update");
+    updaterQuery.displayName = QStringLiteral("Google Update");
+    updaterQuery.domain = QStringLiteral("update.googleapis.com");
+
+    LocalSignatureInput updaterInput;
+    updaterInput.observation = updaterObservation;
+    updaterInput.activity = updaterQuery;
+
+    LocalSignatureEngine engine;
+    const SignatureResult background = engine.classify(updaterInput);
+    check(background.classification == SignatureClassification::AppUpdate,
+          QStringLiteral("a known browser updater is classified as an app update"));
+    check(background.confidence > 0.70,
+          QStringLiteral("a catalog match carries usable confidence"));
+    check(!background.matchedSignatureIds.isEmpty(),
+          QStringLiteral("the signature match is named"));
+    check(background.detectorTags.contains(QStringLiteral("browser_update_signature")),
+          QStringLiteral("a browser updater gets its detector tag"));
+    check(background.action == NetworkPolicy::Action::Throttle
+              && background.rateBitsPerSecond == 409600,
+          QStringLiteral("background updates recommend the canonical gentle throttle"));
+    check(!background.advisoryOnly,
+          QStringLiteral("a throttle recommendation is not advisory-only"));
+    check(!background.profileRuleId.isEmpty()
+              && background.reason.contains(QStringLiteral("signatures:")),
+          QStringLiteral("the profile match is explainable"));
+
+    // Foreground-active traffic is never throttled.
+    FlowObservation activeObservation = updaterObservation;
+    activeObservation.process.foregroundState = FlowForegroundState::ForegroundActive;
+    activeObservation.process.interactionState = FlowInteractionState::Interactive;
+    updaterInput.observation = activeObservation;
+    const SignatureResult active = engine.classify(updaterInput);
+    check(active.foreground == ProfileForeground::Active,
+          QStringLiteral("fresh interaction evidence gives foreground-active"));
+    check(active.action == NetworkPolicy::Action::Notify
+              && active.continueAfterNotify && active.advisoryOnly,
+          QStringLiteral("a foreground updater is notify-only"));
+
+    // A visible app with no interaction evidence is foreground-idle.
+    FlowObservation idleObservation = updaterObservation;
+    idleObservation.process.foregroundState = FlowForegroundState::ForegroundActive;
+    idleObservation.process.interactionState = FlowInteractionState::Idle;
+    updaterInput.observation = idleObservation;
+    const SignatureResult idle = engine.classify(updaterInput);
+    check(idle.foreground == ProfileForeground::Idle,
+          QStringLiteral("idle interaction gives foreground-idle"));
+    check(idle.action == NetworkPolicy::Action::Notify,
+          QStringLiteral("a foreground-idle updater is not throttled"));
+
+    // Stale or missing foreground evidence is unknown, never guessed.
+    FlowObservation staleObservation = updaterObservation;
+    staleObservation.process.foregroundState = FlowForegroundState::Unknown;
+    staleObservation.process.interactionState = FlowInteractionState::Unknown;
+    updaterInput.observation = staleObservation;
+    const SignatureResult stale = engine.classify(updaterInput);
+    check(stale.foreground == ProfileForeground::Unknown,
+          QStringLiteral("stale foreground evidence stays unknown"));
+    check(stale.action != NetworkPolicy::Action::Throttle
+              && stale.action != NetworkPolicy::Action::Block,
+          QStringLiteral("unknown foreground evidence never throttles or blocks"));
+
+    // Protected services are allow-only.
+    FlowObservation serviceObservation = updaterObservation;
+    serviceObservation.process.exeName = QStringLiteral("svchost.exe");
+    serviceObservation.process.role = FlowProcessRole::Service;
+    serviceObservation.flow.domain.clear();
+    ActivityQuery serviceQuery;
+    serviceQuery.executableName = QStringLiteral("svchost.exe");
+    serviceQuery.service = true;
+    LocalSignatureInput serviceInput;
+    serviceInput.observation = serviceObservation;
+    serviceInput.activity = serviceQuery;
+    const SignatureResult service = engine.classify(serviceInput);
+    check(service.detectorTags.contains(QStringLiteral("protected_signature")),
+          QStringLiteral("a protected service is tagged as protected"));
+    check(service.action == NetworkPolicy::Action::Allow && service.advisoryOnly,
+          QStringLiteral("a protected service is advisory-only"));
+
+    // Latency-sensitive activity cannot be throttled or blocked.
+    FlowObservation latencyObservation = updaterObservation;
+    latencyObservation.uxSignals.latencySensitive = true;
+    updaterInput.observation = latencyObservation;
+    const SignatureResult latency = engine.classify(updaterInput);
+    check(latency.detectorTags.contains(QStringLiteral("latency_sensitive_signature")),
+          QStringLiteral("a latency-sensitive signal is tagged"));
+    check(latency.action == NetworkPolicy::Action::Notify && latency.advisoryOnly,
+          QStringLiteral("latency-sensitive activity is notify-only"));
+
+    // Unknown activity gets a conservative notify and is not a signature match.
+    FlowObservation unknownObservation = makeMilestoneObservation(
+        QStringLiteral("flow_bbbbbbbbbbbbbbbb"), QStringLiteral("pid:200:1000"),
+        QString(), 1 * VolumeMilestone::kMiB);
+    unknownObservation.process.exeName = QStringLiteral("mystery.exe");
+    unknownObservation.process.foregroundState = FlowForegroundState::Background;
+    ActivityQuery unknownQuery;
+    unknownQuery.executableName = QStringLiteral("mystery.exe");
+    LocalSignatureInput unknownInput;
+    unknownInput.observation = unknownObservation;
+    unknownInput.activity = unknownQuery;
+    const SignatureResult unknown = engine.classify(unknownInput);
+    check(unknown.classification == SignatureClassification::Unknown
+              && !unknown.matched,
+          QStringLiteral("an unlisted executable stays unknown"));
+    check(unknown.detectorTags.contains(QStringLiteral("unknown_signature"))
+              && unknown.action == NetworkPolicy::Action::Notify
+              && unknown.advisoryOnly,
+          QStringLiteral("unknown activity gets a conservative notification"));
+
+    // A package-manager catalog rule drives the package-install profile.
+    EndpointCatalog catalog;
+    CatalogRule packageRule;
+    packageRule.id = QStringLiteral("test-package-install");
+    packageRule.category = CatalogCategory::PackageManager;
+    packageRule.executableName = QStringLiteral("setup.exe");
+    packageRule.explanation = QStringLiteral("Test package installer");
+    QString error;
+    check(catalog.upsertRule(packageRule, &error),
+          QStringLiteral("the test package rule is valid: %1").arg(error));
+    LocalSignatureEngine packageEngine(catalog, defaultProfileRules());
+
+    FlowObservation packageObservation = makeMilestoneObservation(
+        QStringLiteral("flow_cccccccccccccccc"), QStringLiteral("pid:300:1000"),
+        QString(), 12 * VolumeMilestone::kMiB);
+    packageObservation.process.exeName = QStringLiteral("setup.exe");
+    packageObservation.process.foregroundState = FlowForegroundState::ForegroundActive;
+    packageObservation.process.interactionState = FlowInteractionState::Interactive;
+    ActivityQuery packageQuery;
+    packageQuery.executableName = QStringLiteral("setup.exe");
+    LocalSignatureInput packageInput;
+    packageInput.observation = packageObservation;
+    packageInput.activity = packageQuery;
+    const SignatureResult interactivePackage = packageEngine.classify(packageInput);
+    check(interactivePackage.classification == SignatureClassification::PackageInstall,
+          QStringLiteral("a package manager is classified as a package install"));
+    check(interactivePackage.action == NetworkPolicy::Action::Allow
+              && interactivePackage.advisoryOnly,
+          QStringLiteral("an interactive package install is allowed"));
+
+    packageObservation.process.foregroundState = FlowForegroundState::Background;
+    packageObservation.process.interactionState = FlowInteractionState::Idle;
+    packageInput.observation = packageObservation;
+    const SignatureResult backgroundPackage = packageEngine.classify(packageInput);
+    check(backgroundPackage.action == NetworkPolicy::Action::Notify
+              && backgroundPackage.action != NetworkPolicy::Action::Block,
+          QStringLiteral("a background package install is notify-only"));
+
+    // A custom profile change is applied and explainable.
+    ProfileRule custom;
+    custom.id = QStringLiteral("profile_custom_app_update");
+    custom.detectorTag = QStringLiteral("app_update_signature");
+    custom.foreground = ProfileForeground::Background;
+    custom.classification = SignatureClassification::AppUpdate;
+    custom.action = NetworkPolicy::Action::Notify;
+    custom.continueAfterNotify = true;
+    custom.scope = QStringLiteral("executable");
+    custom.advisoryOnly = true;
+    LocalSignatureEngine profileEngine;
+    check(profileEngine.setProfileRules(QList<ProfileRule>() << custom, &error),
+          QStringLiteral("a custom profile is accepted: %1").arg(error));
+    updaterInput.observation = updaterObservation;
+    const SignatureResult customResult = profileEngine.classify(updaterInput);
+    check(customResult.action == NetworkPolicy::Action::Notify
+              && customResult.profileRuleId == custom.id,
+          QStringLiteral("the custom profile changes the recommendation"));
+
+    ProfileRule invalidRule = custom;
+    invalidRule.id.clear();
+    check(!profileEngine.setProfileRules(QList<ProfileRule>() << invalidRule, &error),
+          QStringLiteral("an invalid profile rule is rejected"));
+    check(profileEngine.profileRules().size() == 1
+              && profileEngine.profileRules().first().id == custom.id,
+          QStringLiteral("a rejected profile change leaves the active profile untouched"));
+
+    // Even a custom block rule is downgraded for an active package install.
+    ProfileRule blockRule;
+    blockRule.id = QStringLiteral("profile_block_package");
+    blockRule.detectorTag = QStringLiteral("package_install_signature");
+    blockRule.foreground = ProfileForeground::Active;
+    blockRule.classification = SignatureClassification::PackageInstall;
+    blockRule.action = NetworkPolicy::Action::Block;
+    blockRule.scope = QStringLiteral("executable");
+    blockRule.minimumConfidence = 0.0;
+    check(packageEngine.setProfileRules(QList<ProfileRule>() << blockRule, &error),
+          QStringLiteral("the custom block profile is accepted: %1").arg(error));
+    packageObservation.process.foregroundState = FlowForegroundState::ForegroundActive;
+    packageObservation.process.interactionState = FlowInteractionState::Interactive;
+    packageInput.observation = packageObservation;
+    const SignatureResult guarded = packageEngine.classify(packageInput);
+    check(guarded.action == NetworkPolicy::Action::Notify
+              && guarded.reason.contains(QStringLiteral("guards:")),
+          QStringLiteral("a package install block is downgraded to a notice"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -7199,6 +7409,7 @@ int main(int argc, char *argv[])
     testFlowObservationBuilder();
     testVolumeMilestones();
     testDataSaverRules();
+    testLocalSignatures();
 
     testFixtures();
     testDiagnosticsExportSchema();

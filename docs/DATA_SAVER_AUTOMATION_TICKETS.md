@@ -90,7 +90,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
 
 ### DS-006 Add local signatures and profile rules
 
-- **Status:** Not started
+- **Status:** Partial
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** DS-001, DS-003
@@ -101,7 +101,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
   - Protected executables, interactive package installs, latency-sensitive activity, and unknown activity receive conservative outcomes.
   - Foreground-idle is based on fresh process/foreground evidence, not window-title inference; stale evidence becomes unknown.
   - A rule match is explainable and never enforces by itself outside the policy resolver.
-- **Validation:** Tests cover known/unknown signatures, foreground transitions, stale samples, protected applications, and profile changes.
+- **Validation:** `src/network/datasaverprofiles.{h,cpp}` implements `LocalSignatureEngine`, ordered `ProfileRule` matching by detector tag and foreground state, conservative guards, and explainable recommendations without an enforcement channel; it reuses `EndpointCatalog`, `ActivityClassifier`, and `BandwidthGuard`. `tests/main.cpp` `testLocalSignatures` covers known/unknown signatures, foreground-active/idle/unknown transitions, stale samples, protected services, latency-sensitive activity, interactive/background package installs, profile changes, invalid-profile rejection, and block downgrades. Source review complete; harness/build verification is pending because the user will run it.
 
 ### DS-007 Implement evidence fingerprint cache
 

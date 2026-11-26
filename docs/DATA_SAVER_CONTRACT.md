@@ -325,6 +325,13 @@ not in the policy enum, so the stored policy format version does not change.
   executable + domain. A winning pin is applied through the existing policy/enforcement path by
   DS-009, so `PolicyOrigin` stays the restore boundary and there is no parallel enforcement engine.
 - The global mode never overrides a pinned rule. `off` suppresses automation evaluation only (§7).
+- DS-006 resolves local signatures with `src/network/datasaverprofiles.{h,cpp}`. The engine reuses
+  `EndpointCatalog`/`BandwidthGuard`, emits classification, confidence, matched evidence, detector
+  tags, and a recommended action/scope, then applies the first matching profile rule keyed by
+  detector tag and foreground state. Profile rules never capture, attribute, or enforce traffic.
+  Foreground-active, protected, latency-sensitive, package-install, and unknown activity are
+  guarded against throttle/block; stale foreground evidence is represented as `unknown`, never
+  inferred from a window title.
 
 ## 6. Committed decision, audit, and notification
 
@@ -505,6 +512,7 @@ never call enforcement or touch the policy store.
 | Channel routing | `plannedChannels()` (`src/network/enforcementrestore.cpp`) |
 | Milestone accounting/dedupe | `src/network/volumemilestone.{h,cpp}` (`thresholdBytes`, `VolumeMilestoneEvaluator`) |
 | Pinned rules / session overrides | `src/network/datasaverrules.{h,cpp}` (`PinnedRuleStore`, `SessionOverrideStore`, `RuleResolver`) |
+| Local signatures / profile rules | `src/network/datasaverprofiles.{h,cpp}` (`LocalSignatureEngine`, `ProfileRule`, `defaultProfileRules`) |
 | Audit records | `AuditEvent` (`src/network/policy.h`), `AuditEventStore` (`src/network/auditeventstore.h`) |
 | Notification dedupe/priority | `src/network/notificationcoordinator.h` |
 | Mode values | `src/network/datasavermode.{h,cpp}` (`load`/`save`, legacy migration), `NetworkWidget::setDataSaverMode()` |
