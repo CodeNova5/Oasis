@@ -11,6 +11,8 @@
 
 #include <QSettings>
 
+#include "attribution/endpointcatalog.h"
+
 namespace {
 
 // NG-050: audit records use plain words so they stay readable after export.
@@ -53,6 +55,31 @@ FlowDomainConfidence flowDomainConfidenceFor(ApplicationIdentity::Confidence con
     case ApplicationIdentity::Confidence::Unknown:         break;
     }
     return FlowDomainConfidence::Unknown;
+}
+
+// DS-008: a milestone crossing names a flow, process, or domain scope rather
+// than one builder observation, so the evaluation input is matched by the
+// stable ids the crossing carries.
+const FlowObservation *observationForCrossing(const QList<FlowObservation> &observations,
+                                              const MilestoneCrossing &crossing)
+{
+    const FlowObservation *processMatch = nullptr;
+    const FlowObservation *domainMatch = nullptr;
+    for (const FlowObservation &observation : observations) {
+        if (!crossing.flowId.isEmpty() && observation.flow.flowId == crossing.flowId
+            && observation.process.processInstanceId == crossing.processInstanceId) {
+            return &observation;
+        }
+        if (!crossing.processInstanceId.isEmpty() && processMatch == nullptr
+            && observation.process.processInstanceId == crossing.processInstanceId) {
+            processMatch = &observation;
+        }
+        if (!crossing.domain.isEmpty() && domainMatch == nullptr
+            && normalizeFlowDomain(observation.flow.domain) == crossing.domain) {
+            domainMatch = &observation;
+        }
+    }
+    return processMatch ? processMatch : domainMatch;
 }
 
 } // namespace
@@ -116,6 +143,13 @@ NetworkWidget::NetworkWidget(QWidget *parent)
             modeAudit.details = QStringLiteral("legacy mode %1 migrated").arg(storedMode.legacyValue);
         m_auditStore.append(modeAudit);
     }
+
+    // DS-007: the evidence cache is metadata-only and its lookup/populate
+    // calls are in-memory. A load failure is a miss, never a hard block, so a
+    // corrupt or newer store simply leaves the cache empty.
+    m_decisionCacheContext.catalogVersion =
+        QString::fromLatin1(EndpointCatalogContract::kBuiltinVersion);
+    m_decisionCache.loadInto();
 
     // ── Ensure Windows Firewall Inbound Rule for Application Traffic ──
     QString appPath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
@@ -497,6 +531,9 @@ NetworkWidget::~NetworkWidget()
 {
     m_monitor->stopCapture();
     m_monitor->wait(1500);
+    // DS-007: entries are bounded and metadata-only, and a failed write is a
+    // miss on the next start rather than a reason to block shutdown.
+    m_decisionCache.save();
     delete m_throttlePolicies;
     delete ui;
 }
@@ -670,10 +707,17 @@ void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batc
         // DS-004: account flow/process/domain totals on the same beat and emit
         // only accepted crossings. A crossing schedules evaluation; it never
         // applies, withdraws, or bypasses a policy.
+        const QList<FlowObservation> observations =
+            m_flowObservationBuilder.observations();
         const QList<MilestoneCrossing> crossings =
-            m_milestoneEvaluator.evaluate(m_flowObservationBuilder.observations());
-        for (const MilestoneCrossing &crossing : crossings)
+            m_milestoneEvaluator.evaluate(observations);
+        for (const MilestoneCrossing &crossing : crossings) {
             emit flowMilestoneReached(crossing);
+            if (const FlowObservation *observation =
+                    observationForCrossing(observations, crossing)) {
+                evaluateDataSaverCrossing(*observation, crossing);
+            }
+        }
     }
     m_totalPkts += batch.size();
     ui->lblPackets->setText(QString::number(m_totalPkts));
@@ -751,6 +795,33 @@ void NetworkWidget::ingestFlowObservations(const QList<CapturedPacketInfo> &batc
 QList<FlowObservation> NetworkWidget::currentFlowObservations() const
 {
     return m_flowObservationBuilder.observations();
+}
+
+void NetworkWidget::evaluateDataSaverCrossing(const FlowObservation &observation,
+                                              const MilestoneCrossing &crossing)
+{
+    FlowObservation evaluation = observation;
+    evaluation.observationId = crossing.observationId;
+
+    DataSaverDecision::ResolverInput input;
+    input.signature.observation = evaluation;
+    input.signature.activity = queryAndActivityFor(evaluation.process.pid,
+                                                   evaluation.process.exeName,
+                                                   evaluation.process.exePath, nullptr);
+    input.signature.latencySensitive = evaluation.uxSignals.latencySensitive;
+    input.mode = m_dataSaverMode;
+    // Pins are read at the evaluation trigger (a rare crossing, never a packet
+    // hook), so a rule the user just stored is honored on the next milestone.
+    input.pinnedRules = PinnedRuleStore::load().rules;
+    input.now = QDateTime::currentDateTimeUtc();
+    input.cache = &m_decisionCache;
+    input.cacheContext = &m_decisionCacheContext;
+    // DS-009 owns the enforcement channel. Until it can confirm ownership, the
+    // resolver must not produce a throttle it cannot actually apply.
+    input.gentleThrottleAvailable = false;
+
+    const DataSaverDecision::DecisionResolution resolution = m_decisionResolver.resolve(input);
+    if (resolution.evaluated) emit dataSaverDecisionResolved(resolution.decision);
 }
 
 void NetworkWidget::onSpeedUpdated(quint64 rxBps, quint64 txBps) {

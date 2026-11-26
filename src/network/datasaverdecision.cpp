@@ -5,6 +5,8 @@
  */
 #include "datasaverdecision.h"
 
+#include "datasavercache.h"
+
 #include <QJsonArray>
 #include <QRandomGenerator>
 
@@ -443,13 +445,14 @@ PolicyDecision buildRuleDecision(const RuleMatch &match,
     return decision;
 }
 
-bool buildCacheDecision(const ResolverInput &input, const SignatureResult &signature,
-                        const QDateTime &now, PolicyDecision *decision, QString *why)
+bool buildCacheDecision(const PolicyDecision *candidate, const ResolverInput &input,
+                        const SignatureResult &signature, const QDateTime &now,
+                        PolicyDecision *decision, QString *why)
 {
-    if (!input.cachedDecision || !decision) return false;
+    if (!candidate || !decision) return false;
     const FlowObservation &observation = input.signature.observation;
 
-    PolicyDecision cached = *input.cachedDecision;
+    PolicyDecision cached = *candidate;
     if (cached.origin != DecisionOrigin::Cache || cached.tier != 4) {
         if (why) *why = QStringLiteral("the cache candidate is not a tier-4 cache decision");
         return false;
@@ -480,6 +483,9 @@ bool buildCacheDecision(const ResolverInput &input, const SignatureResult &signa
     cached.origin = DecisionOrigin::Cache;
     cached.tier = 4;
     cached.conflict = DecisionConflict();
+    // The evidence key matched, but the flow identity belongs to this
+    // observation, not the one that populated the entry.
+    cached.target = buildTarget(observation);
     cached.evidence = buildEvidence(observation, cached.evidence.uxProfile);
     applyAutomaticGuards(&cached, input, signature, nullptr);
 
@@ -982,6 +988,8 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
     const QDateTime now = input.now.isValid() ? input.now.toUTC()
                                               : QDateTime::currentDateTimeUtc();
     const bool enforcing = input.mode == DataSaverMode::Mode::Enforce;
+    const DataSaverCache::CacheContext cacheContext =
+        input.cacheContext ? *input.cacheContext : DataSaverCache::CacheContext();
 
     QStringList diagnostics;
     SignatureResult signature;
@@ -1004,8 +1012,25 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
     PolicyDecision cacheDecision;
     bool hasCache = false;
     if (enforcing) {
+        // DS-007: the evidence cache is read first; an explicit candidate from
+        // the caller is the fallback seam for tests and for a cache that cannot
+        // answer. A miss is not a failure; tier 5 still resolves.
+        PolicyDecision storedCandidate;
+        const PolicyDecision *candidate = input.cachedDecision;
+        if (input.cache) {
+            QString cacheWhy;
+            if (input.cache->lookup(observation, cacheContext, &storedCandidate, now,
+                                    &cacheWhy)) {
+                candidate = &storedCandidate;
+                diagnostics.append(
+                    QStringLiteral("the evidence cache supplied the tier-4 candidate"));
+            } else if (!cacheWhy.isEmpty()) {
+                diagnostics.append(QStringLiteral("cache: %1").arg(cacheWhy));
+            }
+        }
+
         QString why;
-        if (buildCacheDecision(input, signature, now, &cacheDecision, &why)) {
+        if (buildCacheDecision(candidate, input, signature, now, &cacheDecision, &why)) {
             hasCache = true;
         } else if (!why.isEmpty()) {
             diagnostics.append(why);
@@ -1122,6 +1147,19 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
         safe.nextSteps << QStringLiteral("Review the Data Saver rules for an invalid entry.");
         winner = safe;
         diagnostics.append(QStringLiteral("the resolved decision was rejected: %1").arg(error));
+    }
+
+    // DS-007: only a fresh local profile decision is evidence worth reusing.
+    // A cache hit is already stored, and user or fallback outcomes are not
+    // cached. Hard blocks never enter the cache, so a hit can never block.
+    if (input.cache && winner.origin == DecisionOrigin::Profile
+        && winner.action != NetworkPolicy::Action::Block) {
+        QString cacheError;
+        if (input.cache->insert(observation, cacheContext, winner, QString(), now, &cacheError)) {
+            diagnostics.append(QStringLiteral("the decision was stored in the evidence cache"));
+        } else {
+            diagnostics.append(QStringLiteral("the decision was not cached: %1").arg(cacheError));
+        }
     }
 
     resolution.evaluated = true;

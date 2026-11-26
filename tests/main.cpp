@@ -16,6 +16,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -53,6 +54,7 @@
 #include "network/datasaverrules.h"
 #include "network/datasaverprofiles.h"
 #include "network/datasaverdecision.h"
+#include "network/datasavercache.h"
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
@@ -7603,9 +7605,480 @@ void testDataSaverDecisionResolver()
     cachedBlock.confidence = 0.95;
     input.cachedDecision = &cachedBlock;
     const DecisionResolution blocked = emptyProfile.resolve(input);
-    check(blocked.decision.origin == DecisionOrigin::Fallback
+            check(blocked.decision.origin == DecisionOrigin::Fallback
               && blocked.decision.action != Action::Block,
           QStringLiteral("a cached block is rejected and the fallback stays safe"));
+}
+
+PolicyDecision makeCacheableProfileDecision(const FlowObservation &observation)
+{
+    using namespace DataSaverDecision;
+
+    PolicyDecision decision;
+    decision.decisionId = QStringLiteral("dec_4444444444444444");
+    decision.observationId = observation.observationId;
+    decision.createdAt = flowTestTime();
+    decision.origin = DecisionOrigin::Profile;
+    decision.tier = 3;
+    decision.action = NetworkPolicy::Action::Throttle;
+    decision.scope = DecisionScope::Executable;
+    decision.target.executable = QStringLiteral("Code.exe");
+    decision.target.domain = observation.flow.domain;
+    decision.direction = NetworkDirection::Download;
+    decision.rateBitsPerSecond = 409600;
+    decision.confidence = 0.94;
+    decision.classification = SignatureClassification::AppUpdate;
+    decision.evidence.executable = QStringLiteral("code.exe");
+    decision.evidence.domain = observation.flow.domain;
+    decision.evidence.foregroundState = QStringLiteral("background");
+    decision.evidence.uxProfile = QStringLiteral("deferrable_non_blocking");
+    decision.evidence.domainConfidence = QStringLiteral("strong_inference");
+    decision.reasonShort = QStringLiteral("The local profile matched a background updater.");
+    return decision;
+}
+
+void testDataSaverDecisionCache()
+{
+    using namespace DataSaverCache;
+    using Action = NetworkPolicy::Action;
+
+    // The contract's receive and duration buckets.
+    checkEqual(receiveBucket(9 * VolumeMilestone::kMiB), QStringLiteral("below_10MB"),
+               QStringLiteral("bytes below 10 MiB use the pre-milestone bucket"));
+    checkEqual(receiveBucket(10 * VolumeMilestone::kMiB), QStringLiteral("10_25MB"),
+               QStringLiteral("10 MiB starts the 10_25MB bucket"));
+    checkEqual(receiveBucket(25 * VolumeMilestone::kMiB - 1), QStringLiteral("10_25MB"),
+               QStringLiteral("one byte below 25 MiB is still 10_25MB"));
+    checkEqual(receiveBucket(25 * VolumeMilestone::kMiB), QStringLiteral("25_50MB"),
+               QStringLiteral("25 MiB starts the 25_50MB bucket"));
+    checkEqual(receiveBucket(50 * VolumeMilestone::kMiB), QStringLiteral("50_100MB"),
+               QStringLiteral("50 MiB starts the 50_100MB bucket"));
+    checkEqual(receiveBucket(100 * VolumeMilestone::kMiB), QStringLiteral("100MB_plus"),
+               QStringLiteral("100 MiB starts the 100MB_plus bucket"));
+    checkEqual(durationBucket(9999), QStringLiteral("burst_<10s"),
+               QStringLiteral("under ten seconds is a burst"));
+    checkEqual(durationBucket(10000), QStringLiteral("sustained_10_60s"),
+               QStringLiteral("ten seconds starts the sustained bucket"));
+    checkEqual(durationBucket(60000), QStringLiteral("long_>60s"),
+               QStringLiteral("sixty seconds starts the long bucket"));
+
+    FlowObservation observation = makeMilestoneObservation(
+        QStringLiteral("flow_aaaaaaaaaaaaaaaa"), QStringLiteral("pid:100:1000"),
+        QStringLiteral("update.googleapis.com"), 12 * VolumeMilestone::kMiB);
+    observation.process.exeName = QStringLiteral("Code.exe");
+    observation.process.exeVersion = QStringLiteral("1.95.2");
+    observation.process.role = FlowProcessRole::Child;
+    observation.metrics.durationMs = 30000;
+
+    CacheContext context;
+    context.catalogVersion = QStringLiteral("2026.11.11");
+
+    const CacheKey key = buildCacheKey(observation, context);
+    checkEqual(key.executableKey, QStringLiteral("code.exe@1.95.2"),
+               QStringLiteral("the executable key is the base name plus version"));
+    checkEqual(key.domainKey, QStringLiteral("update.googleapis.com"),
+               QStringLiteral("the domain key is normalized"));
+    checkEqual(key.processRole, QStringLiteral("child"),
+               QStringLiteral("the process role is part of the key"));
+    checkEqual(key.receiveBucket, QStringLiteral("10_25MB"),
+               QStringLiteral("the receive bucket is part of the key"));
+    checkEqual(key.durationBucket, QStringLiteral("sustained_10_60s"),
+               QStringLiteral("the duration bucket is part of the key"));
+    checkEqual(key.source, QStringLiteral("manual_toggle"),
+               QStringLiteral("the Data Saver source is part of the key"));
+    checkEqual(key.canonical(), buildCacheKey(observation, context).canonical(),
+               QStringLiteral("the same evidence produces the same canonical key"));
+
+    const QString fingerprint = fingerprintFor(key);
+    check(fingerprint.startsWith(QStringLiteral("fp_")),
+          QStringLiteral("the fingerprint uses the fp_ prefix"));
+    checkEqual(static_cast<int>(fingerprint.size()), 67,
+               QStringLiteral("the fingerprint is fp_ plus 64 SHA-256 hex characters"));
+    checkEqual(fingerprint.mid(3), fingerprint.mid(3).toLower(),
+               QStringLiteral("the fingerprint hash is lower-case hex"));
+
+    const QDateTime now = flowTestTime();
+    const PolicyDecision decision = makeCacheableProfileDecision(observation);
+    QString error;
+    check(decision.validate(&error),
+          QStringLiteral("the profile decision used as cache input validates: %1").arg(error));
+
+    DecisionCache cache;
+    check(cache.insert(observation, context, decision, QStringLiteral("audit_1234"),
+                       now, &error),
+          QStringLiteral("a valid profile decision is cached: %1").arg(error));
+    checkEqual(cache.count(), 1, QStringLiteral("the cache holds one entry"));
+
+    const CacheEntry stored = cache.entries().value(0);
+    checkEqual(stored.schemaVersion, DataSaverCache::kSchemaVersion,
+               QStringLiteral("the entry records its schema version"));
+    checkEqual(stored.fingerprint, fingerprint,
+               QStringLiteral("the entry records the computed fingerprint"));
+    checkEqual(stored.observationId, observation.observationId,
+               QStringLiteral("the entry records the source observation"));
+    checkEqual(stored.decisionId, decision.decisionId,
+               QStringLiteral("the entry records the decision id"));
+    checkEqual(stored.auditId, QStringLiteral("audit_1234"),
+               QStringLiteral("the entry keeps its audit link"));
+    checkEqual(stored.catalogVersion, QStringLiteral("2026.11.11"),
+               QStringLiteral("the entry records the catalog version"));
+    checkEqual(stored.createdAt, now.toUTC(),
+               QStringLiteral("the entry records its creation time"));
+    checkEqual(stored.expiresAt, now.toUTC().addSecs(DataSaverCache::kProfileTtlSeconds),
+               QStringLiteral("a local profile entry lives for 30 days"));
+    checkEqual(ttlSeconds(DecisionOrigin::Profile, 0.20, false),
+               DataSaverCache::kProfileTtlSeconds,
+               QStringLiteral("the profile TTL does not depend on confidence"));
+    checkEqual(ttlSeconds(DecisionOrigin::Pinned, 1.0, true), qint64(0),
+               QStringLiteral("pinned decisions are never cached"));
+    checkEqual(ttlSeconds(DecisionOrigin::Session, 1.0, true), qint64(0),
+               QStringLiteral("session decisions are never cached"));
+    checkEqual(ttlSeconds(DecisionOrigin::Fallback, 0.40, false), qint64(0),
+               QStringLiteral("fallback decisions are never cached"));
+
+    PolicyDecision hit;
+    check(cache.lookup(observation, context, &hit, now.addDays(29), &error),
+          QStringLiteral("the entry is reused inside its TTL: %1").arg(error));
+    check(hit.origin == DecisionOrigin::Cache && hit.tier == 4,
+          QStringLiteral("a hit is returned as a tier-4 cache candidate"));
+    checkEqual(hit.decisionId, decision.decisionId,
+               QStringLiteral("the hit keeps the cached decision identity"));
+    check(hit.action == Action::Throttle && hit.rateBitsPerSecond == 409600,
+          QStringLiteral("the hit carries the cached outcome and rate"));
+    check(hit.validate(&error),
+          QStringLiteral("the cache candidate validates locally: %1").arg(error));
+
+    // The TTL boundary is exclusive: at exactly expiresAt the entry is gone.
+    check(!cache.lookup(observation, context, &hit,
+                        now.addSecs(DataSaverCache::kProfileTtlSeconds), &error),
+          QStringLiteral("the entry expires at its TTL boundary"));
+    checkEqual(cache.count(), 0, QStringLiteral("an expired entry is discarded"));
+
+    // Every key dimension invalidates the entry rather than matching it.
+    const auto reinsert = [&]() {
+        cache.clear();
+        return cache.insert(observation, context, decision, QString(), now, &error);
+    };
+    const auto lookupWith = [&](const FlowObservation &changed,
+                                const CacheContext &changedContext) {
+        PolicyDecision candidate;
+        return cache.lookup(changed, changedContext, &candidate, now, &error);
+    };
+    const auto lookupAgainstDefaultContext = [&](const FlowObservation &changed) {
+        return lookupWith(changed, context);
+    };
+
+    check(reinsert(), QStringLiteral("the entry is reinserted for invalidation checks"));
+    FlowObservation changed = observation;
+    changed.process.exeVersion = QStringLiteral("1.96.0");
+    check(!lookupAgainstDefaultContext(changed),
+          QStringLiteral("an executable version change misses"));
+
+    changed = observation;
+    changed.flow.domain = QStringLiteral("example.com");
+    check(!lookupAgainstDefaultContext(changed), QStringLiteral("a domain change misses"));
+
+    changed = observation;
+    changed.process.role = FlowProcessRole::Service;
+    check(!lookupAgainstDefaultContext(changed),
+          QStringLiteral("a process role change misses"));
+
+    changed = observation;
+    changed.process.foregroundState = FlowForegroundState::ForegroundActive;
+    check(!lookupAgainstDefaultContext(changed),
+          QStringLiteral("a foreground change misses"));
+
+    changed = observation;
+    changed.metrics.rxBytes = 30 * VolumeMilestone::kMiB;
+    check(!lookupAgainstDefaultContext(changed),
+          QStringLiteral("a receive bucket change misses"));
+
+    changed = observation;
+    changed.metrics.durationMs = 5 * 1000;
+    check(!lookupAgainstDefaultContext(changed),
+          QStringLiteral("a duration bucket change misses"));
+
+    check(reinsert(), QStringLiteral("the entry is reinserted for a source change"));
+    CacheContext hotspot = context;
+    hotspot.source = CacheSource::MeteredHotspot;
+    check(!lookupWith(observation, hotspot),
+          QStringLiteral("a Data Saver source change misses"));
+    checkEqual(cache.count(), 1,
+               QStringLiteral("a key miss leaves the original entry in place"));
+
+    // A catalog change is not in the key; it invalidates and removes the entry.
+    CacheContext newerCatalog = context;
+    newerCatalog.catalogVersion = QStringLiteral("2027.01.01");
+    check(!lookupWith(observation, newerCatalog),
+          QStringLiteral("a catalog version change invalidates the entry"));
+    checkEqual(cache.count(), 0, QStringLiteral("the invalidated entry is removed"));
+
+    // A flow with no domain uses the address fallback token.
+    FlowObservation noDomain = makeMilestoneObservation(
+        QStringLiteral("flow_bbbbbbbbbbbbbbbb"), QStringLiteral("pid:100:1000"),
+        QString(), 12 * VolumeMilestone::kMiB);
+    noDomain.process.exeName = QStringLiteral("Code.exe");
+    const CacheKey addressKey = buildCacheKey(noDomain, CacheContext());
+    checkEqual(addressKey.domainKey, QStringLiteral("addr:13.107.246.40"),
+               QStringLiteral("a missing domain falls back to the remote address"));
+
+    // Uncacheable or mismatched inputs are refused, not normalized.
+    DecisionCache rejections;
+    PolicyDecision pinned = decision;
+    pinned.origin = DecisionOrigin::Pinned;
+    pinned.tier = 1;
+    pinned.confidence = 1.0;
+    check(!rejections.insert(observation, context, pinned, QString(), now, &error),
+          QStringLiteral("a pinned decision is refused"));
+
+    PolicyDecision block = decision;
+    block.action = Action::Block;
+    block.rateBitsPerSecond = 0;
+    check(block.validate(&error),
+          QStringLiteral("the test block decision validates as a profile block: %1").arg(error));
+    check(!rejections.insert(observation, context, block, QString(), now, &error),
+          QStringLiteral("a block decision is refused by the cache"));
+
+    PolicyDecision other = decision;
+    other.target.executable = QStringLiteral("other.exe");
+    check(!rejections.insert(observation, context, other, QString(), now, &error),
+          QStringLiteral("a decision for another executable is refused"));
+    checkEqual(rejections.count(), 0, QStringLiteral("no refused decision was stored"));
+
+    // Entries serialize without payload or path fields and round-trip.
+    const QJsonObject entryJson = cacheEntryToJson(stored);
+    const QString serialized = QString::fromUtf8(
+        QJsonDocument(entryJson).toJson(QJsonDocument::Compact));
+    check(!serialized.contains(QStringLiteral("exePath"))
+              && !serialized.contains(QStringLiteral("192.168.1.100"))
+              && !serialized.contains(QStringLiteral("C:\\")),
+          QStringLiteral("the entry carries metadata only"));
+    CacheEntry parsedEntry;
+    check(cacheEntryFromJson(entryJson, &parsedEntry, &error),
+          QStringLiteral("the entry round-trips through its schema: %1").arg(error));
+    checkEqual(parsedEntry.fingerprint, stored.fingerprint,
+               QStringLiteral("the round-trip keeps the fingerprint"));
+
+    QJsonObject newerEntry = entryJson;
+    newerEntry.insert(QStringLiteral("schemaVersion"),
+                      DataSaverCache::kSchemaVersion + 1);
+    check(!cacheEntryFromJson(newerEntry, &parsedEntry, &error),
+          QStringLiteral("a newer cache entry is rejected"));
+    QJsonObject malformedEntry = entryJson;
+    malformedEntry.remove(QStringLiteral("key"));
+    check(!cacheEntryFromJson(malformedEntry, &parsedEntry, &error),
+          QStringLiteral("a cache entry without a key is rejected"));
+
+    // Persistence: save, reload, and refuse a newer store.
+    const QString path = QDir::tempPath()
+                         + QStringLiteral("/oasis_datasaver_cache_test.ini");
+    QFile::remove(path);
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        DecisionCache persisted;
+        check(persisted.insert(observation, context, decision, QStringLiteral("audit_5678"),
+                               now, &error),
+              QStringLiteral("the persisted cache accepts the entry: %1").arg(error));
+        check(persisted.save(&settings, &error),
+              QStringLiteral("the cache persists: %1").arg(error));
+
+        DecisionCache reloaded;
+        check(reloaded.loadInto(&settings, &error),
+              QStringLiteral("the cache reloads: %1").arg(error));
+        checkEqual(reloaded.count(), 1, QStringLiteral("the persisted entry is restored"));
+        const CacheEntry reloadedEntry = reloaded.entries().value(0);
+        checkEqual(reloadedEntry.auditId, QStringLiteral("audit_5678"),
+                   QStringLiteral("the audit link survives persistence"));
+        PolicyDecision reloadedHit;
+        check(reloaded.lookup(observation, context, &reloadedHit, now, &error),
+              QStringLiteral("the restored entry is reusable: %1").arg(error));
+
+        // A newer root schema is rejected whole and is never overwritten.
+        settings.beginGroup(DecisionCache::storageGroup());
+        settings.setValue(QStringLiteral("schemaVersion"),
+                          DataSaverCache::kSchemaVersion + 1);
+        settings.endGroup();
+        settings.sync();
+        check(!reloaded.loadInto(&settings, &error),
+              QStringLiteral("a newer cache store is reported and not loaded"));
+        checkEqual(reloaded.count(), 0,
+                   QStringLiteral("a newer store leaves the cache empty"));
+        check(!reloaded.save(&settings, &error),
+              QStringLiteral("saving over a newer store is refused"));
+    }
+    QFile::remove(path);
+
+    // A malformed entry is skipped without failing the load.
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        settings.beginGroup(DecisionCache::storageGroup());
+        settings.setValue(QStringLiteral("schemaVersion"), DataSaverCache::kSchemaVersion);
+        settings.setValue(QStringLiteral("entries"),
+                          QStringLiteral("[{\"schemaVersion\":1},42]"));
+        settings.endGroup();
+        settings.sync();
+        const CacheLoadResult loaded = DecisionCache::load(&settings);
+        checkEqual(loaded.skipped, 2, QStringLiteral("malformed entries are skipped"));
+        checkEqual(static_cast<int>(loaded.entries.size()), 0,
+                   QStringLiteral("malformed entries never reach the decision path"));
+        check(!loaded.rejectedNewer, QStringLiteral("a malformed store is not a newer store"));
+    }
+    QFile::remove(path);
+
+    // A tampered block entry is discarded on lookup, never enforced.
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        DecisionCache persisted;
+        persisted.insert(observation, context, decision, QString(), now, &error);
+        persisted.save(&settings, &error);
+
+        settings.beginGroup(DecisionCache::storageGroup());
+        const QJsonArray entries =
+            QJsonDocument::fromJson(settings.value(QStringLiteral("entries"))
+                                        .toString().toUtf8())
+                .array();
+        QJsonObject tampered = entries.at(0).toObject();
+        QJsonObject tamperedDecision = tampered.value(QStringLiteral("decision")).toObject();
+        tamperedDecision.insert(QStringLiteral("action"), QStringLiteral("block"));
+        tamperedDecision.remove(QStringLiteral("throttle"));
+        tampered.insert(QStringLiteral("decision"), tamperedDecision);
+        QJsonArray replaced;
+        replaced.append(tampered);
+        settings.setValue(QStringLiteral("entries"),
+                          QString::fromUtf8(QJsonDocument(replaced)
+                                                .toJson(QJsonDocument::Compact)));
+        settings.endGroup();
+        settings.sync();
+
+        DecisionCache tamperedCache;
+        tamperedCache.loadInto(&settings, &error);
+        PolicyDecision blockedHit;
+        check(!tamperedCache.lookup(observation, context, &blockedHit, now, &error),
+              QStringLiteral("a cached hard block is never returned"));
+        checkEqual(tamperedCache.count(), 0,
+                   QStringLiteral("the tampered block entry is discarded"));
+    }
+    QFile::remove(path);
+
+    // The cache is bounded; the soonest-expiring entry is evicted first.
+    DecisionCache bounded(2);
+    QString firstFingerprint;
+    for (int index = 0; index < 3; ++index) {
+        FlowObservation varied = observation;
+        varied.metrics.rxBytes = (12 + index * 30) * VolumeMilestone::kMiB;
+        if (index == 0)
+            firstFingerprint = fingerprintFor(buildCacheKey(varied, context));
+        check(bounded.insert(varied, context, decision, QString(),
+                             now.addSecs(index), &error),
+              QStringLiteral("the bounded cache accepts entry %1: %2").arg(index).arg(error));
+    }
+    checkEqual(bounded.count(), 2,
+               QStringLiteral("the bounded cache evicts down to its capacity"));
+    check(!firstFingerprint.isEmpty() && !bounded.contains(firstFingerprint),
+          QStringLiteral("the soonest-expiring entry is the eviction victim"));
+}
+
+void testDataSaverCacheResolution()
+{
+    using namespace DataSaverDecision;
+    using Action = NetworkPolicy::Action;
+
+    const QDateTime now = flowTestTime();
+    FlowObservation observation = makeMilestoneObservation(
+        QStringLiteral("flow_cccccccccccccccc"), QStringLiteral("pid:100:1000"),
+        QStringLiteral("update.googleapis.com"), 12 * VolumeMilestone::kMiB);
+    observation.metrics.milestoneBytes = 12 * VolumeMilestone::kMiB;
+    observation.metrics.milestoneIndex = 1;
+    observation.metrics.durationMs = 30000;
+    observation.process.exeName = QStringLiteral("chromeupdate.exe");
+    observation.process.foregroundState = FlowForegroundState::Background;
+
+    ActivityQuery query;
+    query.executableName = QStringLiteral("chromeupdate.exe");
+    query.publisher = QStringLiteral("Google LLC");
+    query.publisherVerified = true;
+    query.product = QStringLiteral("Google Update");
+    query.displayName = QStringLiteral("Google Update");
+    query.domain = QStringLiteral("update.googleapis.com");
+
+    DataSaverCache::DecisionCache cache;
+    DataSaverCache::CacheContext context;
+    context.catalogVersion = QStringLiteral("2026.11.11");
+
+    ResolverInput input;
+    input.signature.observation = observation;
+    input.signature.activity = query;
+    input.mode = DataSaverMode::Mode::Enforce;
+    input.now = now;
+    input.gentleThrottleAvailable = true;
+    input.cache = &cache;
+    input.cacheContext = &context;
+
+    DecisionResolver resolver;
+    const DecisionResolution fresh = resolver.resolve(input);
+    check(fresh.evaluated && fresh.decision.origin == DecisionOrigin::Profile
+              && fresh.decision.tier == 3,
+          QStringLiteral("the resolver still resolves the local profile first"));
+    check(fresh.decision.action == Action::Throttle,
+          QStringLiteral("the profile decision is a throttle in this fixture"));
+    checkEqual(cache.count(), 1,
+               QStringLiteral("the resolver stores a fresh profile decision"));
+    check(fresh.diagnostic.contains(QStringLiteral("stored in the evidence cache")),
+          QStringLiteral("the resolver reports the cache write"));
+    const DataSaverCache::CacheEntry stored = cache.entries().value(0);
+    checkEqual(stored.decisionId, fresh.decision.decisionId,
+               QStringLiteral("the cached entry is the committed decision"));
+    checkEqual(stored.observationId, observation.observationId,
+               QStringLiteral("the cached entry names the source observation"));
+    checkEqual(stored.catalogVersion, context.catalogVersion,
+               QStringLiteral("the cached entry keeps the catalog version"));
+
+    // With no matching local signature, the stored decision becomes tier 4.
+    EndpointCatalog emptyCatalog;
+    DecisionResolver noProfile(LocalSignatureEngine(emptyCatalog, QList<ProfileRule>()));
+    const DecisionResolution reused = noProfile.resolve(input);
+    check(reused.evaluated && reused.decision.origin == DecisionOrigin::Cache
+              && reused.decision.tier == 4,
+          QStringLiteral("a cache hit is the tier-4 candidate when no profile matches"));
+    check(reused.decision.action == Action::Throttle
+              && reused.decision.rateBitsPerSecond == 409600,
+          QStringLiteral("the cache hit carries the stored gentle throttle"));
+    check(reused.diagnostic.contains(QStringLiteral("supplied the tier-4 candidate")),
+          QStringLiteral("the resolver reports the cache hit"));
+    checkEqual(reused.decision.observationId, observation.observationId,
+               QStringLiteral("the cache hit names the current observation"));
+    checkEqual(reused.decision.target.flowId, observation.flow.flowId,
+               QStringLiteral("the cache hit retargets the current flow"));
+    checkEqual(cache.count(), 1,
+               QStringLiteral("a cache hit is not stored again"));
+
+    // A different evidence bucket misses instead of reusing the decision.
+    FlowObservation changed = observation;
+    changed.metrics.rxBytes = 30 * VolumeMilestone::kMiB;
+    input.signature.observation = changed;
+    const DecisionResolution missed = noProfile.resolve(input);
+    check(missed.evaluated && missed.decision.origin == DecisionOrigin::Fallback
+              && missed.decision.tier == 5,
+          QStringLiteral("a different bucket falls through to the safe fallback"));
+
+    // Off suppresses automatic tiers, so the cache is neither read nor written.
+    input.mode = DataSaverMode::Mode::Off;
+    input.signature.observation = observation;
+    const DecisionResolution off = noProfile.resolve(input);
+    check(off.automationSuppressed && !off.evaluated,
+          QStringLiteral("Off produces no automatic decision"));
+    check(!off.diagnostic.contains(QStringLiteral("evidence cache")),
+          QStringLiteral("Off never consults the evidence cache"));
+    checkEqual(cache.count(), 1, QStringLiteral("Off leaves the cache unchanged"));
+
+    // A catalog change invalidates the stored entry on the next lookup.
+    input.mode = DataSaverMode::Mode::Enforce;
+    context.catalogVersion = QStringLiteral("2027.01.01");
+    const DecisionResolution catalogChanged = noProfile.resolve(input);
+    check(catalogChanged.decision.origin == DecisionOrigin::Fallback,
+          QStringLiteral("a catalog change disables the cached decision"));
+    checkEqual(cache.count(), 0,
+               QStringLiteral("the stale cache entry is discarded"));
 }
 
 int main(int argc, char *argv[])
@@ -7631,6 +8104,8 @@ int main(int argc, char *argv[])
     testDataSaverRules();
     testLocalSignatures();
     testDataSaverDecisionResolver();
+    testDataSaverDecisionCache();
+    testDataSaverCacheResolution();
 
     testFixtures();
     testDiagnosticsExportSchema();

@@ -517,6 +517,7 @@ never call enforcement or touch the policy store.
 | Enforcement outcome vocabulary | `EnforcementResult::Status` (`src/network/enforcementcoordinator.h`) |
 | Channel routing | `plannedChannels()` (`src/network/enforcementrestore.cpp`) |
 | Milestone accounting/dedupe | `src/network/volumemilestone.{h,cpp}` (`thresholdBytes`, `VolumeMilestoneEvaluator`) |
+| Cache fingerprint and storage | `src/network/datasavercache.{h,cpp}` (`CacheKey`, `DecisionCache`) |
 | Pinned rules / session overrides | `src/network/datasaverrules.{h,cpp}` (`PinnedRuleStore`, `SessionOverrideStore`, `RuleResolver`) |
 | Local signatures / profile rules | `src/network/datasaverprofiles.{h,cpp}` (`LocalSignatureEngine`, `ProfileRule`, `defaultProfileRules`) |
 | Decision contract / precedence | `src/network/datasaverdecision.{h,cpp}` (`PolicyDecision`, `DecisionResolver`, `DecisionOrigin`) |

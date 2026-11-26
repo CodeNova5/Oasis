@@ -15,6 +15,8 @@
 #include "networkmonitor.h"
 #include "networkmodel.h"
 #include "bandwidthguard.h"
+#include "datasavercache.h"
+#include "datasaverdecision.h"
 #include "datasavermode.h"
 #include "flowobservation.h"
 #include "volumemilestone.h"
@@ -97,6 +99,10 @@ signals:
     // DS-004: a volume milestone was accepted after dedupe. This is an
     // evaluation trigger only; nothing is enforced from this signal.
     void flowMilestoneReached(const MilestoneCrossing &crossing);
+    // DS-008: the resolver produced one validated decision for a milestone
+    // crossing, using the DS-007 evidence cache. DS-009 applies it; this widget
+    // does not enforce from the signal.
+    void dataSaverDecisionResolved(const DataSaverDecision::PolicyDecision &decision);
 
 private slots:
     void onAdapterChanged(int idx);
@@ -262,6 +268,10 @@ private:
     ActivityQuery queryAndActivityFor(quint32 pid, const QString &processName,
                                       const QString &executablePath,
                                       ActivityClassification *activity) const;
+    // DS-008: resolve one accepted milestone crossing through the evidence
+    // cache. Resolution is local and non-blocking; nothing is applied here.
+    void evaluateDataSaverCrossing(const FlowObservation &observation,
+                                   const MilestoneCrossing &crossing);
     void createPolicyForTarget(const PolicyTarget &target);
     void showRecommendationFor(quint32 pid, const QString &processName,
                                const QString &executablePath);
@@ -295,6 +305,11 @@ private:
     QElapsedTimer           m_flowClock;
     FlowObservationBuilder  m_flowObservationBuilder;
     VolumeMilestoneEvaluator m_milestoneEvaluator;
+    // DS-007/DS-008: the evidence cache is keyed by metadata only, loaded once
+    // at start, and consulted/populated on accepted milestone crossings.
+    DataSaverDecision::DecisionResolver m_decisionResolver;
+    DataSaverCache::DecisionCache m_decisionCache;
+    DataSaverCache::CacheContext m_decisionCacheContext;
 
     QHash<QString, QIcon>   m_iconCache;
     // Normalized executable path -> shell icon. Kept apart from m_iconCache,

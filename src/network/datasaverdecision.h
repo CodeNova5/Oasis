@@ -13,10 +13,13 @@
  * this module never applies, withdraws, or stores a policy; DS-009 consumes the
  * decision.
  *
- * The cache tier is a seam for DS-007: the caller supplies an already-built
- * tier-4 decision, and it is accepted only when it validates, targets the same
- * executable/domain as the current observation, and survives the same guards
- * as a profile result. Without that input the resolver falls through to tier 5.
+ * The cache tier is DS-007: when a `DecisionCache` is supplied the resolver
+ * reads it for the tier-4 candidate and stores a freshly resolved profile
+ * decision back. An explicit `cachedDecision` remains an injection seam for
+ * tests and for a cache that cannot answer. Either candidate is accepted only
+ * when it validates, targets the same executable/domain as the current
+ * observation, and survives the same guards as a profile result; otherwise the
+ * resolver falls through to tier 5.
  *
  * `Off` suppresses tiers 3-5. Pinned and session decisions still resolve, so
  * turning automation off never disables a user's own enforcement.
@@ -36,6 +39,11 @@
 #include "datasaverrules.h"
 #include "flowobservation.h"
 #include "network/policy.h"
+
+namespace DataSaverCache {
+class DecisionCache;
+struct CacheContext;
+} // namespace DataSaverCache
 
 namespace DataSaverDecision {
 constexpr int kSchemaVersion = 1;
@@ -164,8 +172,18 @@ struct ResolverInput
     QList<SessionOverride> sessionOverrides;
 
     /// Optional tier-4 candidate from DS-007. Ignored unless it is a valid
-    /// cache-origin decision for this executable and domain.
+    /// cache-origin decision for this executable and domain. A store hit from
+    /// `cache` takes precedence over this explicit candidate.
     const PolicyDecision *cachedDecision = nullptr;
+
+    /// Optional DS-007 evidence cache. When present, a hit supplies the tier-4
+    /// candidate and a freshly resolved profile decision is stored back for
+    /// reuse. The resolver never applies, withdraws, or persists enforcement.
+    DataSaverCache::DecisionCache *cache = nullptr;
+
+    /// Key context for both the lookup and the store. A null pointer uses the
+    /// default context (manual toggle, no catalog version).
+    const DataSaverCache::CacheContext *cacheContext = nullptr;
 
     /// The caller confirmed that an enforcement channel can own a gentle
     /// throttle. Without it the fallback stays notify-only.
