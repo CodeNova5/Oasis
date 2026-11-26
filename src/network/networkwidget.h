@@ -17,6 +17,7 @@
 #include "bandwidthguard.h"
 #include "datasavermode.h"
 #include "flowobservation.h"
+#include "volumemilestone.h"
 #include "throttlepolicymanager.h"
 #include "diagnostics.h"
 #include "enforcementrestore.h"
@@ -93,6 +94,9 @@ signals:
     // Screen — Policies: one reconciliation pass finished, whether it was asked
     // for (Verify) or triggered by a policy change.
     void policyReconciliationFinished(const ReconciliationReport &report);
+    // DS-004: a volume milestone was accepted after dedupe. This is an
+    // evaluation trigger only; nothing is enforced from this signal.
+    void flowMilestoneReached(const MilestoneCrossing &crossing);
 
 private slots:
     void onAdapterChanged(int idx);
@@ -290,6 +294,7 @@ private:
     // clock adjustment cannot stretch a duration or a rate window.
     QElapsedTimer           m_flowClock;
     FlowObservationBuilder  m_flowObservationBuilder;
+    VolumeMilestoneEvaluator m_milestoneEvaluator;
 
     QHash<QString, QIcon>   m_iconCache;
     // Normalized executable path -> shell icon. Kept apart from m_iconCache,

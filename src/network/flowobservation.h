@@ -209,6 +209,10 @@ struct FlowCaptureSample
 class FlowObservationBuilder
 {
 public:
+    // A flow with no traffic for this long is treated as replaced, so a new
+    // connection on the same 4-tuple starts with fresh counters.
+    static constexpr qint64 kDefaultIdleExpiryMs = 2 * 60 * 1000;
+
     explicit FlowObservationBuilder(quint64 sessionNonce = 0, int maxFlows = 512);
 
     /// Installs or upgrades the name evidence for a destination address.

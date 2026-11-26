@@ -499,6 +499,7 @@ never call enforcement or touch the policy store.
 | 10 MiB milestone | `BandwidthGuard::DetectionBytes = 10 * 1024 * 1024` |
 | Enforcement outcome vocabulary | `EnforcementResult::Status` (`src/network/enforcementcoordinator.h`) |
 | Channel routing | `plannedChannels()` (`src/network/enforcementrestore.cpp`) |
+| Milestone accounting/dedupe | `src/network/volumemilestone.{h,cpp}` (`thresholdBytes`, `VolumeMilestoneEvaluator`) |
 | Audit records | `AuditEvent` (`src/network/policy.h`), `AuditEventStore` (`src/network/auditeventstore.h`) |
 | Notification dedupe/priority | `src/network/notificationcoordinator.h` |
 | Mode values | `src/network/datasavermode.{h,cpp}` (`load`/`save`, legacy migration), `NetworkWidget::setDataSaverMode()` |

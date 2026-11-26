@@ -125,6 +125,7 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     qRegisterMetaType<Oasis::ServicePidMap>("Oasis::ServicePidMap");
     qRegisterMetaType<QList<Oasis::ProcessGroup>>("QList<Oasis::ProcessGroup>");
     qRegisterMetaType<Oasis::ForegroundSnapshot>("Oasis::ForegroundSnapshot");
+    qRegisterMetaType<MilestoneCrossing>("MilestoneCrossing");
 
     m_model = new NetworkTreeModel(this);
     m_proxy = new QSortFilterProxyModel(this);
@@ -660,6 +661,19 @@ void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batc
                 flowDomainSourceFor(summary.source),
                 flowDomainConfidenceFor(summary.confidence));
         }
+
+        // A connection with no traffic for the idle window is replaced rather
+        // than letting a new connection inherit its counters.
+        m_flowObservationBuilder.expireIdleFlows(
+            m_flowClock.elapsed(), FlowObservationBuilder::kDefaultIdleExpiryMs);
+
+        // DS-004: account flow/process/domain totals on the same beat and emit
+        // only accepted crossings. A crossing schedules evaluation; it never
+        // applies, withdraws, or bypasses a policy.
+        const QList<MilestoneCrossing> crossings =
+            m_milestoneEvaluator.evaluate(m_flowObservationBuilder.observations());
+        for (const MilestoneCrossing &crossing : crossings)
+            emit flowMilestoneReached(crossing);
     }
     m_totalPkts += batch.size();
     ui->lblPackets->setText(QString::number(m_totalPkts));

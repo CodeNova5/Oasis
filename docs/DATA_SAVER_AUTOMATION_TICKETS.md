@@ -45,7 +45,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
 
 ### DS-003 Produce canonical, non-blocking flow observations
 
-- **Status:** Partial
+- **Status:** Done
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** DS-001
@@ -55,11 +55,11 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
   - Missing, weak, encrypted, shared, or multiplexed evidence is represented explicitly as unknown/weak; it is never promoted to a confident owner or hostname.
   - Packet hooks do not wait on disk, HTTP, AI, policy UI, or other blocking work; aggregation is bounded and thread-safe.
   - Raw payloads and local browsing history are neither persisted nor sent to classification providers.
-- **Validation:** `src/network/flowobservation.{h,cpp}` implements the v1 contract and bounded aggregation; `tests/main.cpp` `testFlowObservationContract`/`testFlowObservationBuilder` cover round-trip, forward-version rejection, malformed payloads, IPv4/IPv6, PID reuse, missing process evidence, shared flows, and DNS/SNI confidence. Harness build and run are pending.
+- **Validation:** `src/network/flowobservation.{h,cpp}` implements the v1 contract and bounded aggregation; `tests/main.cpp` `testFlowObservationContract`/`testFlowObservationBuilder` cover round-trip, forward-version rejection, malformed payloads, IPv4/IPv6, PID reuse, missing process evidence, shared flows, and DNS/SNI confidence. Built and ran `tests/oasis_tests.exe` on Windows with MinGW; the run completed with `checks: 1404 failures: 0` (fixtures: 22 passed, 0 failed).
 
 ### DS-004 Track volume milestones and deduplicate evaluations
 
-- **Status:** Not started
+- **Status:** Partial
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** DS-003
@@ -69,7 +69,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
   - A milestone is keyed and deduplicated by flow, process, domain, and milestone bucket for at least one configured evaluation window.
   - Counter rollover, PID reuse, flow replacement, missing domains, and application restart cannot silently reuse stale evidence.
   - Milestones trigger evaluation only; crossing a threshold alone does not imply a block or other enforcement action.
-- **Validation:** Boundary tests cover exact threshold crossing, repeated packets, concurrent flows, reset/restart, and later doubling.
+- **Validation:** `src/network/volumemilestone.{h,cpp}` implements MiB thresholds, flow/process/domain aggregation, and windowed dedupe; `tests/main.cpp` `testVolumeMilestones` covers exact boundaries, repeated snapshots, concurrent flows, rollover, PID reuse, missing domains, window expiry, and restart. Harness build and run are pending.
 
 ## Phase 2: Deterministic policy engine
 

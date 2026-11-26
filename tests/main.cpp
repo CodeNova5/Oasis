@@ -49,6 +49,7 @@
 #include "network/enforcementrestore.h"
 #include "network/datasavermode.h"
 #include "network/flowobservation.h"
+#include "network/volumemilestone.h"
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
@@ -6665,6 +6666,205 @@ void testFlowObservationBuilder()
           QStringLiteral("missing foreground evidence stays unknown"));
 }
 
+// ─── DS-004: volume milestones and evaluation dedupe ────────────────────────
+
+FlowObservation makeMilestoneObservation(const QString &flowId,
+                                         const QString &processInstanceId,
+                                         const QString &domain,
+                                         quint64 rxBytes)
+{
+    FlowObservation observation;
+    observation.observationId = QStringLiteral("obs_0123456789abcdef");
+    observation.timestamp = flowTestTime();
+    observation.process.processInstanceId = processInstanceId;
+    observation.process.pid = 100;
+    observation.process.exeName = QStringLiteral("Code.exe");
+    observation.process.foregroundState = FlowForegroundState::Background;
+    observation.flow.flowId = flowId;
+    observation.flow.protocol = QStringLiteral("TCP");
+    observation.flow.localEndpoint = QStringLiteral("192.168.1.100:54312");
+    observation.flow.remoteEndpoint = QStringLiteral("13.107.246.40:443");
+    observation.flow.domain = domain;
+    if (!domain.isEmpty()) {
+        observation.flow.domainSource = FlowDomainSource::Dns;
+        observation.flow.domainConfidence = FlowDomainConfidence::StrongInference;
+    }
+    observation.metrics.rxBytes = rxBytes;
+    return observation;
+}
+
+void testVolumeMilestones()
+{
+    using namespace VolumeMilestone;
+
+    checkEqual(thresholdBytes(1), quint64(10 * kMiB),
+               QStringLiteral("milestone 1 is 10 MiB"));
+    checkEqual(thresholdBytes(2), quint64(25 * kMiB),
+               QStringLiteral("milestone 2 is 25 MiB"));
+    checkEqual(thresholdBytes(3), quint64(50 * kMiB),
+               QStringLiteral("milestone 3 is 50 MiB"));
+    checkEqual(thresholdBytes(4), quint64(100 * kMiB),
+               QStringLiteral("milestone 4 is 100 MiB"));
+    checkEqual(thresholdBytes(5), quint64(200 * kMiB),
+               QStringLiteral("later milestones double"));
+    checkEqual(thresholdBytes(6), quint64(400 * kMiB),
+               QStringLiteral("later milestones keep doubling"));
+    checkEqual(thresholdBytes(0), quint64(0),
+               QStringLiteral("index 0 has no threshold"));
+
+    checkEqual(highestCrossedIndex(10 * kMiB - 1), 0,
+               QStringLiteral("one byte below 10 MiB has not crossed a milestone"));
+    checkEqual(highestCrossedIndex(10 * kMiB), 1,
+               QStringLiteral("exactly 10 MiB crosses milestone 1"));
+    checkEqual(highestCrossedIndex(100 * kMiB), 4,
+               QStringLiteral("100 MiB crosses milestone 4"));
+    checkEqual(highestCrossedIndex(200 * kMiB), 5,
+               QStringLiteral("200 MiB crosses milestone 5"));
+
+    // One 12 MiB flow with a domain crosses flow, process, and domain scopes.
+    VolumeMilestoneEvaluator evaluator(600000);
+    const FlowObservation first = makeMilestoneObservation(
+        QStringLiteral("flow_aaaaaaaaaaaaaaaa"), QStringLiteral("pid:100:1000"),
+        QStringLiteral("example.com"), 12 * kMiB);
+    const QList<MilestoneCrossing> crossings = evaluator.evaluate({first}, 1000);
+    checkEqual(static_cast<int>(crossings.size()), 3,
+               QStringLiteral("flow, process, and domain each cross once"));
+    bool sawFlow = false;
+    bool sawProcess = false;
+    bool sawDomain = false;
+    for (const MilestoneCrossing &crossing : crossings) {
+        check(isFlowIdentifier(crossing.observationId, QStringLiteral("obs_")),
+              QStringLiteral("a crossing mints a contract observationId"));
+        checkEqual(crossing.milestoneIndex, 1,
+                   QStringLiteral("the crossing names milestone 1"));
+        checkEqual(crossing.milestoneBytes, quint64(10 * kMiB),
+                   QStringLiteral("the crossing carries the MiB threshold"));
+        checkEqual(crossing.cumulativeBytes, quint64(12 * kMiB),
+                   QStringLiteral("the crossing carries the scope total"));
+        switch (crossing.scope) {
+        case MilestoneScope::Flow:
+            sawFlow = true;
+            checkEqual(crossing.flowId, first.flow.flowId,
+                       QStringLiteral("a flow crossing names its flow"));
+            break;
+        case MilestoneScope::Process:
+            sawProcess = true;
+            checkEqual(crossing.processInstanceId, first.process.processInstanceId,
+                       QStringLiteral("a process crossing names its process instance"));
+            break;
+        case MilestoneScope::Domain:
+            sawDomain = true;
+            checkEqual(crossing.domain, QStringLiteral("example.com"),
+                       QStringLiteral("a domain crossing names its domain"));
+            break;
+        }
+    }
+    check(sawFlow && sawProcess && sawDomain,
+          QStringLiteral("the three accounting scopes are reported"));
+
+    // Repeating the same snapshot inside the window adds no evaluations.
+    check(evaluator.evaluate({first}, 2000).isEmpty(),
+          QStringLiteral("the same snapshot is deduplicated"));
+
+    // Exact boundary.
+    VolumeMilestoneEvaluator boundary(600000);
+    check(boundary.evaluate({makeMilestoneObservation(
+              QStringLiteral("flow_bbbbbbbbbbbbbbbb"), QStringLiteral("pid:110:1000"),
+              QString(), 10 * kMiB - 1)}, 0).isEmpty(),
+          QStringLiteral("just below the threshold emits nothing"));
+    checkEqual(static_cast<int>(boundary.evaluate({makeMilestoneObservation(
+                   QStringLiteral("flow_bbbbbbbbbbbbbbbb"), QStringLiteral("pid:110:1000"),
+                   QString(), 10 * kMiB)}, 0).size()), 2,
+               QStringLiteral("the exact threshold emits flow and process crossings"));
+
+    // Process scope aggregates several flows of one process instance.
+    VolumeMilestoneEvaluator processes(600000);
+    const QList<MilestoneCrossing> processCrossings = processes.evaluate(
+        {makeMilestoneObservation(QStringLiteral("flow_cccccccccccccccc"),
+                                  QStringLiteral("pid:200:1000"), QString(), 6 * kMiB),
+         makeMilestoneObservation(QStringLiteral("flow_dddddddddddddddd"),
+                                  QStringLiteral("pid:200:1000"), QString(), 6 * kMiB)},
+        0);
+    checkEqual(static_cast<int>(processCrossings.size()), 1,
+               QStringLiteral("two small flows cross once at the process scope"));
+    if (!processCrossings.isEmpty()) {
+        check(processCrossings.first().scope == MilestoneScope::Process,
+              QStringLiteral("the aggregate crossing is a process crossing"));
+        checkEqual(processCrossings.first().cumulativeBytes, quint64(12 * kMiB),
+                   QStringLiteral("the process total sums its flows"));
+    }
+
+    // Domain scope aggregates different processes on one domain.
+    VolumeMilestoneEvaluator domains(600000);
+    const QList<MilestoneCrossing> domainCrossings = domains.evaluate(
+        {makeMilestoneObservation(QStringLiteral("flow_eeeeeeeeeeeeeeee"),
+                                  QStringLiteral("pid:300:1000"),
+                                  QStringLiteral("cdn.example.com"), 6 * kMiB),
+         makeMilestoneObservation(QStringLiteral("flow_ffffffffffffffff"),
+                                  QStringLiteral("pid:301:1000"),
+                                  QStringLiteral("cdn.example.com"), 6 * kMiB)},
+        0);
+    checkEqual(static_cast<int>(domainCrossings.size()), 1,
+               QStringLiteral("two small flows cross once at the domain scope"));
+    if (!domainCrossings.isEmpty()) {
+        check(domainCrossings.first().scope == MilestoneScope::Domain,
+              QStringLiteral("the aggregate crossing is a domain crossing"));
+        checkEqual(domainCrossings.first().domain, QStringLiteral("cdn.example.com"),
+                   QStringLiteral("the domain crossing names the normalized domain"));
+    }
+
+    // A missing domain must not aggregate into an empty domain key.
+    VolumeMilestoneEvaluator noDomain(600000);
+    const QList<MilestoneCrossing> noDomainCrossings = noDomain.evaluate(
+        {makeMilestoneObservation(QStringLiteral("flow_1111111111111111"),
+                                  QStringLiteral("pid:400:1000"), QString(), 12 * kMiB)},
+        0);
+    checkEqual(static_cast<int>(noDomainCrossings.size()), 2,
+               QStringLiteral("a flow without a domain has only flow and process scopes"));
+    for (const MilestoneCrossing &crossing : noDomainCrossings) {
+        check(crossing.scope != MilestoneScope::Domain,
+              QStringLiteral("no domain crossing is invented"));
+    }
+
+    // Counter rollover resets the scope but cannot reuse a crossing inside the
+    // evaluation window.
+    VolumeMilestoneEvaluator rollover(600000);
+    const FlowObservation high = makeMilestoneObservation(
+        QStringLiteral("flow_2222222222222222"), QStringLiteral("pid:500:1000"),
+        QString(), 12 * kMiB);
+    checkEqual(static_cast<int>(rollover.evaluate({high}, 1000).size()), 2,
+               QStringLiteral("the original crossing is accepted"));
+    FlowObservation low = high;
+    low.metrics.rxBytes = 1 * kMiB;
+    check(rollover.evaluate({low}, 2000).isEmpty(),
+          QStringLiteral("a reset counter emits nothing"));
+    check(rollover.evaluate({high}, 3000).isEmpty(),
+          QStringLiteral("re-crossing inside the window is suppressed"));
+    check(rollover.suppressedCount() >= 2,
+          QStringLiteral("suppressed crossings are counted"));
+
+    check(rollover.evaluate({low}, 700000).isEmpty(),
+          QStringLiteral("the reset after the window still emits nothing"));
+    check(!rollover.evaluate({high}, 700001).isEmpty(),
+          QStringLiteral("re-crossing after the window is accepted"));
+
+    // PID reuse and flow replacement are new scopes, so they emit immediately.
+    VolumeMilestoneEvaluator reuse(600000);
+    reuse.evaluate({makeMilestoneObservation(QStringLiteral("flow_3333333333333333"),
+                                             QStringLiteral("pid:600:1000"),
+                                             QString(), 12 * kMiB)}, 1000);
+    check(!reuse.evaluate({makeMilestoneObservation(QStringLiteral("flow_4444444444444444"),
+                                                    QStringLiteral("pid:600:2000"),
+                                                    QString(), 12 * kMiB)}, 2000).isEmpty(),
+          QStringLiteral("a reused PID with a new start time is a new scope"));
+
+    // An application restart starts with an empty evaluator, so the same
+    // observation is evaluated again rather than remembered.
+    VolumeMilestoneEvaluator restarted;
+    check(!restarted.evaluate({first}, 3000).isEmpty(),
+          QStringLiteral("a restarted evaluator does not reuse prior dedupe state"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -6684,6 +6884,7 @@ int main(int argc, char *argv[])
     testDataSaverModeContract();
     testFlowObservationContract();
     testFlowObservationBuilder();
+    testVolumeMilestones();
 
     testFixtures();
     testDiagnosticsExportSchema();
