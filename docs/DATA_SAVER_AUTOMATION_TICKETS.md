@@ -119,7 +119,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
 
 ### DS-008 Resolve decisions with fixed precedence and safe fallback
 
-- **Status:** Not started
+- **Status:** Partial
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** DS-002, DS-004, DS-005, DS-006, DS-007
@@ -130,7 +130,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
   - Foreground unknown activity immediately receives a safe allow/notify outcome; background fallback uses the approved gentle throttle only when all safety checks pass.
   - Low-confidence decisions cannot exceed notify/notify-then-continue; shared or multiplexed flows and weak/ECH-only attribution cannot produce an automatic hard block.
   - AI or automatic policy origins are validated locally; malformed enums, missing fields, invalid scope/rate, and unknown versions are rejected.
-- **Validation:** Table-driven tests prove tier precedence, confidence caps, hard-block guards, mode behavior, conflict reporting, and fallback on every dependency failure.
+- **Validation:** `src/network/datasaverdecision.{h,cpp}` implements the `PolicyDecision` v1 contract (`toJson`, `fromJson`, local `validate`) and `DecisionResolver`, which applies pinned → session → profile → cache → fallback. The DS-006 `LocalSignatureEngine` is the tier-3 candidate and supplies the lower-tier conflict vote for pinned/session winners; a DS-007 cache candidate is accepted only as a validated tier-4 decision for the same executable and domain; the tier-5 fallback is notify-only unless channel ownership was confirmed and all background safety checks pass. `tests/main.cpp` `testDataSaverDecisionResolver` covers profile-to-decision conversion, contract round-trip, newer-schema/unknown-action/missing-target rejection, pinned and session precedence with conflict reporting, Off suppression while preserving pins, foreground downgrade, cache reuse/mismatch, cache-block rejection, and the notify-only fallback. The real DS-007 cache store and a full build/harness run are still pending; syntax-only compilation of the new module and `tests/main.cpp` passed with Qt 6.11.1/MinGW.
 
 ## Phase 3: Enforcement, audit, and user actions
 

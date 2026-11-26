@@ -52,6 +52,7 @@
 #include "network/volumemilestone.h"
 #include "network/datasaverrules.h"
 #include "network/datasaverprofiles.h"
+#include "network/datasaverdecision.h"
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
@@ -7388,6 +7389,225 @@ void testLocalSignatures()
           QStringLiteral("a package install block is downgraded to a notice"));
 }
 
+// ─── DS-008: fixed precedence and safe fallback ─────────────────────────────
+
+void testDataSaverDecisionResolver()
+{
+    using namespace DataSaverDecision;
+    using Action = NetworkPolicy::Action;
+
+    DecisionResolver resolver;
+    const QDateTime now = flowTestTime();
+
+    FlowObservation observation = makeMilestoneObservation(
+        QStringLiteral("flow_aaaaaaaaaaaaaaaa"), QStringLiteral("pid:100:1000"),
+        QStringLiteral("update.googleapis.com"), 12 * VolumeMilestone::kMiB);
+    observation.metrics.milestoneBytes = 12 * VolumeMilestone::kMiB;
+    observation.metrics.milestoneIndex = 1;
+    observation.process.exeName = QStringLiteral("chromeupdate.exe");
+    observation.process.foregroundState = FlowForegroundState::Background;
+
+    ActivityQuery query;
+    query.executableName = QStringLiteral("chromeupdate.exe");
+    query.publisher = QStringLiteral("Google LLC");
+    query.publisherVerified = true;
+    query.product = QStringLiteral("Google Update");
+    query.displayName = QStringLiteral("Google Update");
+    query.domain = QStringLiteral("update.googleapis.com");
+
+    ResolverInput input;
+    input.signature.observation = observation;
+    input.signature.activity = query;
+    input.mode = DataSaverMode::Mode::Enforce;
+    input.now = now;
+    input.gentleThrottleAvailable = true;
+
+    // Tier 3 is the DS-006 recommendation, converted into a validated decision.
+    const DecisionResolution profile = resolver.resolve(input);
+    check(profile.evaluated && !profile.automationSuppressed,
+          QStringLiteral("Enforce produces an automatic decision"));
+    check(profile.decision.origin == DecisionOrigin::Profile
+              && profile.decision.tier == 3,
+          QStringLiteral("the DS-006 recommendation is tier 3"));
+    check(profile.decision.action == Action::Throttle
+              && profile.decision.rateBitsPerSecond == 409600,
+          QStringLiteral("a background updater resolves to the canonical gentle throttle"));
+    check(profile.decision.classification == SignatureClassification::AppUpdate
+              && profile.decision.confidence > 0.70,
+          QStringLiteral("the profile decision keeps its classification and confidence"));
+    check(profile.decision.target.domain == QStringLiteral("update.googleapis.com"),
+          QStringLiteral("the decision carries the attributed domain"));
+    QString error;
+    check(profile.decision.validate(&error),
+          QStringLiteral("the profile decision passes local validation: %1").arg(error));
+
+    PolicyDecision parsed;
+    check(PolicyDecision::fromJson(profile.decision.toJson(), &parsed, &error),
+          QStringLiteral("the decision round-trips through the v1 contract: %1").arg(error));
+    check(parsed.decisionId == profile.decision.decisionId
+              && parsed.origin == DecisionOrigin::Profile
+              && parsed.action == Action::Throttle
+              && parsed.rateBitsPerSecond == 409600,
+          QStringLiteral("the round-trip keeps identity, origin, and rate"));
+
+    // A pinned user rule wins and the profile disagreement is reported, not applied.
+    PinnedRule pin = makePinnedRule(QStringLiteral("chromeupdate.exe"),
+                                    QStringLiteral("*"), Action::Allow);
+    pin.id = QStringLiteral("pin_1111111111111111");
+    pin.createdAt = now;
+    input.pinnedRules << pin;
+    const DecisionResolution pinned = resolver.resolve(input);
+    check(pinned.evaluated && pinned.decision.origin == DecisionOrigin::Pinned
+              && pinned.decision.tier == 1,
+          QStringLiteral("a pinned rule wins over the profile recommendation"));
+    check(pinned.decision.action == Action::Allow
+              && pinned.decision.rateBitsPerSecond == 0,
+          QStringLiteral("the pinned allow is applied without a rate"));
+    check(pinned.decision.confidence == 1.0,
+          QStringLiteral("a user decision carries confidence 1.0"));
+    check(pinned.decision.conflict.hasConflict
+              && pinned.decision.conflict.conflictingTier == 3
+              && pinned.decision.conflict.resolution == QStringLiteral("higher_tier_won"),
+          QStringLiteral("the lower-profile disagreement is reported"));
+    check(pinned.decision.validate(&error),
+          QStringLiteral("the pinned decision validates: %1").arg(error));
+
+    // Off still honors the pin but never evaluates automation.
+    input.mode = DataSaverMode::Mode::Off;
+    const DecisionResolution offWithPin = resolver.resolve(input);
+    check(offWithPin.evaluated && offWithPin.automationSuppressed
+              && offWithPin.decision.tier == 1,
+          QStringLiteral("Off keeps the pinned decision and withholds automation"));
+    input.pinnedRules.clear();
+    const DecisionResolution suppressed = resolver.resolve(input);
+    check(!suppressed.evaluated && suppressed.automationSuppressed
+              && suppressed.decision.decisionId.isEmpty(),
+          QStringLiteral("Off produces no automatic decision"));
+
+    // A session override is tier 2 and also reports the profile conflict.
+    input.mode = DataSaverMode::Mode::Enforce;
+    SessionOverride session;
+    session.id = QStringLiteral("ses_2222222222222222");
+    session.scope = SessionScope::ExecutableDomain;
+    session.executable = QStringLiteral("chromeupdate.exe");
+    session.domainPattern = QStringLiteral("*");
+    session.action = Action::Allow;
+    session.createdAt = now;
+    input.sessionOverrides << session;
+    const DecisionResolution sessionOnly = resolver.resolve(input);
+    check(sessionOnly.decision.origin == DecisionOrigin::Session
+              && sessionOnly.decision.tier == 2,
+          QStringLiteral("a session override is tier 2"));
+    check(sessionOnly.decision.conflict.hasConflict
+              && sessionOnly.decision.conflict.conflictingTier == 3,
+          QStringLiteral("the session decision reports the profile disagreement"));
+    input.sessionOverrides.clear();
+
+    // Foreground-active traffic is downgraded to an advisory notice.
+    FlowObservation active = observation;
+    active.process.foregroundState = FlowForegroundState::ForegroundActive;
+    active.process.interactionState = FlowInteractionState::Interactive;
+    input.signature.observation = active;
+    const DecisionResolution activeResolution = resolver.resolve(input);
+    check(activeResolution.decision.action == Action::Notify
+              && activeResolution.decision.continueAfterNotify,
+          QStringLiteral("a foreground profile match is notify-then-continue"));
+    check(activeResolution.decision.validate(&error),
+          QStringLiteral("the foreground notice validates: %1").arg(error));
+    input.signature.observation = observation;
+
+    // The cache seam is tier 4 and is rejected when it targets another app.
+    EndpointCatalog emptyCatalog;
+    const QList<ProfileRule> noProfileRules;
+    LocalSignatureEngine emptyEngine(emptyCatalog, noProfileRules);
+    DecisionResolver emptyProfile(emptyEngine);
+    PolicyDecision cached;
+    cached.origin = DecisionOrigin::Cache;
+    cached.tier = 4;
+    cached.decisionId = QStringLiteral("dec_3333333333333333");
+    cached.observationId = observation.observationId;
+    cached.createdAt = now;
+    cached.action = Action::Throttle;
+    cached.scope = DecisionScope::Executable;
+    cached.target.executable = QStringLiteral("chromeupdate.exe");
+    cached.target.domain = QStringLiteral("update.googleapis.com");
+    cached.direction = NetworkDirection::Download;
+    cached.rateBitsPerSecond = 409600;
+    cached.confidence = 0.90;
+    cached.classification = SignatureClassification::AppUpdate;
+    cached.evidence.foregroundState = QStringLiteral("background");
+    cached.evidence.uxProfile = QStringLiteral("cached_app_update");
+    cached.evidence.domainConfidence = QStringLiteral("strong_inference");
+    cached.reasonShort = QStringLiteral("Cached local profile decision.");
+    input.cachedDecision = &cached;
+
+    const DecisionResolution cachedResolution = emptyProfile.resolve(input);
+    check(cachedResolution.decision.origin == DecisionOrigin::Cache
+              && cachedResolution.decision.tier == 4
+              && cachedResolution.decision.action == Action::Throttle,
+          QStringLiteral("a valid cache candidate is used as tier 4"));
+    check(cachedResolution.decision.validate(&error),
+          QStringLiteral("the cache decision validates after reuse: %1").arg(error));
+
+    cached.target.executable = QStringLiteral("other.exe");
+    const DecisionResolution mismatched = emptyProfile.resolve(input);
+    check(mismatched.decision.origin == DecisionOrigin::Fallback
+              && mismatched.decision.tier == 5,
+          QStringLiteral("a cache candidate for another executable is ignored"));
+    check(mismatched.diagnostic.contains(QStringLiteral("different executable")),
+          QStringLiteral("the ignored cache candidate is explained"));
+
+    // Without an enforceable channel the fallback stays notify-only.
+    input.cachedDecision = nullptr;
+    input.gentleThrottleAvailable = false;
+    const DecisionResolution notifyFallback = emptyProfile.resolve(input);
+    check(notifyFallback.decision.origin == DecisionOrigin::Fallback
+              && notifyFallback.decision.action == Action::Notify
+              && notifyFallback.decision.continueAfterNotify,
+          QStringLiteral("the fallback is notify-only without channel ownership"));
+
+    // Malformed or unsafe contract payloads are rejected whole.
+    const QJsonObject decisionJson = profile.decision.toJson();
+    QJsonObject newer = decisionJson;
+    newer.insert(QStringLiteral("schemaVersion"), 2);
+    check(!PolicyDecision::fromJson(newer, &parsed, &error),
+          QStringLiteral("a newer decision schema is rejected"));
+
+    QJsonObject badAction = decisionJson;
+    badAction.insert(QStringLiteral("action"), QStringLiteral("drop"));
+    check(!PolicyDecision::fromJson(badAction, &parsed, &error),
+          QStringLiteral("an unknown decision action is rejected"));
+
+    QJsonObject noTarget = decisionJson;
+    noTarget.remove(QStringLiteral("target"));
+    check(!PolicyDecision::fromJson(noTarget, &parsed, &error),
+          QStringLiteral("a decision without a target is rejected"));
+
+    QJsonObject weakBlock = decisionJson;
+    weakBlock.remove(QStringLiteral("throttle"));
+    weakBlock.insert(QStringLiteral("origin"), QStringLiteral("profile"));
+    weakBlock.insert(QStringLiteral("tier"), 3);
+    weakBlock.insert(QStringLiteral("action"), QStringLiteral("block"));
+    weakBlock.insert(QStringLiteral("confidence"), 0.90);
+    QJsonObject weakEvidence = weakBlock.value(QStringLiteral("evidenceSummary")).toObject();
+    weakEvidence.insert(QStringLiteral("domainConfidence"), QStringLiteral("weak_inference"));
+    weakBlock.insert(QStringLiteral("evidenceSummary"), weakEvidence);
+    check(!PolicyDecision::fromJson(weakBlock, &parsed, &error),
+          QStringLiteral("an automatic block on weak domain evidence is rejected"));
+
+    // A cache-supplied block cannot bypass the profile-origin requirement.
+    PolicyDecision cachedBlock = cached;
+    cachedBlock.target.executable = QStringLiteral("chromeupdate.exe");
+    cachedBlock.action = Action::Block;
+    cachedBlock.rateBitsPerSecond = 0;
+    cachedBlock.confidence = 0.95;
+    input.cachedDecision = &cachedBlock;
+    const DecisionResolution blocked = emptyProfile.resolve(input);
+    check(blocked.decision.origin == DecisionOrigin::Fallback
+              && blocked.decision.action != Action::Block,
+          QStringLiteral("a cached block is rejected and the fallback stays safe"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -7410,6 +7630,7 @@ int main(int argc, char *argv[])
     testVolumeMilestones();
     testDataSaverRules();
     testLocalSignatures();
+    testDataSaverDecisionResolver();
 
     testFixtures();
     testDiagnosticsExportSchema();

@@ -332,6 +332,12 @@ not in the policy enum, so the stored policy format version does not change.
   Foreground-active, protected, latency-sensitive, package-install, and unknown activity are
   guarded against throttle/block; stale foreground evidence is represented as `unknown`, never
   inferred from a window title.
+- DS-008 composes the tiers in `src/network/datasaverdecision.{h,cpp}`. `DecisionResolver` matches
+  pinned and session rules first, uses the DS-006 recommendation as the tier-3 candidate and as a
+  lower-tier conflict vote, accepts a DS-007 cache candidate only as a validated tier-4 decision for
+  the same executable and domain, and otherwise emits the tier-5 fallback. Every automatic
+  candidate passes the §4.4 guards again; a lower tier that disagrees is reported, never applied.
+  `Off` suppresses tiers 3–5 but still resolves pinned and session decisions.
 
 ## 6. Committed decision, audit, and notification
 
@@ -513,6 +519,7 @@ never call enforcement or touch the policy store.
 | Milestone accounting/dedupe | `src/network/volumemilestone.{h,cpp}` (`thresholdBytes`, `VolumeMilestoneEvaluator`) |
 | Pinned rules / session overrides | `src/network/datasaverrules.{h,cpp}` (`PinnedRuleStore`, `SessionOverrideStore`, `RuleResolver`) |
 | Local signatures / profile rules | `src/network/datasaverprofiles.{h,cpp}` (`LocalSignatureEngine`, `ProfileRule`, `defaultProfileRules`) |
+| Decision contract / precedence | `src/network/datasaverdecision.{h,cpp}` (`PolicyDecision`, `DecisionResolver`, `DecisionOrigin`) |
 | Audit records | `AuditEvent` (`src/network/policy.h`), `AuditEventStore` (`src/network/auditeventstore.h`) |
 | Notification dedupe/priority | `src/network/notificationcoordinator.h` |
 | Mode values | `src/network/datasavermode.{h,cpp}` (`load`/`save`, legacy migration), `NetworkWidget::setDataSaverMode()` |

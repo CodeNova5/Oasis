@@ -59,6 +59,7 @@ SOURCES += \
     src/network/volumemilestone.cpp \
     src/network/datasaverrules.cpp \
     src/network/datasaverprofiles.cpp \
+    src/network/datasaverdecision.cpp \
     src/network/auditeventstore.cpp \
     src/network/evidenceexport.cpp \
     src/network/auditlogmodel.cpp \
@@ -149,6 +150,7 @@ HEADERS += \
     src/network/volumemilestone.h \
     src/network/datasaverrules.h \
     src/network/datasaverprofiles.h \
+    src/network/datasaverdecision.h \
     src/network/auditeventstore.h \
     src/network/evidenceexport.h \
     src/network/auditlogmodel.h \
