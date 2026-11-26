@@ -493,7 +493,7 @@ never call enforcement or touch the policy store.
 | Contract element | Shipped reference |
 | --- | --- |
 | Schema versioning rules | `src/network/policy.h` (`PolicyContract`), `src/network/policy.cpp` (`schemaVersionOk`) |
-| Observation fields | `src/network/policy.h` (`ActivityObservation`), `src/network/connectionsnapshot.h` (rates) |
+| Observation fields | `src/network/flowobservation.{h,cpp}` (`FlowObservation` v1, `FlowObservationBuilder`), `src/network/policy.h` (`ActivityObservation`), `src/network/connectionsnapshot.h` (rates) |
 | Policy action/scope/source | `src/network/policy.h` (`NetworkPolicy`), `src/network/policy.cpp` (`policyOrigin`) |
 | Rate unit | `NetworkPolicy::rateBitsPerSecond`; `ThrottlePolicyManager::DefaultLimitBitsPerSecond = 409600` |
 | 10 MiB milestone | `BandwidthGuard::DetectionBytes = 10 * 1024 * 1024` |
@@ -501,6 +501,6 @@ never call enforcement or touch the policy store.
 | Channel routing | `plannedChannels()` (`src/network/enforcementrestore.cpp`) |
 | Audit records | `AuditEvent` (`src/network/policy.h`), `AuditEventStore` (`src/network/auditeventstore.h`) |
 | Notification dedupe/priority | `src/network/notificationcoordinator.h` |
-| Mode values | `NetworkWidget::m_dataSaverMode`, `setDataSaverMode()` (`src/network/networkwidgetpolicies.cpp`) |
+| Mode values | `src/network/datasavermode.{h,cpp}` (`load`/`save`, legacy migration), `NetworkWidget::setDataSaverMode()` |
 | Bridge status shape | `dataSaverStatus()` (`src/ui/webview2/webuibridge.cpp`) |
 | Policy persistence | `PolicyStore` group `Oasis/Policies`, format version 2 |

@@ -45,7 +45,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
 
 ### DS-003 Produce canonical, non-blocking flow observations
 
-- **Status:** Not started
+- **Status:** Partial
 - **Type:** feature
 - **Priority:** P0
 - **Dependencies:** DS-001
@@ -55,7 +55,7 @@ This backlog implements [DATA_SAVER_AUTOMATION_PRD.md](DATA_SAVER_AUTOMATION_PRD
   - Missing, weak, encrypted, shared, or multiplexed evidence is represented explicitly as unknown/weak; it is never promoted to a confident owner or hostname.
   - Packet hooks do not wait on disk, HTTP, AI, policy UI, or other blocking work; aggregation is bounded and thread-safe.
   - Raw payloads and local browsing history are neither persisted nor sent to classification providers.
-- **Validation:** Pure contract tests and synthetic packet/flow fixtures cover IPv4/IPv6, PID reuse, missing process evidence, shared flows, DNS/SNI confidence, and malformed input.
+- **Validation:** `src/network/flowobservation.{h,cpp}` implements the v1 contract and bounded aggregation; `tests/main.cpp` `testFlowObservationContract`/`testFlowObservationBuilder` cover round-trip, forward-version rejection, malformed payloads, IPv4/IPv6, PID reuse, missing process evidence, shared flows, and DNS/SNI confidence. Harness build and run are pending.
 
 ### DS-004 Track volume milestones and deduplicate evaluations
 

@@ -30,6 +30,31 @@ QString enforcementStatusName(EnforcementResult::Status status)
 // resolution, and the icon lookups it queues.
 Oasis::GuiTiming::Probe batchProbe("NetworkWidget::onPacketsCapturedBatch");
 
+// DS-003: the correlator's source/confidence vocabulary maps onto the
+// observation contract without turning weak evidence into a confirmed name.
+FlowDomainSource flowDomainSourceFor(AttributionSource source)
+{
+    switch (source) {
+    case AttributionSource::DnsAnswer: return FlowDomainSource::Dns;
+    case AttributionSource::TlsSni:    return FlowDomainSource::Sni;
+    // Both observers agreed on the name; the confidence carries the strength.
+    case AttributionSource::DnsAndTls: return FlowDomainSource::Dns;
+    case AttributionSource::Unknown:   break;
+    }
+    return FlowDomainSource::None;
+}
+
+FlowDomainConfidence flowDomainConfidenceFor(ApplicationIdentity::Confidence confidence)
+{
+    switch (confidence) {
+    case ApplicationIdentity::Confidence::Confirmed:       return FlowDomainConfidence::Confirmed;
+    case ApplicationIdentity::Confidence::StrongInference: return FlowDomainConfidence::StrongInference;
+    case ApplicationIdentity::Confidence::WeakInference:   return FlowDomainConfidence::WeakInference;
+    case ApplicationIdentity::Confidence::Unknown:         break;
+    }
+    return FlowDomainConfidence::Unknown;
+}
+
 } // namespace
 
 // ============================================================================
@@ -58,6 +83,7 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     , ui(new Ui::NetworkWidget)
 {
     ui->setupUi(this);
+    m_flowClock.start();
 
     // Data Saver starts Off unless a valid stored mode says otherwise. The load
     // performs the one-time legacy migration (off/monitor/enforce -> Off/Enforce)
@@ -611,6 +637,7 @@ void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batc
 {
     Oasis::GuiTiming::Scope timing(batchProbe);
     m_bandwidthGuard->observe(batch);
+    ingestFlowObservations(batch);
     m_model->addPackets(batch);
     // Destination names come from the correlator the capture thread writes
     // through, so resolving them holds a lock that thread needs. This ran on
@@ -622,6 +649,17 @@ void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batc
         || m_domainRefreshClock.elapsed() >= kDomainRefreshMs) {
         m_domainRefreshClock.start();
         m_model->refreshDomains();
+        // DS-003: the same once-a-second cadence installs destination evidence
+        // into the observation builder. It is an in-memory read, not a packet
+        // hook, so capture never waits on it.
+        const QList<DestinationNameSummary> summaries = m_monitor->attributionSummaries();
+        for (const DestinationNameSummary &summary : summaries) {
+            if (summary.address.isEmpty() || summary.name.isEmpty()) continue;
+            m_flowObservationBuilder.setDestinationName(
+                summary.address, summary.name,
+                flowDomainSourceFor(summary.source),
+                flowDomainConfidenceFor(summary.confidence));
+        }
     }
     m_totalPkts += batch.size();
     ui->lblPackets->setText(QString::number(m_totalPkts));
@@ -641,6 +679,64 @@ void NetworkWidget::onPacketsCapturedBatch(const QList<CapturedPacketInfo> &batc
             }
         }
     }
+}
+
+void NetworkWidget::ingestFlowObservations(const QList<CapturedPacketInfo> &batch)
+{
+    const qint64 monotonicMs = m_flowClock.isValid() ? m_flowClock.elapsed() : 0;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const bool foregroundKnown = m_foregroundSnapshot.isFresh(
+        QDateTime::currentMSecsSinceEpoch());
+
+    for (const CapturedPacketInfo &info : batch) {
+        const ParsedPacket &packet = info.pkt;
+        if (!packet.valid) continue;
+
+        FlowCaptureSample sample;
+        sample.timestamp = now;
+        sample.monotonicMs = monotonicMs;
+        sample.pid = info.pid;
+        sample.parentPid = info.parentPid;
+        sample.processStartMs = info.processStartMs;
+        sample.processName = info.proc;
+        sample.identityId = info.identityId;
+        sample.service = info.isService;
+        switch (info.foreground) {
+        case Oasis::ForegroundAssociation::ForegroundApp:
+            sample.foreground = FlowCaptureSample::Foreground::App;
+            sample.foregroundRootPid = m_foregroundSnapshot.foregroundPid;
+            break;
+        case Oasis::ForegroundAssociation::ForegroundChild:
+            sample.foreground = FlowCaptureSample::Foreground::Child;
+            sample.foregroundRootPid = m_foregroundSnapshot.foregroundPid;
+            break;
+        case Oasis::ForegroundAssociation::None:
+            sample.foreground = foregroundKnown ? FlowCaptureSample::Foreground::None
+                                                : FlowCaptureSample::Foreground::Unknown;
+            break;
+        }
+
+        sample.protocol = packet.protocol;
+        if (packet.isDownload) {
+            sample.localAddress = packet.dstIP;
+            sample.localPort = packet.dstPort;
+            sample.remoteAddress = packet.srcIP;
+            sample.remotePort = packet.srcPort;
+        } else {
+            sample.localAddress = packet.srcIP;
+            sample.localPort = packet.srcPort;
+            sample.remoteAddress = packet.dstIP;
+            sample.remotePort = packet.dstPort;
+        }
+        sample.bytes = packet.wireLen;
+        sample.download = packet.isDownload;
+        m_flowObservationBuilder.addSample(sample);
+    }
+}
+
+QList<FlowObservation> NetworkWidget::currentFlowObservations() const
+{
+    return m_flowObservationBuilder.observations();
 }
 
 void NetworkWidget::onSpeedUpdated(quint64 rxBps, quint64 txBps) {

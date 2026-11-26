@@ -48,6 +48,7 @@
 #include "network/diagnostics.h"
 #include "network/enforcementrestore.h"
 #include "network/datasavermode.h"
+#include "network/flowobservation.h"
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
@@ -6277,6 +6278,393 @@ void testDataSaverModeContract()
     clearDataSaverModeSettings();
 }
 
+// ─── DS-003: FlowObservation v1 contract and bounded aggregation ────────────
+
+QDateTime flowTestTime(qint64 offsetMs = 0)
+{
+    const QDateTime base = QDateTime::fromString(QStringLiteral("2026-11-25T18:00:00Z"),
+                                                 Qt::ISODate);
+    return base.addMSecs(offsetMs);
+}
+
+FlowCaptureSample makeFlowSample(quint32 pid, qint64 processStartMs, qint64 monotonicMs,
+                                 const QString &protocol = QStringLiteral("TCP"),
+                                 const QString &remoteAddress = QStringLiteral("13.107.246.40"),
+                                 quint16 remotePort = 443, quint32 bytes = 1024,
+                                 bool download = true)
+{
+    FlowCaptureSample sample;
+    sample.timestamp = flowTestTime(monotonicMs);
+    sample.monotonicMs = monotonicMs;
+    sample.pid = pid;
+    sample.processStartMs = processStartMs;
+    sample.processName = QStringLiteral("Code.exe");
+    sample.executablePath = QStringLiteral("C:/Program Files/Microsoft VS Code/Code.exe");
+    sample.executableVersion = QStringLiteral("1.95.2");
+    sample.identityId = QStringLiteral("app_7f3c11a0");
+    sample.protocol = protocol;
+    sample.localAddress = QStringLiteral("192.168.1.100");
+    sample.localPort = 54312;
+    sample.remoteAddress = remoteAddress;
+    sample.remotePort = remotePort;
+    sample.bytes = bytes;
+    sample.download = download;
+    sample.foreground = FlowCaptureSample::Foreground::App;
+    sample.foregroundRootPid = pid;
+    return sample;
+}
+
+void testFlowObservationContract()
+{
+    FlowObservation in;
+    in.observationId = QStringLiteral("obs_0123456789abcdef");
+    in.timestamp = flowTestTime();
+    in.process.processInstanceId = QStringLiteral("pid:14820:1764093600000");
+    in.process.pid = 14820;
+    in.process.parentPid = 9104;
+    in.process.identityId = QStringLiteral("app_7f3c11a0");
+    in.process.exeName = QStringLiteral("Code.exe");
+    in.process.exePath = QStringLiteral("C:/Program Files/Microsoft VS Code/Code.exe");
+    in.process.exeVersion = QStringLiteral("1.95.2");
+    in.process.role = FlowProcessRole::Main;
+    in.process.foregroundState = FlowForegroundState::ForegroundActive;
+    in.process.foregroundRootPid = 14820;
+    in.process.interactionState = FlowInteractionState::Interactive;
+    in.flow.flowId = QStringLiteral("flow_3ab19d0e");
+    in.flow.protocol = QStringLiteral("TCP");
+    in.flow.localEndpoint = QStringLiteral("192.168.1.100:54312");
+    in.flow.remoteEndpoint = QStringLiteral("13.107.246.40:443");
+    in.flow.domain = QStringLiteral("update.code.visualstudio.com");
+    in.flow.domainSource = FlowDomainSource::Sni;
+    in.flow.domainConfidence = FlowDomainConfidence::StrongInference;
+    in.flow.multiplexed = false;
+    in.flow.shared = true;
+    in.metrics.rxBytes = 10485760;
+    in.metrics.txBytes = 18432;
+    in.metrics.durationMs = 4200;
+    in.metrics.rateRxBitsPerSecond = 19972876;
+    in.metrics.milestoneBytes = 10485760;
+    in.metrics.milestoneIndex = 1;
+    in.uxSignals.blockingToUser = false;
+    in.uxSignals.latencySensitive = true;
+    in.uxSignals.deferrable = true;
+    in.uxSignals.avoidable = true;
+    in.uxSignals.detectorTags << QStringLiteral("ide_core_update_signature")
+                              << QStringLiteral("background_update");
+
+    const QJsonObject json = toJson(in);
+    checkEqual(json.value(QStringLiteral("schemaVersion")).toInt(), 1,
+               QStringLiteral("FlowObservation writes schemaVersion 1"));
+    check(json.value(QStringLiteral("process")).toObject()
+              .contains(QStringLiteral("processInstanceId")),
+          QStringLiteral("FlowObservation uses camelCase process fields"));
+    check(json.value(QStringLiteral("flow")).toObject()
+              .contains(QStringLiteral("remoteEndpoint")),
+          QStringLiteral("FlowObservation uses camelCase flow fields"));
+
+    FlowObservation out;
+    QString error;
+    check(fromJson(json, &out, &error),
+          QStringLiteral("FlowObservation round-trips: %1").arg(error));
+    checkEqual(out.observationId, in.observationId, QStringLiteral("observationId"));
+    checkEqual(out.timestamp, in.timestamp, QStringLiteral("timestamp"));
+    checkEqual(out.process.processInstanceId, in.process.processInstanceId,
+               QStringLiteral("processInstanceId"));
+    checkEqual(out.process.exeName, in.process.exeName, QStringLiteral("exeName"));
+    checkEqual(out.process.exeVersion, in.process.exeVersion, QStringLiteral("exeVersion"));
+    check(out.process.role == FlowProcessRole::Main, QStringLiteral("processRole"));
+    check(out.process.foregroundState == FlowForegroundState::ForegroundActive,
+          QStringLiteral("foregroundState"));
+    check(out.process.interactionState == FlowInteractionState::Interactive,
+          QStringLiteral("interactionState"));
+    checkEqual(out.flow.domain, in.flow.domain, QStringLiteral("domain"));
+    check(out.flow.domainSource == FlowDomainSource::Sni, QStringLiteral("domainSource"));
+    check(out.flow.domainConfidence == FlowDomainConfidence::StrongInference,
+          QStringLiteral("domainConfidence"));
+    check(out.flow.shared, QStringLiteral("shared"));
+    checkEqual(out.metrics.rxBytes, in.metrics.rxBytes, QStringLiteral("rxBytes"));
+    checkEqual(out.metrics.durationMs, in.metrics.durationMs, QStringLiteral("durationMs"));
+    checkEqual(out.metrics.milestoneIndex, in.metrics.milestoneIndex,
+               QStringLiteral("milestoneIndex"));
+    checkEqual(out.uxSignals.detectorTags, in.uxSignals.detectorTags,
+               QStringLiteral("detectorTags"));
+    check(out.uxSignals.latencySensitive && out.uxSignals.deferrable && out.uxSignals.avoidable,
+          QStringLiteral("uxSignals booleans"));
+
+    // §1 versioning: absent means 1; newer is rejected whole.
+    QJsonObject withoutVersion = json;
+    withoutVersion.remove(QStringLiteral("schemaVersion"));
+    check(fromJson(withoutVersion, &out, &error),
+          QStringLiteral("a payload without schemaVersion reads as v1"));
+    QJsonObject newer = json;
+    newer.insert(QStringLiteral("schemaVersion"), 2);
+    check(!fromJson(newer, &out, &error),
+          QStringLiteral("a newer FlowObservation schema is rejected"));
+    check(error.contains(QStringLiteral("newer")),
+          QStringLiteral("the newer-schema error names the version problem"));
+    QJsonObject zero = json;
+    zero.insert(QStringLiteral("schemaVersion"), 0);
+    check(!fromJson(zero, &out, &error), QStringLiteral("schemaVersion 0 is rejected"));
+
+    // Malformed payloads reject instead of being partially accepted.
+    QJsonObject badId = json;
+    badId.insert(QStringLiteral("observationId"), QStringLiteral("obs_NOTHEX"));
+    check(!fromJson(badId, &out, &error), QStringLiteral("a malformed observationId is rejected"));
+
+    QJsonObject missingMetrics = json;
+    missingMetrics.remove(QStringLiteral("metrics"));
+    check(!fromJson(missingMetrics, &out, &error),
+          QStringLiteral("a missing metrics object is rejected"));
+
+    QJsonObject negativeBytes = json;
+    QJsonObject negativeMetrics = negativeBytes.value(QStringLiteral("metrics")).toObject();
+    negativeMetrics.insert(QStringLiteral("rxBytes"), -1);
+    negativeBytes.insert(QStringLiteral("metrics"), negativeMetrics);
+    check(!fromJson(negativeBytes, &out, &error),
+          QStringLiteral("a negative byte counter is rejected"));
+
+    QJsonObject unknownRole = json;
+    QJsonObject roleProcess = unknownRole.value(QStringLiteral("process")).toObject();
+    roleProcess.insert(QStringLiteral("processRole"), QStringLiteral("root"));
+    unknownRole.insert(QStringLiteral("process"), roleProcess);
+    check(!fromJson(unknownRole, &out, &error),
+          QStringLiteral("an unknown processRole is rejected"));
+
+    QJsonObject badEndpoint = json;
+    QJsonObject endpointFlow = badEndpoint.value(QStringLiteral("flow")).toObject();
+    endpointFlow.insert(QStringLiteral("remoteEndpoint"), QStringLiteral("13.107.246.40"));
+    badEndpoint.insert(QStringLiteral("flow"), endpointFlow);
+    check(!fromJson(badEndpoint, &out, &error),
+          QStringLiteral("an endpoint without a port is rejected"));
+
+    QJsonObject domainWithoutSource = json;
+    QJsonObject domainFlow = domainWithoutSource.value(QStringLiteral("flow")).toObject();
+    domainFlow.remove(QStringLiteral("domainSource"));
+    domainWithoutSource.insert(QStringLiteral("flow"), domainFlow);
+    check(!fromJson(domainWithoutSource, &out, &error),
+          QStringLiteral("a domain without a source is rejected"));
+
+    QJsonObject missingProcess = json;
+    missingProcess.remove(QStringLiteral("process"));
+    check(!fromJson(missingProcess, &out, &error),
+          QStringLiteral("a missing process object is rejected"));
+
+    // A process instance id must agree with the pid, so a stale record cannot
+    // be re-labelled onto another process.
+    QJsonObject mismatchedInstance = json;
+    QJsonObject instanceProcess = mismatchedInstance.value(QStringLiteral("process")).toObject();
+    instanceProcess.insert(QStringLiteral("processInstanceId"),
+                           QStringLiteral("pid:999:1764093600000"));
+    mismatchedInstance.insert(QStringLiteral("process"), instanceProcess);
+    check(!fromJson(mismatchedInstance, &out, &error),
+          QStringLiteral("a processInstanceId that disagrees with pid is rejected"));
+
+    // The contract keeps a base name, never a path.
+    QJsonObject pathExe = json;
+    QJsonObject pathProcess = pathExe.value(QStringLiteral("process")).toObject();
+    pathProcess.insert(QStringLiteral("exeName"),
+                       QStringLiteral("C:/Program Files/Code.exe"));
+    pathExe.insert(QStringLiteral("process"), pathProcess);
+    check(!fromJson(pathExe, &out, &error),
+          QStringLiteral("exeName containing a path is rejected"));
+}
+
+void testFlowObservationBuilder()
+{
+    FlowObservationBuilder builder(4242, 512);
+    builder.addSample(makeFlowSample(100, 1000, 0, QStringLiteral("TCP"),
+                                     QStringLiteral("13.107.246.40"), 443,
+                                     1024 * 1024));
+    builder.addSample(makeFlowSample(100, 1000, 1000, QStringLiteral("TCP"),
+                                     QStringLiteral("13.107.246.40"), 443,
+                                     1024 * 1024));
+    builder.addSample(makeFlowSample(100, 1000, 1000, QStringLiteral("TCP"),
+                                     QStringLiteral("13.107.246.40"), 443,
+                                     1024, false));
+
+    QList<FlowObservation> observations = builder.observations();
+    checkEqual(static_cast<int>(observations.size()), 1,
+               QStringLiteral("one flow aggregates every sample"));
+    if (observations.size() == 1) {
+        const FlowObservation &observation = observations.first();
+        check(isFlowIdentifier(observation.observationId, QStringLiteral("obs_")),
+              QStringLiteral("the observation id follows the contract format"));
+        check(isFlowIdentifier(observation.flow.flowId, QStringLiteral("flow_")),
+              QStringLiteral("the flow id follows the contract format"));
+        checkEqual(observation.process.processInstanceId,
+                   QStringLiteral("pid:100:1000"),
+                   QStringLiteral("processInstanceId carries the process start time"));
+        checkEqual(observation.process.exeName, QStringLiteral("Code.exe"),
+                   QStringLiteral("exeName is normalized"));
+        checkEqual(observation.metrics.rxBytes, quint64(2 * 1024 * 1024),
+                   QStringLiteral("rxBytes accumulates downloads"));
+        checkEqual(observation.metrics.txBytes, quint64(1024),
+                   QStringLiteral("txBytes accumulates uploads"));
+        checkEqual(observation.metrics.durationMs, qint64(1000),
+                   QStringLiteral("durationMs is the monotonic flow age"));
+        checkEqual(observation.metrics.rateRxBitsPerSecond, quint64(16777216),
+                   QStringLiteral("rateRxBitsPerSecond is bits per second"));
+        check(observation.process.role == FlowProcessRole::Main,
+              QStringLiteral("a foreground app is the main process"));
+        check(observation.process.foregroundState == FlowForegroundState::ForegroundActive,
+              QStringLiteral("a foreground app is foreground_active"));
+        check(!observation.flow.shared,
+              QStringLiteral("a single owner is not marked shared"));
+
+        const QList<FlowObservation> second = builder.observations();
+        check(second.size() == 1
+                  && second.first().observationId != observation.observationId,
+              QStringLiteral("each snapshot mints a fresh observationId"));
+    }
+
+    // IPv6 endpoints stay unambiguous.
+    FlowObservationBuilder ipv6(9);
+    FlowCaptureSample v6 = makeFlowSample(101, 2000, 0, QStringLiteral("UDP"),
+                                          QStringLiteral("2001:db8::1"), 443, 512);
+    v6.localAddress = QStringLiteral("fe80::1");
+    ipv6.addSample(v6);
+    const QList<FlowObservation> v6List = ipv6.observations();
+    checkEqual(static_cast<int>(v6List.size()), 1,
+               QStringLiteral("an IPv6 flow is observed"));
+    if (!v6List.isEmpty()) {
+        checkEqual(v6List.first().flow.remoteEndpoint,
+                   QStringLiteral("[2001:db8::1]:443"),
+                   QStringLiteral("an IPv6 endpoint is bracketed"));
+        FlowObservation parsed;
+        QString error;
+        check(fromJson(toJson(v6List.first()), &parsed, &error),
+              QStringLiteral("an IPv6 observation round-trips: %1").arg(error));
+    }
+
+    // A reused PID with a new start time cannot inherit the old flow.
+    FlowObservationBuilder reuse(77);
+    reuse.addSample(makeFlowSample(200, 5000, 0));
+    const QString firstId = reuse.observations().first().flow.flowId;
+    const QString firstInstance = reuse.observations().first().process.processInstanceId;
+    reuse.expireIdleFlows(200000, 60000);
+    checkEqual(reuse.flowCount(), 0, QStringLiteral("an idle flow expires"));
+    reuse.addSample(makeFlowSample(200, 9000, 200000));
+    const QList<FlowObservation> reused = reuse.observations();
+    checkEqual(static_cast<int>(reused.size()), 1,
+               QStringLiteral("the reused PID produces one new flow"));
+    if (!reused.isEmpty()) {
+        check(reused.first().flow.flowId != firstId,
+              QStringLiteral("a re-established flow gets a new flowId"));
+        check(reused.first().process.processInstanceId != firstInstance,
+              QStringLiteral("a reused PID gets a new processInstanceId"));
+        checkEqual(reused.first().metrics.rxBytes, quint64(1024),
+                   QStringLiteral("the new process does not inherit old counters"));
+    }
+
+    // Two processes on one 4-tuple are shared, not a single owner.
+    FlowObservationBuilder shared(88);
+    shared.addSample(makeFlowSample(300, 1000, 0));
+    shared.addSample(makeFlowSample(301, 1000, 10));
+    const QList<FlowObservation> sharedList = shared.observations();
+    checkEqual(static_cast<int>(sharedList.size()), 2,
+               QStringLiteral("a shared 4-tuple yields two observations"));
+    for (const FlowObservation &observation : sharedList) {
+        check(observation.flow.shared, QStringLiteral("both observations are marked shared"));
+    }
+
+    // Missing process evidence is dropped and counted, never invented.
+    FlowObservationBuilder missing(99);
+    FlowCaptureSample noPid = makeFlowSample(0, 1000, 0);
+    missing.addSample(noPid);
+    FlowCaptureSample noName = makeFlowSample(400, 1000, 0);
+    noName.processName = QStringLiteral("   ");
+    missing.addSample(noName);
+    FlowCaptureSample noProtocol = makeFlowSample(400, 1000, 0);
+    noProtocol.protocol.clear();
+    missing.addSample(noProtocol);
+    FlowCaptureSample noRemote = makeFlowSample(400, 1000, 0);
+    noRemote.remoteAddress.clear();
+    missing.addSample(noRemote);
+    checkEqual(missing.droppedSamples(), 4,
+               QStringLiteral("samples without an owner or endpoints are dropped"));
+    check(missing.observations().isEmpty(),
+          QStringLiteral("a dropped sample produces no observation"));
+
+    // Domain evidence stays explicit and never downgrades.
+    FlowObservationBuilder domains(123);
+    domains.addSample(makeFlowSample(500, 1000, 0));
+    domains.setDestinationName(QStringLiteral("13.107.246.40"), QStringLiteral("Example.COM."),
+                               FlowDomainSource::Dns, FlowDomainConfidence::WeakInference);
+    FlowObservation weak = domains.observations().first();
+    checkEqual(weak.flow.domain, QStringLiteral("example.com"),
+               QStringLiteral("a domain is normalized"));
+    check(weak.flow.domainSource == FlowDomainSource::Dns,
+          QStringLiteral("the DNS source is preserved"));
+    check(weak.flow.domainConfidence == FlowDomainConfidence::WeakInference,
+          QStringLiteral("DNS-only evidence stays a weak inference"));
+
+    domains.setDestinationName(QStringLiteral("13.107.246.40"), QStringLiteral("example.com"),
+                               FlowDomainSource::Sni, FlowDomainConfidence::StrongInference);
+    FlowObservation strong = domains.observations().first();
+    check(strong.flow.domainConfidence == FlowDomainConfidence::StrongInference,
+          QStringLiteral("stronger evidence upgrades the domain"));
+    domains.setDestinationName(QStringLiteral("13.107.246.40"),
+                               QStringLiteral("other.example.com"),
+                               FlowDomainSource::Dns, FlowDomainConfidence::WeakInference);
+    checkEqual(domains.observations().first().flow.domain, QStringLiteral("example.com"),
+               QStringLiteral("weaker evidence never downgrades the domain"));
+
+    // Unknown attribution is absent, not invented, and a wildcard is not a name.
+    FlowObservationBuilder unknownDomain(321);
+    unknownDomain.addSample(makeFlowSample(600, 1000, 0, QStringLiteral("TCP"),
+                                           QStringLiteral("93.184.216.34")));
+    unknownDomain.setDestinationName(QStringLiteral("93.184.216.34"),
+                                     QStringLiteral("*.example.com"),
+                                     FlowDomainSource::Dns, FlowDomainConfidence::WeakInference);
+    const FlowObservation unknown = unknownDomain.observations().first();
+    check(unknown.flow.domain.isEmpty(),
+          QStringLiteral("an unknown domain stays absent"));
+    const QJsonObject unknownJson = toJson(unknown);
+    check(!unknownJson.value(QStringLiteral("flow")).toObject()
+               .contains(QStringLiteral("domain")),
+          QStringLiteral("an absent domain is omitted from the payload"));
+    FlowObservation unknownParsed;
+    check(fromJson(unknownJson, &unknownParsed, nullptr),
+          QStringLiteral("an observation without a domain round-trips"));
+
+    // Bounded storage evicts the oldest flow instead of growing without limit.
+    FlowObservationBuilder bounded(555, 2);
+    for (int i = 0; i < 5; ++i) {
+        bounded.addSample(makeFlowSample(700 + static_cast<quint32>(i), 1000,
+                                         i * 1000, QStringLiteral("TCP"),
+                                         QStringLiteral("13.107.246.40"),
+                                         static_cast<quint16>(4000 + i)));
+    }
+    checkEqual(bounded.flowCount(), 2, QStringLiteral("the flow store is bounded"));
+    checkEqual(static_cast<int>(bounded.observations().size()), 2,
+               QStringLiteral("only live flows are observed"));
+    check(bounded.evictedFlows() >= 3, QStringLiteral("evictions are counted"));
+
+    // Milestones are carried, not invented.
+    FlowObservationBuilder milestones(777);
+    FlowCaptureSample milestone = makeFlowSample(800, 1000, 0);
+    milestone.milestoneBytes = 10485760;
+    milestone.milestoneIndex = 1;
+    milestones.addSample(milestone);
+    const FlowObservation withMilestone = milestones.observations().first();
+    checkEqual(withMilestone.metrics.milestoneBytes, quint64(10485760),
+               QStringLiteral("milestoneBytes comes from the caller"));
+    checkEqual(withMilestone.metrics.milestoneIndex, 1,
+               QStringLiteral("milestoneIndex comes from the caller"));
+
+    // A service is represented as a service, even without foreground evidence.
+    FlowObservationBuilder services(888);
+    FlowCaptureSample service = makeFlowSample(900, 1000, 0);
+    service.service = true;
+    service.foreground = FlowCaptureSample::Foreground::Unknown;
+    services.addSample(service);
+    const FlowObservation serviceObservation = services.observations().first();
+    check(serviceObservation.process.role == FlowProcessRole::Service,
+          QStringLiteral("a service sample has the service role"));
+    check(serviceObservation.process.foregroundState == FlowForegroundState::Unknown,
+          QStringLiteral("missing foreground evidence stays unknown"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -6294,6 +6682,8 @@ int main(int argc, char *argv[])
     testAuditEventRoundTrip();
     testSchemaVersionGate();
     testDataSaverModeContract();
+    testFlowObservationContract();
+    testFlowObservationBuilder();
 
     testFixtures();
     testDiagnosticsExportSchema();

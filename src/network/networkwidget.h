@@ -16,6 +16,7 @@
 #include "networkmodel.h"
 #include "bandwidthguard.h"
 #include "datasavermode.h"
+#include "flowobservation.h"
 #include "throttlepolicymanager.h"
 #include "diagnostics.h"
 #include "enforcementrestore.h"
@@ -161,6 +162,10 @@ public:
     // from versioned settings at construction; the legacy Monitor state no
     // longer exists and a stored one migrates to Off.
     DataSaverMode::Mode dataSaverMode() const { return m_dataSaverMode; }
+    // DS-003: the current canonical evaluation inputs, aggregated from the
+    // capture batch. They are never persisted; DS-004 consumes them at
+    // milestone crossings.
+    QList<FlowObservation> currentFlowObservations() const;
     // Normalized paths the throttle manager is currently shaping, so a status
     // reader reports what is actually limited rather than what was requested.
     QStringList throttledPaths() const { return m_throttlePolicies ? m_throttlePolicies->activePaths() : QStringList(); }
@@ -219,6 +224,9 @@ public:
                                      QString *confidence = nullptr) const;
 
 private:
+    // DS-003: converts one capture batch into bounded FlowCaptureSamples. The
+    // conversion is CPU-only and never touches disk, HTTP, AI, or a dialog.
+    void ingestFlowObservations(const QList<CapturedPacketInfo> &batch);
     void populateAdapterCombo();
     // Queues one reconciliation instead of running it inline, so a burst of
     // activation changes or a dialog close does not enumerate rules per event.
@@ -278,6 +286,10 @@ private:
     // shares a mutex with the capture thread, so it runs at most once per
     // kDomainRefreshMs from the batch path.
     QElapsedTimer           m_domainRefreshClock;
+    // DS-003: flow observations are monotonically timed and bounded, so a wall
+    // clock adjustment cannot stretch a duration or a rate window.
+    QElapsedTimer           m_flowClock;
+    FlowObservationBuilder  m_flowObservationBuilder;
 
     QHash<QString, QIcon>   m_iconCache;
     // Normalized executable path -> shell icon. Kept apart from m_iconCache,
