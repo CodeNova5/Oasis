@@ -320,6 +320,10 @@ not in the policy enum, so the stored policy format version does not change.
 - Conflict reporting: a lower tier that disagrees does not overwrite the winner. The committed
   decision records `conflict.hasConflict = true`, `conflictingTier`, and
   `resolution = "higher_tier_won"`. A pinned rule can never be mutated by a conflict.
+- DS-005 persists pinned and session rules in `src/network/datasaverrules.{h,cpp}` (group
+  `Oasis/DataSaver/PinnedRules`, schema 1) because a `NetworkPolicy` has one scope and cannot express
+  executable + domain. A winning pin is applied through the existing policy/enforcement path by
+  DS-009, so `PolicyOrigin` stays the restore boundary and there is no parallel enforcement engine.
 - The global mode never overrides a pinned rule. `off` suppresses automation evaluation only (§7).
 
 ## 6. Committed decision, audit, and notification
@@ -500,6 +504,7 @@ never call enforcement or touch the policy store.
 | Enforcement outcome vocabulary | `EnforcementResult::Status` (`src/network/enforcementcoordinator.h`) |
 | Channel routing | `plannedChannels()` (`src/network/enforcementrestore.cpp`) |
 | Milestone accounting/dedupe | `src/network/volumemilestone.{h,cpp}` (`thresholdBytes`, `VolumeMilestoneEvaluator`) |
+| Pinned rules / session overrides | `src/network/datasaverrules.{h,cpp}` (`PinnedRuleStore`, `SessionOverrideStore`, `RuleResolver`) |
 | Audit records | `AuditEvent` (`src/network/policy.h`), `AuditEventStore` (`src/network/auditeventstore.h`) |
 | Notification dedupe/priority | `src/network/notificationcoordinator.h` |
 | Mode values | `src/network/datasavermode.{h,cpp}` (`load`/`save`, legacy migration), `NetworkWidget::setDataSaverMode()` |

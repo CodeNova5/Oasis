@@ -50,6 +50,7 @@
 #include "network/datasavermode.h"
 #include "network/flowobservation.h"
 #include "network/volumemilestone.h"
+#include "network/datasaverrules.h"
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
@@ -6865,6 +6866,318 @@ void testVolumeMilestones()
           QStringLiteral("a restarted evaluator does not reuse prior dedupe state"));
 }
 
+// ─── DS-005: pinned rules, session overrides, and precedence ───────────────
+
+void clearPinnedRuleStore()
+{
+    QSettings settings;
+    settings.beginGroup(PinnedRuleStore::storageGroup());
+    settings.remove(QString());
+    settings.endGroup();
+    settings.sync();
+}
+
+int storedPinnedRuleSchemaVersion()
+{
+    QSettings settings;
+    settings.beginGroup(PinnedRuleStore::storageGroup());
+    const int version = settings.value(QStringLiteral("schemaVersion"), -1).toInt();
+    settings.endGroup();
+    return version;
+}
+
+PinnedRule makePinnedRule(const QString &executable, const QString &domain,
+                          NetworkPolicy::Action action = NetworkPolicy::Action::Allow,
+                          quint64 rate = 0)
+{
+    PinnedRule rule;
+    rule.executable = executable;
+    rule.domainPattern = domain;
+    rule.action = action;
+    rule.rateBitsPerSecond = rate;
+    rule.direction = NetworkDirection::Download;
+    return rule;
+}
+
+void testDataSaverRules()
+{
+    using namespace DataSaverRules;
+
+    clearPinnedRuleStore();
+
+    // A throttle pin needs no Always Allow confirmation and round-trips.
+    PinnedRule wildcard = makePinnedRule(
+        QStringLiteral("Code.exe"), QStringLiteral("*.VisualStudio.com."),
+        NetworkPolicy::Action::Throttle, kDefaultThrottleBitsPerSecond);
+    QString error;
+    check(PinnedRuleStore::add(wildcard, false, &error),
+          QStringLiteral("a throttle pin persists without confirmation: %1").arg(error));
+    check(isFlowIdentifier(wildcard.id, QStringLiteral("pin_")),
+          QStringLiteral("a pinned rule gets a pin_ id"));
+
+    const PinnedRuleLoadResult reloaded = PinnedRuleStore::load();
+    checkEqual(static_cast<int>(reloaded.rules.size()), 1,
+               QStringLiteral("a pinned rule survives a reload"));
+    if (!reloaded.rules.isEmpty()) {
+        const PinnedRule &rule = reloaded.rules.first();
+        checkEqual(rule.executable, QStringLiteral("code.exe"),
+                   QStringLiteral("the executable is normalized"));
+        checkEqual(rule.domainPattern, QStringLiteral("*.visualstudio.com"),
+                   QStringLiteral("the wildcard domain is normalized"));
+        check(rule.action == NetworkPolicy::Action::Throttle,
+              QStringLiteral("the pin action round-trips"));
+        checkEqual(rule.rateBitsPerSecond, quint64(kDefaultThrottleBitsPerSecond),
+                   QStringLiteral("the pin rate round-trips"));
+        check(rule.direction == NetworkDirection::Download,
+              QStringLiteral("the pin direction round-trips"));
+    }
+
+    // Always Allow is gated on explicit confirmation.
+    PinnedRule allow = makePinnedRule(QStringLiteral("chrome.exe"),
+                                      QStringLiteral("example.com"));
+    error.clear();
+    check(!PinnedRuleStore::add(allow, false, &error),
+          QStringLiteral("Always Allow without confirmation is refused"));
+    check(error.contains(QStringLiteral("confirmation")),
+          QStringLiteral("the refusal explains the confirmation requirement"));
+    checkEqual(static_cast<int>(PinnedRuleStore::load().rules.size()), 1,
+               QStringLiteral("a refused Always Allow is not stored"));
+    check(PinnedRuleStore::add(allow, true, &error),
+          QStringLiteral("a confirmed Always Allow persists"));
+    check(isFlowIdentifier(allow.id, QStringLiteral("pin_")),
+          QStringLiteral("the confirmed pin gets an id"));
+    checkEqual(static_cast<int>(PinnedRuleStore::load().rules.size()), 2,
+               QStringLiteral("the confirmed Always Allow is stored"));
+
+    // Invalid pinned data is refused without touching the store.
+    PinnedRule zeroRate = makePinnedRule(QStringLiteral("code.exe"),
+                                         QStringLiteral("example.com"),
+                                         NetworkPolicy::Action::Throttle, 0);
+    check(!PinnedRuleStore::save(QList<PinnedRule>() << zeroRate, &error),
+          QStringLiteral("a throttle pin without a positive rate is rejected"));
+
+    // A newer store is rejected whole and never overwritten.
+    clearPinnedRuleStore();
+    {
+        QSettings settings;
+        settings.beginGroup(PinnedRuleStore::storageGroup());
+        settings.setValue(QStringLiteral("schemaVersion"), 2);
+        settings.setValue(QStringLiteral("rules"), QStringLiteral("[]"));
+        settings.endGroup();
+        settings.sync();
+    }
+    const PinnedRuleLoadResult newer = PinnedRuleStore::load();
+    check(newer.rejectedNewer && newer.rules.isEmpty(),
+          QStringLiteral("a newer pinned-rule schema is rejected whole"));
+    PinnedRule blockedWrite = makePinnedRule(QStringLiteral("code.exe"),
+                                             QStringLiteral("example.com"));
+    check(!PinnedRuleStore::add(blockedWrite, true, &error),
+          QStringLiteral("writing over a newer pinned-rule store is refused"));
+    checkEqual(storedPinnedRuleSchemaVersion(), 2,
+               QStringLiteral("the newer store version is left in place"));
+
+    // Malformed rules are skipped; one valid rule survives a missing version.
+    clearPinnedRuleStore();
+    PinnedRule good = makePinnedRule(QStringLiteral("code.exe"), QStringLiteral("example.com"),
+                                     NetworkPolicy::Action::Throttle,
+                                     kDefaultThrottleBitsPerSecond);
+    good.id = QStringLiteral("pin_0123456789abcdef");
+    good.createdAt = flowTestTime();
+    QJsonArray storedRules;
+    storedRules.append(PinnedRuleStore::toJson(good));
+    QJsonObject missingExecutable = PinnedRuleStore::toJson(good);
+    missingExecutable.remove(QStringLiteral("executable"));
+    storedRules.append(missingExecutable);
+    QJsonObject badAction = PinnedRuleStore::toJson(good);
+    badAction.insert(QStringLiteral("action"), QStringLiteral("ask"));
+    storedRules.append(badAction);
+    QJsonObject foreignOrigin = PinnedRuleStore::toJson(good);
+    foreignOrigin.insert(QStringLiteral("origin"), QStringLiteral("system"));
+    storedRules.append(foreignOrigin);
+    QJsonObject badExpiry = PinnedRuleStore::toJson(good);
+    badExpiry.insert(QStringLiteral("expiresAt"), QStringLiteral("not-a-date"));
+    storedRules.append(badExpiry);
+    {
+        QSettings settings;
+        settings.beginGroup(PinnedRuleStore::storageGroup());
+        settings.setValue(QStringLiteral("rules"),
+                          QString::fromUtf8(QJsonDocument(storedRules)
+                                                .toJson(QJsonDocument::Compact)));
+        settings.endGroup();
+        settings.sync();
+    }
+    const PinnedRuleLoadResult malformed = PinnedRuleStore::load();
+    checkEqual(static_cast<int>(malformed.rules.size()), 1,
+               QStringLiteral("the valid pinned rule survives malformed neighbours"));
+    checkEqual(malformed.skipped, 4,
+               QStringLiteral("four malformed pinned rules are skipped"));
+    check(!malformed.diagnostic.isEmpty(),
+          QStringLiteral("malformed pinned rules produce a diagnostic"));
+    if (!malformed.rules.isEmpty()) {
+        checkEqual(malformed.rules.first().id, good.id,
+                   QStringLiteral("the valid rule keeps its id"));
+    }
+
+    // Session overrides are in-memory, expire, and do not survive restart.
+    SessionOverrideStore sessions;
+    SessionOverride flowOverride;
+    flowOverride.scope = SessionScope::Flow;
+    flowOverride.flowId = QStringLiteral("flow_aaaaaaaaaaaaaaaa");
+    flowOverride.action = NetworkPolicy::Action::Notify;
+    flowOverride.continueAfterNotify = true;
+    check(sessions.add(flowOverride, &error),
+          QStringLiteral("a session flow override is accepted: %1").arg(error));
+    check(isFlowIdentifier(flowOverride.id, QStringLiteral("ses_")),
+          QStringLiteral("a session override gets a ses_ id"));
+    checkEqual(static_cast<int>(sessions.activeOverrides(flowTestTime()).size()), 1,
+               QStringLiteral("the session override is active"));
+    SessionOverrideStore restarted;
+    checkEqual(restarted.count(), 0,
+               QStringLiteral("session overrides do not survive an app restart"));
+    checkEqual(sessions.count(), 1,
+               QStringLiteral("the live session keeps its override"));
+
+    SessionOverride expiring;
+    expiring.scope = SessionScope::ExecutableDomain;
+    expiring.executable = QStringLiteral("Code.exe");
+    expiring.domainPattern = QStringLiteral("*.VisualStudio.com");
+    expiring.action = NetworkPolicy::Action::Throttle;
+    expiring.rateBitsPerSecond = kDefaultThrottleBitsPerSecond;
+    expiring.createdAt = flowTestTime();
+    expiring.expiresAt = flowTestTime().addSecs(3600);
+    check(sessions.add(expiring, &error),
+          QStringLiteral("an expiring session override is accepted: %1").arg(error));
+    checkEqual(static_cast<int>(sessions.activeOverrides(flowTestTime().addSecs(3599)).size()), 2,
+               QStringLiteral("both session overrides are active before expiry"));
+    checkEqual(static_cast<int>(sessions.activeOverrides(flowTestTime().addSecs(3601)).size()), 1,
+               QStringLiteral("the expiring session override is inactive after expiry"));
+
+    SessionOverride sessionBlock;
+    sessionBlock.scope = SessionScope::ExecutableDomain;
+    sessionBlock.executable = QStringLiteral("code.exe");
+    sessionBlock.domainPattern = QStringLiteral("example.com");
+    sessionBlock.action = NetworkPolicy::Action::Block;
+    check(!sessions.add(sessionBlock, &error),
+          QStringLiteral("a session override cannot block"));
+    check(error.contains(QStringLiteral("block")),
+          QStringLiteral("the session block refusal names the restriction"));
+
+    // Precedence: a pin wins over a matching session and reports the conflict.
+    const QDateTime now = flowTestTime();
+    FlowObservation observation = makeMilestoneObservation(
+        QStringLiteral("flow_aaaaaaaaaaaaaaaa"), QStringLiteral("pid:100:1000"),
+        QStringLiteral("update.code.visualstudio.com"), 12 * VolumeMilestone::kMiB);
+    observation.process.exeName = QStringLiteral("Code.exe");
+
+    PinnedRule pin = makePinnedRule(QStringLiteral("code.exe"),
+                                    QStringLiteral("*.visualstudio.com"),
+                                    NetworkPolicy::Action::Throttle,
+                                    kDefaultThrottleBitsPerSecond);
+    pin.id = QStringLiteral("pin_1111111111111111");
+    pin.createdAt = now;
+    SessionOverride session;
+    session.id = QStringLiteral("ses_2222222222222222");
+    session.scope = SessionScope::ExecutableDomain;
+    session.executable = QStringLiteral("code.exe");
+    session.domainPattern = QStringLiteral("*");
+    session.action = NetworkPolicy::Action::Allow;
+
+    const RuleResolution pinned = RuleResolver::resolve(
+        observation, QList<PinnedRule>() << pin, QList<SessionOverride>() << session, now);
+    check(pinned.matched && pinned.winner.tier == 1,
+          QStringLiteral("a pinned rule is tier 1"));
+    checkEqual(pinned.winner.ruleId, pin.id,
+               QStringLiteral("the pinned rule is the winner"));
+    check(pinned.winner.action == NetworkPolicy::Action::Throttle
+              && pinned.winner.origin == QStringLiteral("pinned"),
+          QStringLiteral("the pinned action and origin are reported"));
+    check(pinned.conflict.hasConflict && pinned.conflict.conflictingTier == 2,
+          QStringLiteral("the disagreeing session is reported as a tier-2 conflict"));
+    checkEqual(pinned.conflict.resolution, QStringLiteral("higher_tier_won"),
+               QStringLiteral("the conflict records that the higher tier won"));
+    check(pin.action == NetworkPolicy::Action::Throttle
+              && pin.domainPattern == QStringLiteral("*.visualstudio.com"),
+          QStringLiteral("the pinned rule is not mutated by the conflict"));
+
+    // A session alone is tier 2.
+    const RuleResolution sessionOnly = RuleResolver::resolve(
+        observation, QList<PinnedRule>(), QList<SessionOverride>() << session, now);
+    check(sessionOnly.matched && sessionOnly.winner.tier == 2
+              && sessionOnly.winner.origin == QStringLiteral("session"),
+          QStringLiteral("a session override is tier 2"));
+    check(!sessionOnly.conflict.hasConflict,
+          QStringLiteral("a session winner has no lower-tier conflict here"));
+
+    // A disagreeing lower tier is reported without touching the pin.
+    LowerTierVote vote;
+    vote.tier = 3;
+    vote.action = NetworkPolicy::Action::Block;
+    vote.source = QStringLiteral("profile");
+    const RuleResolution lower = RuleResolver::resolve(
+        observation, QList<PinnedRule>() << pin, QList<SessionOverride>(), now,
+        QList<LowerTierVote>() << vote);
+    check(lower.conflict.hasConflict && lower.conflict.conflictingTier == 3,
+          QStringLiteral("a disagreeing profile tier is reported as a conflict"));
+    check(pin.action == NetworkPolicy::Action::Throttle,
+          QStringLiteral("a lower-tier conflict leaves the pin unchanged"));
+
+    LowerTierVote agreeing;
+    agreeing.tier = 3;
+    agreeing.action = NetworkPolicy::Action::Throttle;
+    agreeing.source = QStringLiteral("profile");
+    const RuleResolution noConflict = RuleResolver::resolve(
+        observation, QList<PinnedRule>() << pin, QList<SessionOverride>(), now,
+        QList<LowerTierVote>() << agreeing);
+    check(!noConflict.conflict.hasConflict,
+          QStringLiteral("a lower tier that agrees is not a conflict"));
+
+    // Wildcard semantics and exact-over-wildcard selection.
+    check(RuleResolver::domainPatternMatches(QStringLiteral("*.example.com"),
+                                             QStringLiteral("cdn.example.com")),
+          QStringLiteral("a wildcard matches a subdomain"));
+    check(!RuleResolver::domainPatternMatches(QStringLiteral("*.example.com"),
+                                              QStringLiteral("example.com")),
+          QStringLiteral("a wildcard does not match the apex"));
+    check(RuleResolver::domainPatternMatches(QStringLiteral("*"),
+                                             QStringLiteral("anything.example")),
+          QStringLiteral("a full wildcard matches a known domain"));
+    check(!RuleResolver::domainPatternMatches(QStringLiteral("*"), QString()),
+          QStringLiteral("an unknown domain matches no domain pattern"));
+    check(RuleResolver::domainPatternMatches(QStringLiteral("Example.COM."),
+                                             QStringLiteral("example.com")),
+          QStringLiteral("exact domain matching is normalized"));
+
+    PinnedRule exact = makePinnedRule(QStringLiteral("code.exe"),
+                                      QStringLiteral("update.code.visualstudio.com"),
+                                      NetworkPolicy::Action::Allow);
+    exact.id = QStringLiteral("pin_3333333333333333");
+    exact.createdAt = now;
+    PinnedRule broad = makePinnedRule(QStringLiteral("code.exe"),
+                                      QStringLiteral("*.visualstudio.com"),
+                                      NetworkPolicy::Action::Block);
+    broad.id = QStringLiteral("pin_4444444444444444");
+    broad.createdAt = now;
+    const RuleResolution specific = RuleResolver::resolve(
+        observation, QList<PinnedRule>() << broad << exact, QList<SessionOverride>(), now);
+    checkEqual(specific.winner.ruleId, exact.id,
+               QStringLiteral("an exact domain pin beats a wildcard pin"));
+
+    PinnedRule expired = pin;
+    expired.id = QStringLiteral("pin_5555555555555555");
+    expired.expiresAt = now.addSecs(-1);
+    check(!RuleResolver::resolve(observation, QList<PinnedRule>() << expired,
+                                 QList<SessionOverride>(), now).matched,
+          QStringLiteral("an expired pin does not match"));
+
+    FlowObservation unknownDomain = observation;
+    unknownDomain.flow.domain.clear();
+    check(!RuleResolver::resolve(unknownDomain, QList<PinnedRule>() << pin,
+                                 QList<SessionOverride>(), now).matched,
+          QStringLiteral("an unknown domain does not match a domain pin"));
+
+    clearPinnedRuleStore();
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -6885,6 +7198,7 @@ int main(int argc, char *argv[])
     testFlowObservationContract();
     testFlowObservationBuilder();
     testVolumeMilestones();
+    testDataSaverRules();
 
     testFixtures();
     testDiagnosticsExportSchema();
