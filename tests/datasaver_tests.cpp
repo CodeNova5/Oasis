@@ -1431,6 +1431,8 @@ void testDataSaverDecisionResolver()
     cached.observationId = observation.observationId;
     cached.createdAt = now;
     cached.action = Action::Throttle;
+    // A notice is the only action that may continue after notify.
+    cached.continueAfterNotify = false;
     cached.scope = DecisionScope::Executable;
     cached.target.executable = QStringLiteral("chromeupdate.exe");
     cached.target.domain = QStringLiteral("update.googleapis.com");
@@ -1522,6 +1524,8 @@ PolicyDecision makeCacheableProfileDecision(const FlowObservation &observation)
     decision.origin = DecisionOrigin::Profile;
     decision.tier = 3;
     decision.action = NetworkPolicy::Action::Throttle;
+    // A notice is the only action that may continue after notify.
+    decision.continueAfterNotify = false;
     decision.scope = DecisionScope::Executable;
     decision.target.executable = QStringLiteral("Code.exe");
     decision.target.domain = observation.flow.domain;
@@ -2579,8 +2583,8 @@ void testDataSaverDecisionAudit()
     checkEqual(static_cast<int>(exportedEvents.size()), 1,
                QStringLiteral("the audit export contains the decision record"));
     const QJsonObject exportedEvent = exportedEvents.first().toObject();
-    checkEqual(exportedEvent.value(QStringLiteral("type")).toInt(),
-               static_cast<int>(AuditEvent::EventType::AutomaticDecision),
+    checkEqual(exportedEvent.value(QStringLiteral("type")).toString(),
+               auditEventTypeName(AuditEvent::EventType::AutomaticDecision),
                QStringLiteral("the export preserves the decision type"));
     const QJsonObject exportedDetails =
         objectOf(exportedEvent.value(QStringLiteral("details")).toString());
