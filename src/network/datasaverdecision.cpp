@@ -1011,6 +1011,7 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
 
     PolicyDecision cacheDecision;
     bool hasCache = false;
+    bool cacheStoreHit = false;
     if (enforcing) {
         // DS-007: the evidence cache is read first; an explicit candidate from
         // the caller is the fallback seam for tests and for a cache that cannot
@@ -1022,6 +1023,7 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
             if (input.cache->lookup(observation, cacheContext, &storedCandidate, now,
                                     &cacheWhy)) {
                 candidate = &storedCandidate;
+                cacheStoreHit = true;
                 diagnostics.append(
                     QStringLiteral("the evidence cache supplied the tier-4 candidate"));
             } else if (!cacheWhy.isEmpty()) {
@@ -1084,6 +1086,7 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
         }
         resolution.evaluated = true;
         resolution.decision = decision;
+        resolution.matchedRuleId = rules.winner.ruleId;
         resolution.diagnostic = diagnostics.join(QStringLiteral("; "));
         return resolution;
     }
@@ -1160,6 +1163,13 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
         } else {
             diagnostics.append(QStringLiteral("the decision was not cached: %1").arg(cacheError));
         }
+    }
+
+    if (winner.origin == DecisionOrigin::Profile)
+        resolution.matchedRuleId = signature.profileRuleId;
+    if (winner.origin == DecisionOrigin::Cache && cacheStoreHit) {
+        resolution.matchedCacheKey = DataSaverCache::fingerprintFor(
+            DataSaverCache::buildCacheKey(observation, cacheContext));
     }
 
     resolution.evaluated = true;

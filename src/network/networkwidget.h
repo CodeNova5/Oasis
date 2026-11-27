@@ -17,6 +17,7 @@
 #include "bandwidthguard.h"
 #include "datasavercache.h"
 #include "datasaverdecision.h"
+#include "datasaverenforcement.h"
 #include "datasavermode.h"
 #include "flowobservation.h"
 #include "volumemilestone.h"
@@ -269,9 +270,11 @@ private:
                                       const QString &executablePath,
                                       ActivityClassification *activity) const;
     // DS-008: resolve one accepted milestone crossing through the evidence
-    // cache. Resolution is local and non-blocking; nothing is applied here.
+    // cache and route the result to DS-009 enforcement.
     void evaluateDataSaverCrossing(const FlowObservation &observation,
                                    const MilestoneCrossing &crossing);
+    // DS-009: audit an automatic-control outcome and surface a failure.
+    void recordEnforcementOutcome(const DataSaverEnforcement::EnforcementOutcome &outcome);
     void createPolicyForTarget(const PolicyTarget &target);
     void showRecommendationFor(quint32 pid, const QString &processName,
                                const QString &executablePath);
@@ -310,6 +313,12 @@ private:
     DataSaverDecision::DecisionResolver m_decisionResolver;
     DataSaverCache::DecisionCache m_decisionCache;
     DataSaverCache::CacheContext m_decisionCacheContext;
+    // DS-009: the ownership layer over the shipped throttle and firewall
+    // channels. Only controls recorded here are ever withdrawn.
+    DataSaverEnforcer m_dataSaverEnforcer;
+    DataSaverEnforcementBackend *m_dataSaverEnforcementBackend = nullptr;
+    // DS-009: a foreground-change lease ends when this pid changes.
+    quint32 m_lastDataSaverForegroundPid = 0;
 
     QHash<QString, QIcon>   m_iconCache;
     // Normalized executable path -> shell icon. Kept apart from m_iconCache,

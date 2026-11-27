@@ -198,6 +198,11 @@ struct DecisionResolution
     bool evaluated = false;            // a decision was produced
     bool automationSuppressed = false; // Off withheld tiers 3-5
     PolicyDecision decision;
+    // What the winning tier matched. A rule id for pinned/session/profile, the
+    // cache fingerprint for a store hit; empty for the fallback. DS-010 puts
+    // these in the audit record so a committed decision is explainable later.
+    QString matchedRuleId;
+    QString matchedCacheKey;
     QString diagnostic;
 };
 

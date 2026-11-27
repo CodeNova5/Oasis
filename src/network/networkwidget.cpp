@@ -9,11 +9,39 @@
  */
 #include "networkwidget_p.h"
 
+#include <QFileInfo>
 #include <QSettings>
 
 #include "attribution/endpointcatalog.h"
+#include "datasaveraudit.h"
+#include "datasaverenforcementbackend.h"
 
 namespace {
+
+// DS-009: plain words for the automatic-control audit details.
+QString dataSaverActionName(NetworkPolicy::Action action)
+{
+    switch (action) {
+    case NetworkPolicy::Action::Allow:     return QStringLiteral("allow");
+    case NetworkPolicy::Action::Notify:    return QStringLiteral("notify");
+    case NetworkPolicy::Action::Ask:       return QStringLiteral("ask");
+    case NetworkPolicy::Action::Throttle:  return QStringLiteral("throttle");
+    case NetworkPolicy::Action::Block:     return QStringLiteral("block");
+    case NetworkPolicy::Action::Schedule:  return QStringLiteral("schedule");
+    case NetworkPolicy::Action::NoAction:  break;
+    }
+    return QStringLiteral("none");
+}
+
+QString dataSaverDirectionName(NetworkDirection direction)
+{
+    switch (direction) {
+    case NetworkDirection::Download: return QStringLiteral("download");
+    case NetworkDirection::Upload:   return QStringLiteral("upload");
+    case NetworkDirection::Both:     break;
+    }
+    return QStringLiteral("both");
+}
 
 // NG-050: audit records use plain words so they stay readable after export.
 QString enforcementStatusName(EnforcementResult::Status status)
@@ -278,6 +306,11 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // Shares the managers above, so a throttle result the worker posts reaches
     // this widget, and emergency restore can take back only automatic controls.
     m_enforcement = new EnforcementCoordinator(m_throttlePolicies, m_firewall, this);
+    // DS-009: Data Saver owns its own controls through the same managers, so a
+    // disable, expiry, policy change, or restore withdraws only those.
+    m_dataSaverEnforcementBackend =
+        new ManagerEnforcementBackend(m_throttlePolicies, m_firewall);
+    m_dataSaverEnforcer.setBackend(m_dataSaverEnforcementBackend);
     // NG-050: every enforcement outcome the coordinator reports becomes an
     // audit event, including a channel that could not act, so a policy's real
     // effect is explainable later.
@@ -361,7 +394,19 @@ NetworkWidget::NetworkWidget(QWidget *parent)
     // time; it is kept for the classifier and future recommendation views.
     connect(m_monitor, &NetworkMonitor::foregroundSnapshotReady, this,
             [this](const Oasis::ForegroundSnapshot &snapshot) {
+        const quint32 previous = m_lastDataSaverForegroundPid;
+        m_lastDataSaverForegroundPid = snapshot.foregroundPid;
         m_foregroundSnapshot = snapshot;
+        // DS-009: a control requested until a foreground change ends here, and
+        // only that lease kind is withdrawn.
+        if (previous != snapshot.foregroundPid) {
+            const QList<DataSaverEnforcement::EnforcementOutcome> outcomes =
+                m_dataSaverEnforcer.withdrawUntil(
+                    ThrottleUntil::ForegroundChange,
+                    QStringLiteral("the foreground application changed"));
+            for (const DataSaverEnforcement::EnforcementOutcome &outcome : outcomes)
+                recordEnforcementOutcome(outcome);
+        }
     }, Qt::QueuedConnection);
 
     // NG-003: capture gaps are reported on the GUI thread so the support view
@@ -531,6 +576,15 @@ NetworkWidget::~NetworkWidget()
 {
     m_monitor->stopCapture();
     m_monitor->wait(1500);
+    // DS-009: app exit withdraws every Data Saver-owned control. The managers
+    // are still alive here; the throttle worker gets the requests before the
+    // manager tears its thread down.
+    const QList<DataSaverEnforcement::EnforcementOutcome> withdrawn =
+        m_dataSaverEnforcer.withdrawAll(QStringLiteral("the application is exiting"));
+    for (const DataSaverEnforcement::EnforcementOutcome &outcome : withdrawn)
+        recordEnforcementOutcome(outcome);
+    delete m_dataSaverEnforcementBackend;
+    m_dataSaverEnforcementBackend = nullptr;
     // DS-007: entries are bounded and metadata-only, and a failed write is a
     // miss on the next start rather than a reason to block shutdown.
     m_decisionCache.save();
@@ -816,12 +870,80 @@ void NetworkWidget::evaluateDataSaverCrossing(const FlowObservation &observation
     input.now = QDateTime::currentDateTimeUtc();
     input.cache = &m_decisionCache;
     input.cacheContext = &m_decisionCacheContext;
-    // DS-009 owns the enforcement channel. Until it can confirm ownership, the
-    // resolver must not produce a throttle it cannot actually apply.
-    input.gentleThrottleAvailable = false;
+    // DS-009 confirms channel ownership before the resolver may produce a
+    // throttle, and every produced control is applied below.
+    input.gentleThrottleAvailable = m_dataSaverEnforcer.canThrottle();
 
     const DataSaverDecision::DecisionResolution resolution = m_decisionResolver.resolve(input);
-    if (resolution.evaluated) emit dataSaverDecisionResolved(resolution.decision);
+    if (!resolution.evaluated) return;
+    emit dataSaverDecisionResolved(resolution.decision);
+
+    DataSaverEnforcement::ControlLease lease;
+    lease.executablePath = input.signature.activity.executablePath;
+    if (lease.executablePath.isEmpty() && evaluation.process.pid != 0)
+        lease.executablePath = BandwidthGuard::resolveExecutablePath(evaluation.process.pid);
+    lease.reason = resolution.decision.reasonShort;
+    const DataSaverEnforcement::EnforcementOutcome outcome =
+        m_dataSaverEnforcer.apply(resolution.decision, lease);
+
+    // DS-010: one audit record per committed decision, including the
+    // enforcement result. A failed or partial outcome is recorded as such;
+    // writing the record never changes the outcome.
+    DataSaverAudit::DecisionRecord record;
+    record.observation = evaluation;
+    record.decision = resolution.decision;
+    record.matchedRuleId = resolution.matchedRuleId;
+    record.matchedCacheKey = resolution.matchedCacheKey;
+    record.diagnostic = resolution.diagnostic;
+    record.executableName = QFileInfo(outcome.executablePath).fileName();
+    record.enforcementStatus = outcome.status;
+    record.enforcementChanged = outcome.changed;
+    record.enforcementMessage = outcome.message;
+    record.enforcementPolicyId = outcome.policyId;
+    record.enforcementChannels = outcome.channels;
+    m_auditStore.append(DataSaverAudit::eventFor(record, input.now));
+
+    if (outcome.failed()) {
+        emit enforcementFailed(outcome.policyId, outcome.executablePath,
+                               outcome.message.isEmpty()
+                                   ? QStringLiteral("The Data Saver control could not be applied.")
+                                   : outcome.message);
+    }
+}
+
+void NetworkWidget::recordEnforcementOutcome(
+    const DataSaverEnforcement::EnforcementOutcome &outcome)
+{
+    // Withdrawal paths keep the DS-009 enforcement-result record. Apply
+    // outcomes are covered by the DS-010 decision record instead, so a committed
+    // decision and its enforcement result are one entry; a withdrawal is not a
+    // new decision and still needs its own record.
+    const bool refused = outcome.status == EnforcementResult::Status::NotApplied
+                         && (outcome.action == NetworkPolicy::Action::Throttle
+                             || outcome.action == NetworkPolicy::Action::Block);
+    if (!outcome.evaluated || (!outcome.changed && !outcome.failed() && !refused)) return;
+
+    AuditEvent event;
+    event.type = AuditEvent::EventType::EnforcementResult;
+    event.scope = outcome.executablePath;
+    event.reason = QStringLiteral("Data Saver automatic control");
+    event.result = enforcementStatusName(outcome.status);
+    event.relatedPolicyId = outcome.policyId;
+    event.details = QStringLiteral("action %1; direction %2; rate %3 bits/s; channels %4")
+                        .arg(dataSaverActionName(outcome.action),
+                             dataSaverDirectionName(outcome.direction))
+                        .arg(outcome.rateBitsPerSecond)
+                        .arg(outcome.channels.isEmpty() ? QStringLiteral("(none)")
+                                                        : outcome.channels);
+    if (outcome.failed()) event.errorInfo = outcome.message;
+    m_auditStore.append(event);
+
+    if (outcome.failed()) {
+        emit enforcementFailed(outcome.policyId, outcome.executablePath,
+                               outcome.message.isEmpty()
+                                   ? QStringLiteral("The Data Saver control could not be applied.")
+                                   : outcome.message);
+    }
 }
 
 void NetworkWidget::onSpeedUpdated(quint64 rxBps, quint64 txBps) {

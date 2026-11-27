@@ -518,10 +518,12 @@ never call enforcement or touch the policy store.
 | Channel routing | `plannedChannels()` (`src/network/enforcementrestore.cpp`) |
 | Milestone accounting/dedupe | `src/network/volumemilestone.{h,cpp}` (`thresholdBytes`, `VolumeMilestoneEvaluator`) |
 | Cache fingerprint and storage | `src/network/datasavercache.{h,cpp}` (`CacheKey`, `DecisionCache`) |
+| Automatic-control ownership | `src/network/datasaverenforcement.{h,cpp}` (`DataSaverEnforcer`) |
 | Pinned rules / session overrides | `src/network/datasaverrules.{h,cpp}` (`PinnedRuleStore`, `SessionOverrideStore`, `RuleResolver`) |
 | Local signatures / profile rules | `src/network/datasaverprofiles.{h,cpp}` (`LocalSignatureEngine`, `ProfileRule`, `defaultProfileRules`) |
 | Decision contract / precedence | `src/network/datasaverdecision.{h,cpp}` (`PolicyDecision`, `DecisionResolver`, `DecisionOrigin`) |
 | Audit records | `AuditEvent` (`src/network/policy.h`), `AuditEventStore` (`src/network/auditeventstore.h`) |
+| Decision audit record | `src/network/datasaveraudit.{h,cpp}` (`DecisionRecord`, `eventFor`), `DecisionResolution::matchedRuleId`/`matchedCacheKey` |
 | Notification dedupe/priority | `src/network/notificationcoordinator.h` |
 | Mode values | `src/network/datasavermode.{h,cpp}` (`load`/`save`, legacy migration), `NetworkWidget::setDataSaverMode()` |
 | Bridge status shape | `dataSaverStatus()` (`src/ui/webview2/webuibridge.cpp`) |

@@ -36,6 +36,8 @@ SOURCES += \
     ../src/network/datasaverprofiles.cpp \
     ../src/network/datasaverdecision.cpp \
     ../src/network/datasavercache.cpp \
+    ../src/network/datasaverenforcement.cpp \
+    ../src/network/datasaveraudit.cpp \
     ../src/network/auditeventstore.cpp \
     ../src/network/evidenceexport.cpp \
     ../src/network/auditlogmodel.cpp \
@@ -80,6 +82,8 @@ HEADERS += \
     ../src/network/datasaverprofiles.h \
     ../src/network/datasaverdecision.h \
     ../src/network/datasavercache.h \
+    ../src/network/datasaverenforcement.h \
+    ../src/network/datasaveraudit.h \
     ../src/network/auditeventstore.h \
     ../src/network/evidenceexport.h \
     ../src/network/auditlogmodel.h \

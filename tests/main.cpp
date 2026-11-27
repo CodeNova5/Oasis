@@ -17,6 +17,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -55,6 +56,8 @@
 #include "network/datasaverprofiles.h"
 #include "network/datasaverdecision.h"
 #include "network/datasavercache.h"
+#include "network/datasaverenforcement.h"
+#include "network/datasaveraudit.h"
 #include "network/policy.h"
 #include "network/policyschedule.h"
 #include "network/policyscope.h"
@@ -7439,6 +7442,8 @@ void testDataSaverDecisionResolver()
           QStringLiteral("the profile decision keeps its classification and confidence"));
     check(profile.decision.target.domain == QStringLiteral("update.googleapis.com"),
           QStringLiteral("the decision carries the attributed domain"));
+    check(!profile.matchedRuleId.isEmpty() && profile.matchedCacheKey.isEmpty(),
+          QStringLiteral("the profile resolution reports the matched rule, not a cache key"));
     QString error;
     check(profile.decision.validate(&error),
           QStringLiteral("the profile decision passes local validation: %1").arg(error));
@@ -7465,6 +7470,8 @@ void testDataSaverDecisionResolver()
     check(pinned.decision.action == Action::Allow
               && pinned.decision.rateBitsPerSecond == 0,
           QStringLiteral("the pinned allow is applied without a rate"));
+    checkEqual(pinned.matchedRuleId, pin.id,
+               QStringLiteral("the pinned resolution reports the winning rule id"));
     check(pinned.decision.confidence == 1.0,
           QStringLiteral("a user decision carries confidence 1.0"));
     check(pinned.decision.conflict.hasConflict
@@ -8045,6 +8052,8 @@ void testDataSaverCacheResolution()
           QStringLiteral("the cache hit carries the stored gentle throttle"));
     check(reused.diagnostic.contains(QStringLiteral("supplied the tier-4 candidate")),
           QStringLiteral("the resolver reports the cache hit"));
+    check(!reused.matchedCacheKey.isEmpty() && reused.matchedRuleId.isEmpty(),
+          QStringLiteral("the cache resolution reports the matched fingerprint, not a rule"));
     checkEqual(reused.decision.observationId, observation.observationId,
                QStringLiteral("the cache hit names the current observation"));
     checkEqual(reused.decision.target.flowId, observation.flow.flowId,
@@ -8081,6 +8090,618 @@ void testDataSaverCacheResolution()
                QStringLiteral("the stale cache entry is discarded"));
 }
 
+class MockEnforcementBackend final : public DataSaverEnforcementBackend
+{
+public:
+    bool available = true;
+    EnforcementResult::Status throttleStatus = EnforcementResult::Status::Requested;
+    EnforcementResult::Status blockStatus = EnforcementResult::Status::Applied;
+    EnforcementResult::Status throttleWithdrawStatus = EnforcementResult::Status::Requested;
+    EnforcementResult::Status blockWithdrawStatus = EnforcementResult::Status::Applied;
+
+    int throttleCalls = 0;
+    int blockCalls = 0;
+    int throttleWithdrawCalls = 0;
+    int blockWithdrawCalls = 0;
+    QString lastPolicyId;
+    QString lastPath;
+    quint64 lastRate = 0;
+    NetworkDirection lastDirection = NetworkDirection::Download;
+
+    bool isAvailable() const override { return available; }
+
+    EnforcementResult applyThrottle(const QString &executablePath, const QString &policyId,
+                                    quint64 rateBitsPerSecond,
+                                    NetworkDirection direction) override
+    {
+        ++throttleCalls;
+        lastPolicyId = policyId;
+        lastPath = executablePath;
+        lastRate = rateBitsPerSecond;
+        lastDirection = direction;
+        EnforcementResult result;
+        result.status = throttleStatus;
+        result.policyId = policyId;
+        result.executablePath = executablePath;
+        result.channels = QStringLiteral("QoS upload + WinDivert download");
+        result.message = QStringLiteral("mock throttle request");
+        return result;
+    }
+
+    EnforcementResult withdrawThrottle(const QString &executablePath,
+                                       const QString &policyId) override
+    {
+        ++throttleWithdrawCalls;
+        EnforcementResult result;
+        result.status = throttleWithdrawStatus;
+        result.policyId = policyId;
+        result.executablePath = executablePath;
+        result.message = QStringLiteral("mock throttle withdrawal");
+        return result;
+    }
+
+    EnforcementResult applyBlock(const QString &executablePath,
+                                 const QString &policyId) override
+    {
+        ++blockCalls;
+        lastPolicyId = policyId;
+        lastPath = executablePath;
+        EnforcementResult result;
+        result.status = blockStatus;
+        result.policyId = policyId;
+        result.executablePath = executablePath;
+        result.channels = QStringLiteral("firewall");
+        result.message = QStringLiteral("mock block request");
+        return result;
+    }
+
+    EnforcementResult withdrawBlock(const QString &executablePath,
+                                    const QString &policyId) override
+    {
+        ++blockWithdrawCalls;
+        EnforcementResult result;
+        result.status = blockWithdrawStatus;
+        result.policyId = policyId;
+        result.executablePath = executablePath;
+        result.message = QStringLiteral("mock block withdrawal");
+        return result;
+    }
+};
+
+void testDataSaverEnforcement()
+{
+    using namespace DataSaverEnforcement;
+    using Action = NetworkPolicy::Action;
+    using Status = EnforcementResult::Status;
+
+    const QDateTime now = flowTestTime();
+    FlowObservation observation = makeMilestoneObservation(
+        QStringLiteral("flow_dddddddddddddddd"), QStringLiteral("pid:100:1000"),
+        QStringLiteral("update.googleapis.com"), 12 * VolumeMilestone::kMiB);
+    observation.process.exeName = QStringLiteral("chromeupdate.exe");
+    PolicyDecision throttle = makeCacheableProfileDecision(observation);
+    throttle.until = ThrottleUntil::MilestoneNext;
+
+    checkEqual(normalizedPath(QStringLiteral("C:\\Apps\\Code.exe")),
+               QStringLiteral("c:/apps/code.exe"),
+               QStringLiteral("control paths are normalized for ownership"));
+    const QString policyIdA = automaticPolicyId(QStringLiteral("C:\\Apps\\A.exe"));
+    check(policyIdA.startsWith(QStringLiteral("dsauto_")),
+          QStringLiteral("the automatic policy id uses the dsauto_ prefix"));
+    checkEqual(policyIdA, automaticPolicyId(QStringLiteral("c:\\apps\\a.exe")),
+               QStringLiteral("the automatic policy id is stable across separators and case"));
+    check(policyIdA != automaticPolicyId(QStringLiteral("C:\\Apps\\B.exe")),
+          QStringLiteral("different executable paths get different policy ids"));
+    check(throttleBelongsTo(policyIdA, policyIdA),
+          QStringLiteral("a limit attributed to this policy is owned"));
+    check(!throttleBelongsTo(QString(), policyIdA),
+          QStringLiteral("a manual limit with no attribution is not owned"));
+    check(!throttleBelongsTo(automaticPolicyId(QStringLiteral("C:\\Apps\\B.exe")),
+                             policyIdA),
+          QStringLiteral("another policy's limit is not owned"));
+    check(firewallRuleBelongsTo(QStringLiteral("Oasis policy ") + policyIdA, policyIdA),
+          QStringLiteral("a rule whose description names this policy is owned"));
+    check(!firewallRuleBelongsTo(QStringLiteral("Managed by Oasis"), policyIdA),
+          QStringLiteral("a user-created firewall rule is not owned"));
+    check(!firewallRuleBelongsTo(
+              QStringLiteral("Oasis policy ")
+                  + automaticPolicyId(QStringLiteral("C:\\Apps\\B.exe")),
+              policyIdA),
+          QStringLiteral("another policy's rule is not owned"));
+
+    MockEnforcementBackend backend;
+    DataSaverEnforcer enforcer(&backend);
+    check(enforcer.canThrottle(), QStringLiteral("an available backend can throttle"));
+
+    // The enforcer refuses a decision whose target executable does not match
+    // the resolved path; route through a helper so each control targets its
+    // own lease.
+    const auto route = [&enforcer](const PolicyDecision &decision,
+                                   const ControlLease &lease,
+                                   const QDateTime &when) {
+        PolicyDecision targeted = decision;
+        targeted.target.executable = QFileInfo(lease.executablePath).fileName();
+        return enforcer.apply(targeted, lease, when);
+    };
+
+    ControlLease leaseA;
+    leaseA.executablePath = QStringLiteral("C:\\Apps\\A.exe");
+    leaseA.reason = QStringLiteral("test");
+
+    const EnforcementOutcome mismatched = enforcer.apply(throttle, leaseA, now);
+    check(mismatched.failed() && !enforcer.owns(leaseA.executablePath),
+          QStringLiteral("a decision for another executable is not enforced"));
+
+    PolicyDecision allow = throttle;
+    allow.action = Action::Allow;
+    allow.rateBitsPerSecond = 0;
+    const EnforcementOutcome allowed = route(allow, leaseA, now);
+    check(allowed.evaluated && allowed.status == Status::NotApplied && !allowed.changed,
+          QStringLiteral("an allow decision needs no channel"));
+    checkEqual(backend.throttleCalls, 0,
+               QStringLiteral("an allow decision never reaches the throttle channel"));
+
+    const EnforcementOutcome applied = route(throttle, leaseA, now);
+    check(applied.changed && applied.status == Status::Requested,
+          QStringLiteral("a throttle decision requests the channel"));
+    checkEqual(backend.throttleCalls, 1, QStringLiteral("the throttle channel was asked once"));
+    checkEqual(backend.lastRate, quint64(409600),
+               QStringLiteral("the canonical 409600 bits/s rate is requested"));
+    check(backend.lastDirection == NetworkDirection::Download,
+          QStringLiteral("the decision direction reaches the channel"));
+    checkEqual(backend.lastPolicyId, policyIdA,
+               QStringLiteral("the control carries its stable automatic policy id"));
+    checkEqual(backend.lastPath, leaseA.executablePath,
+               QStringLiteral("the channel receives the resolved executable path"));
+
+    const DataSaverControl stored = enforcer.controlFor(leaseA.executablePath);
+    check(stored.action == Action::Throttle,
+          QStringLiteral("the enforcer records the throttle control"));
+    checkEqual(stored.policyId, policyIdA, QStringLiteral("the control records its owner"));
+    checkEqual(stored.executablePath, normalizedPath(leaseA.executablePath),
+               QStringLiteral("the control is keyed by the normalized path"));
+    check(stored.until == ThrottleUntil::MilestoneNext,
+          QStringLiteral("the control records its lease basis"));
+    checkEqual(stored.rateBitsPerSecond, quint64(409600),
+               QStringLiteral("the control records the requested rate"));
+
+    const EnforcementOutcome repeated = route(throttle, leaseA, now.addSecs(5));
+    check(!repeated.changed && repeated.status == Status::Requested,
+          QStringLiteral("re-applying the same decision is idempotent"));
+    checkEqual(backend.throttleCalls, 1,
+               QStringLiteral("an idempotent re-apply does not call the channel again"));
+
+    // A higher automatic rate is capped, and a direction change forces a fresh
+    // request so the cap is observable.
+    PolicyDecision fast = throttle;
+    fast.rateBitsPerSecond = 1000000;
+    fast.direction = NetworkDirection::Upload;
+    const EnforcementOutcome capped = route(fast, leaseA, now.addSecs(10));
+    checkEqual(backend.throttleCalls, 2, QStringLiteral("the changed request reaches the channel"));
+    checkEqual(backend.lastRate, quint64(409600),
+               QStringLiteral("a higher automatic rate is capped to 409600"));
+    check(backend.lastDirection == NetworkDirection::Upload,
+          QStringLiteral("the updated direction reaches the channel"));
+    check(capped.message.contains(QStringLiteral("capped")),
+          QStringLiteral("the cap is reported in the outcome"));
+
+    PolicyDecision slow = throttle;
+    slow.rateBitsPerSecond = 1024;
+    const EnforcementOutcome refused = route(slow, leaseA, now);
+    check(refused.failed(), QStringLiteral("a rate below the gentle floor is refused"));
+    checkEqual(backend.throttleCalls, 2,
+               QStringLiteral("a refused rate never reaches the channel"));
+    check(enforcer.owns(leaseA.executablePath),
+          QStringLiteral("a refused request leaves the previous control in place"));
+
+    // Block goes to the firewall channel and is idempotent too.
+    ControlLease leaseB;
+    leaseB.executablePath = QStringLiteral("C:\\Apps\\B.exe");
+    PolicyDecision block = throttle;
+    block.action = Action::Block;
+    block.rateBitsPerSecond = 0;
+    const EnforcementOutcome blocked = route(block, leaseB, now);
+    check(blocked.changed && blocked.status == Status::Applied,
+          QStringLiteral("a block decision applies through the firewall channel"));
+    checkEqual(backend.blockCalls, 1, QStringLiteral("the firewall channel was asked once"));
+    const EnforcementOutcome blockedAgain = route(block, leaseB, now);
+    check(!blockedAgain.changed && blockedAgain.status == Status::Applied,
+          QStringLiteral("re-applying the same block is idempotent"));
+    checkEqual(backend.blockCalls, 1,
+               QStringLiteral("an idempotent block does not touch the firewall again"));
+
+    // A partial channel outcome is kept as partial, never reported as applied.
+    backend.throttleStatus = Status::Partial;
+    ControlLease leaseC;
+    leaseC.executablePath = QStringLiteral("C:\\Apps\\C.exe");
+    const EnforcementOutcome partial = route(throttle, leaseC, now);
+    check(partial.changed && partial.status == Status::Partial,
+          QStringLiteral("a partial channel outcome stays partial"));
+    check(enforcer.owns(leaseC.executablePath),
+          QStringLiteral("a partial control is recorded for later withdrawal"));
+    backend.throttleStatus = Status::Requested;
+
+    // A failed apply records no control that claims to be enforced.
+    backend.throttleStatus = Status::Failed;
+    ControlLease leaseD;
+    leaseD.executablePath = QStringLiteral("C:\\Apps\\D.exe");
+    const EnforcementOutcome failedApply = route(throttle, leaseD, now);
+    check(failedApply.failed() && !failedApply.changed,
+          QStringLiteral("a failed channel outcome is reported as failed"));
+    check(!enforcer.owns(leaseD.executablePath),
+          QStringLiteral("a failed apply leaves no control behind"));
+    backend.throttleStatus = Status::Requested;
+
+    // Switching a path from throttle to block withdraws the old control first.
+    const EnforcementOutcome switched = route(block, leaseA, now);
+    checkEqual(backend.throttleWithdrawCalls, 1,
+               QStringLiteral("replacing a throttle withdraws it first"));
+    check(switched.changed && switched.status == Status::Applied,
+          QStringLiteral("the replacement block is applied"));
+    check(enforcer.controlFor(leaseA.executablePath).action == Action::Block,
+          QStringLiteral("the control now records the block"));
+
+    // A user rule wins: only the automatic control for that path is withdrawn.
+    PolicyDecision pin = allow;
+    pin.origin = DecisionOrigin::Pinned;
+    pin.tier = 1;
+    pin.confidence = 1.0;
+    const int blockCallsBefore = backend.blockCalls;
+    const EnforcementOutcome userWon = route(pin, leaseA, now);
+    check(userWon.status == Status::NotApplied && userWon.changed,
+          QStringLiteral("a user rule withdraws the automatic control"));
+    checkEqual(backend.blockWithdrawCalls, 1,
+               QStringLiteral("the user rule withdraws the control it replaces"));
+    checkEqual(backend.blockCalls, blockCallsBefore,
+               QStringLiteral("a user rule is never applied as an automatic control"));
+    check(!enforcer.owns(leaseA.executablePath) && enforcer.owns(leaseB.executablePath),
+          QStringLiteral("only the rule's own path is withdrawn"));
+
+    const EnforcementOutcome withdrawnB =
+        enforcer.withdraw(leaseB.executablePath, QStringLiteral("test"));
+    check(withdrawnB.changed && withdrawnB.status == Status::Applied,
+          QStringLiteral("withdraw reports the channel outcome"));
+    check(!enforcer.owns(leaseB.executablePath),
+          QStringLiteral("a withdrawn control is forgotten"));
+
+    // A failed withdrawal keeps ownership so a later restore can retry.
+    backend.throttleWithdrawStatus = Status::Failed;
+    const EnforcementOutcome failedWithdrawal =
+        enforcer.withdraw(leaseC.executablePath, QStringLiteral("test"));
+    check(failedWithdrawal.failed() && !failedWithdrawal.changed,
+          QStringLiteral("a failed withdrawal is reported and kept"));
+    check(enforcer.owns(leaseC.executablePath),
+          QStringLiteral("a failed withdrawal keeps the control for retry"));
+    backend.throttleWithdrawStatus = Status::Requested;
+    const EnforcementOutcome retried =
+        enforcer.withdraw(leaseC.executablePath, QStringLiteral("test"));
+    check(retried.changed && retried.status == Status::Requested,
+          QStringLiteral("the retried withdrawal succeeds"));
+
+    // Without a channel, a throttle fails visibly; an allow still needs none.
+    backend.available = false;
+    ControlLease leaseE;
+    leaseE.executablePath = QStringLiteral("C:\\Apps\\E.exe");
+    const EnforcementOutcome unavailable = route(throttle, leaseE, now);
+    check(unavailable.failed() && !unavailable.changed,
+          QStringLiteral("no channel produces a failed, not an optimistic, outcome"));
+    check(!enforcer.owns(leaseE.executablePath),
+          QStringLiteral("an unavailable channel records no control"));
+    const EnforcementOutcome allowWithoutChannel = route(allow, leaseE, now);
+    check(!allowWithoutChannel.failed() && allowWithoutChannel.status == Status::NotApplied,
+          QStringLiteral("an allow decision does not depend on a channel"));
+    backend.available = true;
+
+    // Absolute leases expire only when elapsed.
+    ControlLease timed;
+    timed.executablePath = QStringLiteral("C:\\Apps\\Timed.exe");
+    timed.expiresAt = now.addSecs(60);
+    route(throttle, timed, now);
+    check(enforcer.expire(now.addSecs(59)).isEmpty(),
+          QStringLiteral("a live lease is not expired early"));
+    const QList<EnforcementOutcome> expired = enforcer.expire(now.addSecs(60));
+    checkEqual(static_cast<int>(expired.size()), 1,
+               QStringLiteral("the elapsed lease is withdrawn"));
+    check(expired.first().changed,
+          QStringLiteral("the expiry reports the withdrawal"));
+    check(!enforcer.owns(timed.executablePath),
+          QStringLiteral("the expired control is forgotten"));
+
+    // only the matching lease basis is withdrawn on a foreground change.
+    PolicyDecision foreground = throttle;
+    foreground.until = ThrottleUntil::ForegroundChange;
+    ControlLease leaseF;
+    leaseF.executablePath = QStringLiteral("C:\\Apps\\F.exe");
+    route(foreground, leaseF, now);
+    check(enforcer.withdrawUntil(ThrottleUntil::SessionEnd, QStringLiteral("test")).isEmpty(),
+          QStringLiteral("a different lease basis is left alone"));
+    const QList<EnforcementOutcome> foregroundChanged =
+        enforcer.withdrawUntil(ThrottleUntil::ForegroundChange,
+                               QStringLiteral("foreground changed"));
+    checkEqual(static_cast<int>(foregroundChanged.size()), 1,
+               QStringLiteral("the foreground lease is withdrawn on a change"));
+    check(!enforcer.owns(leaseF.executablePath),
+          QStringLiteral("the foreground control is forgotten"));
+
+    // withdrawAll removes every remaining Data Saver control.
+    ControlLease leaseH;
+    leaseH.executablePath = QStringLiteral("C:\\Apps\\H.exe");
+    route(throttle, leaseH, now);
+    const int remaining = enforcer.count();
+    const QList<EnforcementOutcome> all =
+        enforcer.withdrawAll(QStringLiteral("test disable"));
+    checkEqual(static_cast<int>(all.size()), remaining,
+               QStringLiteral("withdrawAll reports every control it owns"));
+    checkEqual(enforcer.count(), 0, QStringLiteral("withdrawAll leaves no controls"));
+}
+
+void testDataSaverDecisionAudit()
+{
+    using namespace DataSaverAudit;
+    using Status = EnforcementResult::Status;
+
+    const QDateTime now = flowTestTime();
+    FlowObservation observation = makeMilestoneObservation(
+        QStringLiteral("flow_eeeeeeeeeeeeeeee"), QStringLiteral("pid:200:2000"),
+        QStringLiteral("update.googleapis.com"), 12 * VolumeMilestone::kMiB);
+    observation.process.exeName = QStringLiteral("chromeupdate.exe");
+    observation.process.exePath =
+        QStringLiteral("C:\\Users\\tester\\AppData\\chromeupdate.exe");
+    observation.process.identityId = QStringLiteral("id_chromeupdate");
+    observation.flow.localEndpoint = QStringLiteral("192.168.1.50:51515");
+    observation.flow.remoteEndpoint = QStringLiteral("93.184.216.34:443");
+    observation.metrics.milestoneBytes = 10 * VolumeMilestone::kMiB;
+    observation.metrics.milestoneIndex = 1;
+
+    PolicyDecision decision = makeCacheableProfileDecision(observation);
+    decision.createdAt = now;
+    decision.target.executable = QStringLiteral("chromeupdate.exe");
+    decision.target.identityId = QStringLiteral("id_chromeupdate");
+    decision.evidence.executable = QStringLiteral("chromeupdate.exe");
+    decision.evidence.milestoneBytes = observation.metrics.milestoneBytes;
+    decision.evidence.milestoneIndex = observation.metrics.milestoneIndex;
+
+    DecisionRecord record;
+    record.observation = observation;
+    record.decision = decision;
+    record.matchedRuleId = QStringLiteral("profile_updater");
+    record.diagnostic = QStringLiteral("the profile recommendation was applied");
+    // A directory path is handed in on purpose; the builder must keep only the
+    // base name.
+    record.executableName = observation.process.exePath;
+    record.enforcementStatus = Status::Requested;
+    record.enforcementChanged = true;
+    record.enforcementMessage = QStringLiteral("QoS shaping requested");
+    record.enforcementPolicyId = QStringLiteral("dsauto_0123456789ab");
+    record.enforcementChannels = QStringLiteral("WinDivert download");
+
+    check(!isUserOrigin(DecisionOrigin::Profile)
+              && !isUserOrigin(DecisionOrigin::Fallback)
+              && isUserOrigin(DecisionOrigin::Pinned)
+              && isUserOrigin(DecisionOrigin::Session),
+          QStringLiteral("only pins and session overrides count as user decisions"));
+
+    const AuditEvent automatic = eventFor(record, now);
+    check(automatic.type == AuditEvent::EventType::AutomaticDecision,
+          QStringLiteral("a profile decision is audited as an automatic decision"));
+    checkEqual(automatic.scope, QStringLiteral("chromeupdate.exe"),
+               QStringLiteral("the audit scope keeps the executable base name only"));
+    check(automatic.result.contains(QStringLiteral("throttle"))
+              && automatic.result.contains(QStringLiteral("requested")),
+          QStringLiteral("the audit result names the action and enforcement status"));
+    checkEqual(automatic.relatedPolicyId, record.enforcementPolicyId,
+               QStringLiteral("the automatic audit names its enforcement policy id"));
+    checkEqual(automatic.relatedIdentityId, QStringLiteral("id_chromeupdate"),
+               QStringLiteral("the audit links the decision identity"));
+    check(automatic.reason.contains(QStringLiteral("profile match")),
+          QStringLiteral("the audit reason names the automatic origin"));
+    checkEqual(automatic.timestamp, now,
+               QStringLiteral("the audit timestamp is the decision commit time"));
+
+    const QJsonObject details = objectOf(automatic.details);
+    checkEqual(details.value(QStringLiteral("schemaVersion")).toInt(), kSchemaVersion,
+               QStringLiteral("the decision audit details carry their schema version"));
+    checkEqual(details.value(QStringLiteral("decisionId")).toString(),
+               decision.decisionId,
+               QStringLiteral("the audit records the decision id"));
+    checkEqual(details.value(QStringLiteral("observationId")).toString(),
+               observation.observationId,
+               QStringLiteral("the audit records the observation id"));
+    checkEqual(details.value(QStringLiteral("flowId")).toString(),
+               observation.flow.flowId,
+               QStringLiteral("the audit records the flow id"));
+    checkEqual(details.value(QStringLiteral("milestoneIndex")).toInt(), 1,
+               QStringLiteral("the audit records the milestone index"));
+    checkEqual(details.value(QStringLiteral("milestoneBytes")).toDouble(),
+               static_cast<double>(observation.metrics.milestoneBytes),
+               QStringLiteral("the audit records the milestone volume"));
+    checkEqual(details.value(QStringLiteral("origin")).toString(),
+               QStringLiteral("profile"),
+               QStringLiteral("the audit records the winning origin"));
+    check(details.value(QStringLiteral("automatic")).toBool(),
+          QStringLiteral("the audit marks a profile decision automatic"));
+    checkEqual(details.value(QStringLiteral("tier")).toInt(), 3,
+               QStringLiteral("the audit records the precedence tier"));
+    checkEqual(details.value(QStringLiteral("action")).toString(),
+               QStringLiteral("throttle"),
+               QStringLiteral("the audit records the committed action"));
+    checkEqual(details.value(QStringLiteral("scope")).toString(),
+               QStringLiteral("executable"),
+               QStringLiteral("the audit records the decision scope"));
+    checkEqual(details.value(QStringLiteral("rateBitsPerSecond")).toDouble(), 409600.0,
+               QStringLiteral("the audit records the throttle rate"));
+    checkEqual(details.value(QStringLiteral("until")).toString(),
+               QStringLiteral("milestone_next"),
+               QStringLiteral("the audit records the throttle horizon"));
+    checkEqual(details.value(QStringLiteral("targetExecutable")).toString(),
+               QStringLiteral("chromeupdate.exe"),
+               QStringLiteral("the audit records the target base name"));
+    checkEqual(details.value(QStringLiteral("domain")).toString(),
+               QStringLiteral("update.googleapis.com"),
+               QStringLiteral("the audit records the attributed domain"));
+    checkEqual(details.value(QStringLiteral("matchedRuleId")).toString(),
+               QStringLiteral("profile_updater"),
+               QStringLiteral("the audit records the matched rule id"));
+    checkEqual(details.value(QStringLiteral("reason")).toString(),
+               decision.reasonShort,
+               QStringLiteral("the audit records the decision reason"));
+    checkEqual(details.value(QStringLiteral("resolverDiagnostic")).toString(),
+               record.diagnostic,
+               QStringLiteral("the audit records the resolver diagnostic"));
+
+    const QJsonObject evidence = details.value(QStringLiteral("evidence")).toObject();
+    checkEqual(evidence.value(QStringLiteral("foregroundState")).toString(),
+               decision.evidence.foregroundState,
+               QStringLiteral("the evidence summary records the foreground state"));
+    checkEqual(evidence.value(QStringLiteral("domainConfidence")).toString(),
+               decision.evidence.domainConfidence,
+               QStringLiteral("the evidence summary records the domain confidence"));
+    checkEqual(evidence.value(QStringLiteral("uxProfile")).toString(),
+               decision.evidence.uxProfile,
+               QStringLiteral("the evidence summary records the UX profile"));
+
+    const QJsonObject enforcement = details.value(QStringLiteral("enforcement")).toObject();
+    checkEqual(enforcement.value(QStringLiteral("status")).toString(),
+               QStringLiteral("requested"),
+               QStringLiteral("the audit records the enforcement status"));
+    checkEqual(enforcement.value(QStringLiteral("policyId")).toString(),
+               record.enforcementPolicyId,
+               QStringLiteral("the enforcement summary records the policy id"));
+    check(enforcement.value(QStringLiteral("changed")).toBool(),
+          QStringLiteral("the enforcement summary records whether a control changed"));
+    checkEqual(enforcement.value(QStringLiteral("channels")).toString(),
+               record.enforcementChannels,
+               QStringLiteral("the enforcement summary records the channels"));
+    checkEqual(enforcement.value(QStringLiteral("executable")).toString(),
+               QStringLiteral("chromeupdate.exe"),
+               QStringLiteral("the enforcement summary keeps the base name only"));
+
+    // Metadata only: the observation endpoints and the executable directory are
+    // never part of the record.
+    check(!automatic.details.contains(QStringLiteral("192.168.1.50"))
+              && !automatic.details.contains(QStringLiteral("93.184.216.34")),
+          QStringLiteral("the decision audit never records local or remote addresses"));
+    check(!automatic.details.contains(QStringLiteral("tester")),
+          QStringLiteral("the decision audit never records an executable path"));
+    check(!automatic.details.contains(QStringLiteral("localEndpoint"))
+              && !automatic.details.contains(QStringLiteral("remoteEndpoint"))
+              && !automatic.details.contains(QStringLiteral("exePath"))
+              && !automatic.details.contains(QStringLiteral("payload")),
+          QStringLiteral("the decision audit has no endpoint, path, or payload key"));
+
+    // A pinned win is a user decision and names the rule instead of an
+    // automatic control.
+    DecisionRecord pinned = record;
+    pinned.decision.origin = DecisionOrigin::Pinned;
+    pinned.decision.tier = 1;
+    pinned.decision.action = NetworkPolicy::Action::Allow;
+    pinned.decision.rateBitsPerSecond = 0;
+    pinned.decision.confidence = 1.0;
+    pinned.matchedRuleId = QStringLiteral("pin_1111111111111111");
+    pinned.enforcementPolicyId.clear();
+    pinned.enforcementStatus = Status::NotApplied;
+    pinned.enforcementChannels.clear();
+    pinned.enforcementMessage.clear();
+    const AuditEvent pinnedEvent = eventFor(pinned, now);
+    check(pinnedEvent.type == AuditEvent::EventType::UserDecision,
+          QStringLiteral("a pinned win is audited as a user decision"));
+    checkEqual(pinnedEvent.result, QStringLiteral("allow (not_applied)"),
+               QStringLiteral("the pinned audit records its action and no enforcement"));
+    checkEqual(pinnedEvent.relatedPolicyId, pinned.matchedRuleId,
+               QStringLiteral("a pinned audit falls back to its rule id for the policy link"));
+    const QJsonObject pinnedDetails = objectOf(pinnedEvent.details);
+    checkEqual(pinnedDetails.value(QStringLiteral("origin")).toString(),
+               QStringLiteral("pinned"),
+               QStringLiteral("the pinned audit records the pinned origin"));
+    check(!pinnedDetails.value(QStringLiteral("automatic")).toBool(),
+          QStringLiteral("the pinned audit is not automatic"));
+    checkEqual(pinnedDetails.value(QStringLiteral("matchedRuleId")).toString(),
+               pinned.matchedRuleId,
+               QStringLiteral("the pinned audit names the winning rule"));
+    check(pinnedEvent.reason.contains(QStringLiteral("pinned rule")),
+          QStringLiteral("the pinned audit reason distinguishes the origin"));
+
+    // A cache hit is automatic and carries the fingerprint it matched.
+    DecisionRecord cached = record;
+    cached.decision.origin = DecisionOrigin::Cache;
+    cached.decision.tier = 4;
+    cached.matchedRuleId.clear();
+    cached.matchedCacheKey = QStringLiteral("fp_abcdef0123456789");
+    const AuditEvent cachedEvent = eventFor(cached, now);
+    const QJsonObject cachedDetails = objectOf(cachedEvent.details);
+    check(cachedEvent.type == AuditEvent::EventType::AutomaticDecision,
+          QStringLiteral("a cache hit is audited as an automatic decision"));
+    checkEqual(cachedDetails.value(QStringLiteral("origin")).toString(),
+               QStringLiteral("cache"),
+               QStringLiteral("the cache audit records the cache origin"));
+    check(cachedDetails.value(QStringLiteral("automatic")).toBool(),
+          QStringLiteral("the cache audit is automatic"));
+    checkEqual(cachedDetails.value(QStringLiteral("matchedCacheKey")).toString(),
+               cached.matchedCacheKey,
+               QStringLiteral("the cache audit records the matched fingerprint"));
+
+    // Failed and partial outcomes keep their status; a failed enforcement is
+    // reported as failed, never as success.
+    DecisionRecord failed = record;
+    failed.enforcementStatus = Status::Failed;
+    failed.enforcementMessage = QStringLiteral("the WinDivert handle is unavailable");
+    failed.enforcementPolicyId.clear();
+    const AuditEvent failedEvent = eventFor(failed, now);
+    checkEqual(failedEvent.result, QStringLiteral("throttle (failed)"),
+               QStringLiteral("a failed enforcement is recorded as failed"));
+    check(failedEvent.errorInfo.contains(QStringLiteral("WinDivert")),
+          QStringLiteral("the failed audit carries the channel error"));
+    checkEqual(failedEvent.relatedPolicyId, failed.matchedRuleId,
+               QStringLiteral("a failed audit still names the matched rule"));
+    checkEqual(objectOf(failedEvent.details)
+                   .value(QStringLiteral("enforcement")).toObject()
+                   .value(QStringLiteral("status")).toString(),
+               QStringLiteral("failed"),
+               QStringLiteral("the failed audit details keep the failed status"));
+
+    DecisionRecord partial = record;
+    partial.enforcementStatus = Status::Partial;
+    partial.enforcementMessage = QStringLiteral("download shaped; upload unavailable");
+    const AuditEvent partialEvent = eventFor(partial, now);
+    checkEqual(partialEvent.result, QStringLiteral("throttle (partial)"),
+               QStringLiteral("a partial enforcement is recorded as partial"));
+    check(partialEvent.errorInfo.isEmpty(),
+          QStringLiteral("a partial enforcement is not reported as an error"));
+
+    // The audit export keeps the origin, automatic flag, matched rule or cache
+    // key, and enforcement fields, so a reader can tell user and automatic
+    // actions apart.
+    AuditRetentionSettings retention;
+    const QString exported = EvidenceExport::auditJson(
+        QList<AuditEvent>() << automatic, retention, false,
+        QStringLiteral("2026-11-27T00:00:00Z"));
+    const QJsonObject root = objectOf(exported);
+    checkEqual(root.value(QStringLiteral("format")).toString(),
+               QStringLiteral("oasis.audit-log"),
+               QStringLiteral("the audit export carries its format"));
+    checkEqual(root.value(QStringLiteral("count")).toInt(), 1,
+               QStringLiteral("the audit export counts the decision record"));
+    const QJsonArray exportedEvents = root.value(QStringLiteral("events")).toArray();
+    checkEqual(static_cast<int>(exportedEvents.size()), 1,
+               QStringLiteral("the audit export contains the decision record"));
+    const QJsonObject exportedEvent = exportedEvents.first().toObject();
+    checkEqual(exportedEvent.value(QStringLiteral("type")).toInt(),
+               static_cast<int>(AuditEvent::EventType::AutomaticDecision),
+               QStringLiteral("the export preserves the decision type"));
+    const QJsonObject exportedDetails =
+        objectOf(exportedEvent.value(QStringLiteral("details")).toString());
+    checkEqual(exportedDetails.value(QStringLiteral("origin")).toString(),
+               QStringLiteral("profile"),
+               QStringLiteral("the export preserves the decision origin"));
+    check(exportedDetails.value(QStringLiteral("automatic")).toBool(),
+          QStringLiteral("the export preserves the automatic flag"));
+    check(exportedDetails.contains(QStringLiteral("matchedRuleId"))
+              && exportedDetails.contains(QStringLiteral("matchedCacheKey")),
+          QStringLiteral("the export preserves the matched rule and cache key fields"));
+    check(exportedDetails.contains(QStringLiteral("enforcement")),
+          QStringLiteral("the export preserves the enforcement result"));
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -8106,6 +8727,8 @@ int main(int argc, char *argv[])
     testDataSaverDecisionResolver();
     testDataSaverDecisionCache();
     testDataSaverCacheResolution();
+    testDataSaverEnforcement();
+    testDataSaverDecisionAudit();
 
     testFixtures();
     testDiagnosticsExportSchema();

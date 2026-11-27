@@ -123,6 +123,11 @@ public:
     // already dismissed. Read-only apart from pruning an expired exemption.
     bool isExempt(const QString &processName);
 
+    // The image path for a live pid, or an empty string when the process has
+    // exited or cannot be queried. Used by Data Saver enforcement when a flow
+    // observation did not carry the path.
+    static QString resolveExecutablePath(quint32 pid);
+
 signals:
     void sustainedBandwidthExceeded(const BandwidthEvent &event);
 
@@ -146,7 +151,6 @@ private:
     };
 
     static QString normalizeProcessName(const QString &processName);
-    static QString resolveExecutablePath(quint32 pid);
     static int categoryRank(ProcessCategory category);
     ProcessCategory resolveCategory(const ProcessWindow &window, quint32 pid,
                                    bool *fromGroup = nullptr,
