@@ -8008,8 +8008,8 @@ void testDataSaverCacheResolution()
     query.displayName = QStringLiteral("Google Update");
     query.domain = QStringLiteral("update.googleapis.com");
 
-    DataSaverCache::DecisionCache cache;
-    DataSaverCache::CacheContext context;
+    DecisionCache cache;
+    CacheContext context;
     context.catalogVersion = QStringLiteral("2026.11.11");
 
     ResolverInput input;
@@ -8032,7 +8032,7 @@ void testDataSaverCacheResolution()
                QStringLiteral("the resolver stores a fresh profile decision"));
     check(fresh.diagnostic.contains(QStringLiteral("stored in the evidence cache")),
           QStringLiteral("the resolver reports the cache write"));
-    const DataSaverCache::CacheEntry stored = cache.entries().value(0);
+    const CacheEntry stored = cache.entries().value(0);
     checkEqual(stored.decisionId, fresh.decision.decisionId,
                QStringLiteral("the cached entry is the committed decision"));
     checkEqual(stored.observationId, observation.observationId,

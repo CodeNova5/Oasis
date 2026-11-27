@@ -311,8 +311,8 @@ private:
     // DS-007/DS-008: the evidence cache is keyed by metadata only, loaded once
     // at start, and consulted/populated on accepted milestone crossings.
     DataSaverDecision::DecisionResolver m_decisionResolver;
-    DataSaverCache::DecisionCache m_decisionCache;
-    DataSaverCache::CacheContext m_decisionCacheContext;
+    DecisionCache m_decisionCache;
+    CacheContext m_decisionCacheContext;
     // DS-009: the ownership layer over the shipped throttle and firewall
     // channels. Only controls recorded here are ever withdrawn.
     DataSaverEnforcer m_dataSaverEnforcer;

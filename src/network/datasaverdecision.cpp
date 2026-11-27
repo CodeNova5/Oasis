@@ -988,8 +988,8 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
     const QDateTime now = input.now.isValid() ? input.now.toUTC()
                                               : QDateTime::currentDateTimeUtc();
     const bool enforcing = input.mode == DataSaverMode::Mode::Enforce;
-    const DataSaverCache::CacheContext cacheContext =
-        input.cacheContext ? *input.cacheContext : DataSaverCache::CacheContext();
+    const CacheContext cacheContext =
+        input.cacheContext ? *input.cacheContext : CacheContext();
 
     QStringList diagnostics;
     SignatureResult signature;
@@ -1107,8 +1107,7 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
         winner = fallback;
 
     // A lower automatic tier that disagrees is reported, never applied.
-    auto noteConflict = [&](int tier, const PolicyDecision &other,
-                            const QString &source) {
+    auto noteConflict = [&](int tier, const QString &source) {
         if (winner.conflict.hasConflict && winner.conflict.conflictingTier <= tier)
             return;
         winner.conflict.hasConflict = true;
@@ -1122,11 +1121,11 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
 
     if (hasProfile) {
         if (hasCache && !sameOpinion(winner, cacheDecision))
-            noteConflict(4, cacheDecision, QStringLiteral("cache"));
+            noteConflict(4, QStringLiteral("cache"));
         if (!sameOpinion(winner, fallback))
-            noteConflict(5, fallback, QStringLiteral("fallback"));
+            noteConflict(5, QStringLiteral("fallback"));
     } else if (hasCache && !sameOpinion(winner, fallback)) {
-        noteConflict(5, fallback, QStringLiteral("fallback"));
+        noteConflict(5, QStringLiteral("fallback"));
     }
 
     QString error;
@@ -1168,8 +1167,8 @@ DecisionResolution DecisionResolver::resolve(const ResolverInput &input) const
     if (winner.origin == DecisionOrigin::Profile)
         resolution.matchedRuleId = signature.profileRuleId;
     if (winner.origin == DecisionOrigin::Cache && cacheStoreHit) {
-        resolution.matchedCacheKey = DataSaverCache::fingerprintFor(
-            DataSaverCache::buildCacheKey(observation, cacheContext));
+        resolution.matchedCacheKey = fingerprintFor(
+            buildCacheKey(observation, cacheContext));
     }
 
     resolution.evaluated = true;

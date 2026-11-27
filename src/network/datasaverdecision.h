@@ -40,10 +40,12 @@
 #include "flowobservation.h"
 #include "network/policy.h"
 
-namespace DataSaverCache {
+// Defined in datasavercache.h, which includes this header, so only forward
+// declarations can live here. The cache types are at global scope next to
+// `CacheSource`/`CacheKey`; the `DataSaverCache` namespace holds its version
+// and TTL constants.
 class DecisionCache;
 struct CacheContext;
-} // namespace DataSaverCache
 
 namespace DataSaverDecision {
 constexpr int kSchemaVersion = 1;
@@ -179,11 +181,11 @@ struct ResolverInput
     /// Optional DS-007 evidence cache. When present, a hit supplies the tier-4
     /// candidate and a freshly resolved profile decision is stored back for
     /// reuse. The resolver never applies, withdraws, or persists enforcement.
-    DataSaverCache::DecisionCache *cache = nullptr;
+    DecisionCache *cache = nullptr;
 
     /// Key context for both the lookup and the store. A null pointer uses the
     /// default context (manual toggle, no catalog version).
-    const DataSaverCache::CacheContext *cacheContext = nullptr;
+    const CacheContext *cacheContext = nullptr;
 
     /// The caller confirmed that an enforcement channel can own a gentle
     /// throttle. Without it the fallback stays notify-only.
