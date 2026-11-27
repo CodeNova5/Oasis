@@ -28,6 +28,13 @@ INCLUDEPATH += $$PWD/../src
 
 SOURCES += \
     main.cpp \
+    testharness.cpp \
+    contract_tests.cpp \
+    policy_tests.cpp \
+    attribution_tests.cpp \
+    ai_tests.cpp \
+    ui_tests.cpp \
+    datasaver_tests.cpp \
     ../src/network/policy.cpp \
     ../src/network/datasavermode.cpp \
     ../src/network/flowobservation.cpp \
@@ -74,6 +81,8 @@ SOURCES += \
     ../src/firewall/rulenames.cpp
 
 HEADERS += \
+    testharness.h \
+    testdeclarations.h \
     ../src/network/policy.h \
     ../src/network/datasavermode.h \
     ../src/network/flowobservation.h \
