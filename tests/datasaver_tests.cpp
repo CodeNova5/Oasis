@@ -2753,8 +2753,12 @@ void testDataSaverNotifications()
     check(first.deliver && first.suppressedCount == 0,
           QStringLiteral("the first committed notice is delivered"));
     const NotificationDecision repeat = coordinator.submit(applied, 30 * 1000);
-    check(!repeat.deliver && repeat.suppressedCount == 1,
+    check(!repeat.deliver,
           QStringLiteral("a repeat inside the cooldown is folded"));
+    // A suppressed decision delivers nothing, so the pending fold is read from
+    // the coordinator; only a delivery carries the count it folded in.
+    checkEqual(coordinator.suppressedCount(applied.key), 1,
+               QStringLiteral("the folded repeat is counted against the key"));
     const NotificationDecision folded = coordinator.submit(applied, 61 * 1000);
     check(folded.deliver && folded.suppressedCount == 1,
           QStringLiteral("the folded count is delivered once the cooldown ends"));

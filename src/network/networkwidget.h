@@ -104,7 +104,7 @@ signals:
     // DS-008: the resolver produced one validated decision for a milestone
     // crossing, using the DS-007 evidence cache. DS-009 applies it; this widget
     // does not enforce from the signal.
-    void dataSaverDecisionResolved(const DataSaverDecision::PolicyDecision &decision);
+    void dataSaverDecisionResolved(const PolicyDecision &decision);
     // DS-011: one committed decision's notice, already deduplicated by the
     // process-wide NotificationCoordinator attached by the host. The notice is
     // metadata only and offers the Allow Once / Always Allow / Inspect actions.
@@ -279,7 +279,7 @@ private:
     void evaluateDataSaverCrossing(const FlowObservation &observation,
                                    const MilestoneCrossing &crossing);
     // DS-009: audit an automatic-control outcome and surface a failure.
-    void recordEnforcementOutcome(const DataSaverEnforcement::EnforcementOutcome &outcome);
+    void recordEnforcementOutcome(const EnforcementOutcome &outcome);
     void createPolicyForTarget(const PolicyTarget &target);
     void showRecommendationFor(quint32 pid, const QString &processName,
                                const QString &executablePath);
@@ -315,7 +315,7 @@ private:
     VolumeMilestoneEvaluator m_milestoneEvaluator;
     // DS-007/DS-008: the evidence cache is keyed by metadata only, loaded once
     // at start, and consulted/populated on accepted milestone crossings.
-    DataSaverDecision::DecisionResolver m_decisionResolver;
+    DecisionResolver m_decisionResolver;
     DecisionCache m_decisionCache;
     CacheContext m_decisionCacheContext;
     // DS-009: the ownership layer over the shipped throttle and firewall

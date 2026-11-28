@@ -401,11 +401,11 @@ NetworkWidget::NetworkWidget(QWidget *parent)
         // DS-009: a control requested until a foreground change ends here, and
         // only that lease kind is withdrawn.
         if (previous != snapshot.foregroundPid) {
-            const QList<DataSaverEnforcement::EnforcementOutcome> outcomes =
+            const QList<EnforcementOutcome> outcomes =
                 m_dataSaverEnforcer.withdrawUntil(
                     ThrottleUntil::ForegroundChange,
                     QStringLiteral("the foreground application changed"));
-            for (const DataSaverEnforcement::EnforcementOutcome &outcome : outcomes)
+            for (const EnforcementOutcome &outcome : outcomes)
                 recordEnforcementOutcome(outcome);
         }
     }, Qt::QueuedConnection);
@@ -580,9 +580,9 @@ NetworkWidget::~NetworkWidget()
     // DS-009: app exit withdraws every Data Saver-owned control. The managers
     // are still alive here; the throttle worker gets the requests before the
     // manager tears its thread down.
-    const QList<DataSaverEnforcement::EnforcementOutcome> withdrawn =
+    const QList<EnforcementOutcome> withdrawn =
         m_dataSaverEnforcer.withdrawAll(QStringLiteral("the application is exiting"));
-    for (const DataSaverEnforcement::EnforcementOutcome &outcome : withdrawn)
+    for (const EnforcementOutcome &outcome : withdrawn)
         recordEnforcementOutcome(outcome);
     delete m_dataSaverEnforcementBackend;
     m_dataSaverEnforcementBackend = nullptr;
@@ -858,7 +858,7 @@ void NetworkWidget::evaluateDataSaverCrossing(const FlowObservation &observation
     FlowObservation evaluation = observation;
     evaluation.observationId = crossing.observationId;
 
-    DataSaverDecision::ResolverInput input;
+    ResolverInput input;
     input.signature.observation = evaluation;
     input.signature.activity = queryAndActivityFor(evaluation.process.pid,
                                                    evaluation.process.exeName,
@@ -876,16 +876,16 @@ void NetworkWidget::evaluateDataSaverCrossing(const FlowObservation &observation
     // throttle, and every produced control is applied below.
     input.gentleThrottleAvailable = m_dataSaverEnforcer.canThrottle();
 
-    const DataSaverDecision::DecisionResolution resolution = m_decisionResolver.resolve(input);
+    const DecisionResolution resolution = m_decisionResolver.resolve(input);
     if (!resolution.evaluated) return;
     emit dataSaverDecisionResolved(resolution.decision);
 
-    DataSaverEnforcement::ControlLease lease;
+    ControlLease lease;
     lease.executablePath = input.signature.activity.executablePath;
     if (lease.executablePath.isEmpty() && evaluation.process.pid != 0)
         lease.executablePath = BandwidthGuard::resolveExecutablePath(evaluation.process.pid);
     lease.reason = resolution.decision.reasonShort;
-    const DataSaverEnforcement::EnforcementOutcome outcome =
+    const EnforcementOutcome outcome =
         m_dataSaverEnforcer.apply(resolution.decision, lease);
 
     // DS-010: one audit record per committed decision, including the
@@ -932,7 +932,7 @@ void NetworkWidget::evaluateDataSaverCrossing(const FlowObservation &observation
 }
 
 void NetworkWidget::recordEnforcementOutcome(
-    const DataSaverEnforcement::EnforcementOutcome &outcome)
+    const EnforcementOutcome &outcome)
 {
     // Withdrawal paths keep the DS-009 enforcement-result record. Apply
     // outcomes are covered by the DS-010 decision record instead, so a committed

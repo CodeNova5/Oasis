@@ -904,9 +904,9 @@ void NetworkWidget::restoreAllDataSaverPolicies()
     // below, so turning Data Saver off still takes them back while a previous
     // policy-level restore is pending. This is targeted by the dsauto_ policy
     // id, so a user limit or a user-created firewall rule is never removed.
-    const QList<DataSaverEnforcement::EnforcementOutcome> withdrawn =
+    const QList<EnforcementOutcome> withdrawn =
         m_dataSaverEnforcer.withdrawAll(QStringLiteral("automatic controls were restored"));
-    for (const DataSaverEnforcement::EnforcementOutcome &outcome : withdrawn)
+    for (const EnforcementOutcome &outcome : withdrawn)
         recordEnforcementOutcome(outcome);
 
     // The previous restore's policy report is still waiting for the throttle

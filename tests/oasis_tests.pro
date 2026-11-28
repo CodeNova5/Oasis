@@ -20,9 +20,14 @@ CONFIG -= app_bundle
 TEMPLATE = app
 TARGET   = oasis_tests
 
+# The harness is built from the repository root, the same OUT_PWD as Oasis.pro.
+# Keep its intermediates in their own subdirectories: both projects have a
+# main.cpp, so a shared .obj/ would let tests/main.o overwrite the application's
+# main.o (and the harness would link the app's objects, which are built with
+# different defines).
 DESTDIR     = $$OUT_PWD
-OBJECTS_DIR = $$OUT_PWD/.obj
-MOC_DIR     = $$OUT_PWD/.moc
+OBJECTS_DIR = $$OUT_PWD/.obj/oasis_tests
+MOC_DIR     = $$OUT_PWD/.moc/oasis_tests
 
 INCLUDEPATH += $$PWD/../src
 
