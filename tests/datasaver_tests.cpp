@@ -6,6 +6,8 @@
 #include "testharness.h"
 #include "testdeclarations.h"
 
+#include "network/datasavernotification.h"
+
 // ─── DS-002: Data Saver Off/Enforce persistence and migration ──────────────
 // The automation contract has exactly two modes. The legacy three-state control
 // maps Monitor to Off, an unsupported value fails closed, and the migration runs
@@ -2600,6 +2602,250 @@ void testDataSaverDecisionAudit()
           QStringLiteral("the export preserves the enforcement result"));
 }
 
+void testDataSaverNotifications()
+{
+    using namespace DataSaverNotifications;
+    using Status = EnforcementResult::Status;
+
+    const QDateTime now = flowTestTime();
+    FlowObservation observation = makeMilestoneObservation(
+        QStringLiteral("flow_aaaaaaaaaaaaaaaa"), QStringLiteral("pid:100:1000"),
+        QStringLiteral("update.googleapis.com"), 12 * VolumeMilestone::kMiB);
+    observation.process.exeName = QStringLiteral("chromeupdate.exe");
+    observation.process.exePath =
+        QStringLiteral("C:\\Users\\tester\\AppData\\chromeupdate.exe");
+    observation.process.identityId = QStringLiteral("id_chromeupdate");
+    observation.metrics.milestoneBytes = 10 * VolumeMilestone::kMiB;
+    observation.metrics.milestoneIndex = 1;
+
+    PolicyDecision decision = makeCacheableProfileDecision(observation);
+    decision.target.executable = QStringLiteral("chromeupdate.exe");
+    decision.evidence.executable = QStringLiteral("chromeupdate.exe");
+    decision.evidence.milestoneBytes = observation.metrics.milestoneBytes;
+    decision.evidence.milestoneIndex = observation.metrics.milestoneIndex;
+    decision.nextSteps.clear();
+    decision.nextSteps << QStringLiteral("Defer the update until the hotspot is disconnected.");
+
+    DecisionNotice appliedNotice;
+    appliedNotice.observation = observation;
+    appliedNotice.decision = decision;
+    appliedNotice.status = Status::Applied;
+    appliedNotice.enforcementChannels = QStringLiteral("WinDivert download");
+    appliedNotice.enforcementPolicyId = QStringLiteral("dsauto_0123456789ab");
+
+    check(shouldNotify(decision), QStringLiteral("a throttle decision produces a notice"));
+    PolicyDecision noticeOnly = decision;
+    noticeOnly.action = NetworkPolicy::Action::Notify;
+    noticeOnly.rateBitsPerSecond = 0;
+    noticeOnly.continueAfterNotify = true;
+    check(shouldNotify(noticeOnly), QStringLiteral("an advisory decision produces a notice"));
+    PolicyDecision allowed = decision;
+    allowed.action = NetworkPolicy::Action::Allow;
+    allowed.rateBitsPerSecond = 0;
+    check(!shouldNotify(allowed), QStringLiteral("an allow decision stays silent"));
+
+    checkEqual(notificationKey(observation, decision),
+               QStringLiteral("datasaver:throttle:chromeupdate.exe:update.googleapis.com:1"),
+               QStringLiteral("the key follows the contract notification mapping"));
+
+    const AppNotification applied = forDecision(appliedNotice);
+    check(applied.priority == NotificationPriority::Warning,
+          QStringLiteral("a throttle notice is a warning"));
+    checkEqual(applied.title, QStringLiteral("Data Saver limited chromeupdate.exe"),
+               QStringLiteral("an applied throttle is described as limited"));
+    check(applied.message.contains(QStringLiteral("Application: chromeupdate.exe")),
+          QStringLiteral("the notice names the application"));
+    check(applied.message.contains(QStringLiteral("Domain: update.googleapis.com")),
+          QStringLiteral("a confidently attributed domain is named"));
+    check(applied.message.contains(QStringLiteral("10 MiB"))
+              && applied.message.contains(QStringLiteral("index 1")),
+          QStringLiteral("the notice names the milestone"));
+    check(applied.message.contains(QStringLiteral("409600 bits/s"))
+              && applied.message.contains(QStringLiteral("download")),
+          QStringLiteral("the notice names the direction and rate"));
+    check(applied.message.contains(decision.reasonShort),
+          QStringLiteral("the notice carries the decision reason"));
+    check(applied.message.contains(QStringLiteral("Enforcement: applied")),
+          QStringLiteral("the notice records the confirmed enforcement status"));
+    check(applied.message.contains(QStringLiteral("Next step:")),
+          QStringLiteral("the notice carries the local next step"));
+    check(applied.message.contains(decision.decisionId)
+              && applied.message.contains(observation.observationId),
+          QStringLiteral("the notice links to the decision and observation"));
+    check(applied.message.contains(QStringLiteral("Allow once"))
+              && applied.message.contains(QStringLiteral("Always allow"))
+              && applied.message.contains(QStringLiteral("Inspect application")),
+          QStringLiteral("the notice offers the three reversal actions"));
+    checkEqual(applied.actions,
+               QStringList() << allowOnceActionToken() << alwaysAllowActionToken()
+                             << inspectActionToken(),
+               QStringLiteral("the notice carries stable action tokens"));
+    checkEqual(applied.identityId, QStringLiteral("id_chromeupdate"),
+               QStringLiteral("the notice links the decision identity"));
+    checkEqual(applied.policyId, appliedNotice.enforcementPolicyId,
+               QStringLiteral("the notice links the enforcement policy id"));
+    check(!applied.message.contains(QStringLiteral("tester"))
+              && !applied.message.contains(QStringLiteral("C:\\"))
+              && !applied.message.contains(observation.flow.localEndpoint)
+              && !applied.message.contains(observation.flow.remoteEndpoint),
+          QStringLiteral("the notice never carries a path or an endpoint"));
+
+    // A requested control is not reported as applied.
+    DecisionNotice requestedNotice = appliedNotice;
+    requestedNotice.status = Status::Requested;
+    const AppNotification requested = forDecision(requestedNotice);
+    checkEqual(requested.title,
+               QStringLiteral("Data Saver requested a limit for chromeupdate.exe"),
+               QStringLiteral("a requested throttle is described as requested"));
+    check(requested.message.contains(QStringLiteral("Enforcement: requested"))
+              && !requested.message.contains(QStringLiteral("applied")),
+          QStringLiteral("a requested control never claims to be applied"));
+
+    // A failed control is critical, keeps the channel error, and says it could
+    // not be applied.
+    DecisionNotice failedNotice = appliedNotice;
+    failedNotice.status = Status::Failed;
+    failedNotice.enforcementMessage = QStringLiteral("the WinDivert handle is unavailable");
+    const AppNotification failed = forDecision(failedNotice);
+    check(failed.priority == NotificationPriority::Critical,
+          QStringLiteral("a failed enforcement notice is critical"));
+    checkEqual(failed.title, QStringLiteral("Data Saver could not limit chromeupdate.exe"),
+               QStringLiteral("a failed control says it could not be applied"));
+    check(failed.message.contains(QStringLiteral("Enforcement: failed"))
+              && failed.message.contains(QStringLiteral("WinDivert")),
+          QStringLiteral("the failed notice keeps the channel error"));
+
+    // Weak evidence keeps the domain anonymous and the notice advisory.
+    PolicyDecision weak = decision;
+    weak.evidence.domainConfidence = QStringLiteral("weak_inference");
+    DecisionNotice weakNotice;
+    weakNotice.observation = observation;
+    weakNotice.decision = weak;
+    weakNotice.status = Status::Applied;
+    const AppNotification anonymized = forDecision(weakNotice);
+    check(!anonymized.message.contains(QStringLiteral("Domain:")),
+          QStringLiteral("weak domain evidence is not named in the notice"));
+    check(!canNameDomain(weak),
+          QStringLiteral("weak domain evidence cannot be named"));
+
+    PolicyDecision advisory = decision;
+    advisory.action = NetworkPolicy::Action::Notify;
+    advisory.rateBitsPerSecond = 0;
+    advisory.continueAfterNotify = true;
+    DecisionNotice advisoryNotice;
+    advisoryNotice.observation = observation;
+    advisoryNotice.decision = advisory;
+    advisoryNotice.status = Status::NotApplied;
+    const AppNotification info = forDecision(advisoryNotice);
+    check(info.priority == NotificationPriority::Info,
+          QStringLiteral("an advisory notice is informational"));
+    check(info.title.contains(QStringLiteral("notice")),
+          QStringLiteral("an advisory notice is titled as a notice"));
+
+    // The shared coordinator folds repeats of one key and still delivers the
+    // folded count after the cooldown.
+    NotificationSettings settings;
+    settings.cooldownMs = 60 * 1000;
+    settings.windowMs = 60 * 1000;
+    settings.maxDeliveriesPerWindow = 6;
+    NotificationCoordinator coordinator(settings);
+    const NotificationDecision first = coordinator.submit(applied, 0);
+    check(first.deliver && first.suppressedCount == 0,
+          QStringLiteral("the first committed notice is delivered"));
+    const NotificationDecision repeat = coordinator.submit(applied, 30 * 1000);
+    check(!repeat.deliver && repeat.suppressedCount == 1,
+          QStringLiteral("a repeat inside the cooldown is folded"));
+    const NotificationDecision folded = coordinator.submit(applied, 61 * 1000);
+    check(folded.deliver && folded.suppressedCount == 1,
+          QStringLiteral("the folded count is delivered once the cooldown ends"));
+
+    // A critical failure bypasses both the per-key cooldown and the rolling
+    // delivery cap.
+    NotificationSettings capped = settings;
+    capped.maxDeliveriesPerWindow = 1;
+    capped.cooldownMs = 60 * 1000;
+    NotificationCoordinator critical(capped);
+    check(critical.submit(info, 0).deliver,
+          QStringLiteral("the first informational notice is delivered"));
+    // A different key, so this is the rolling-window cap, not dedupe.
+    FlowObservation later = observation;
+    later.metrics.milestoneIndex = 2;
+    DecisionNotice laterNotice = advisoryNotice;
+    laterNotice.observation = later;
+    const NotificationDecision cappedInfo = critical.submit(forDecision(laterNotice), 1000);
+    check(!cappedInfo.deliver && cappedInfo.rateLimited,
+          QStringLiteral("the rolling cap suppresses an ordinary notice"));
+    check(critical.submit(failed, 3000).deliver,
+          QStringLiteral("a critical failure is delivered despite the cap"));
+
+    // Allow Once: a tier-2 session override that expires on its own.
+    SessionOverrideStore sessions;
+    SessionOverride allowOnceOverride;
+    QString error;
+    check(allowOnce(observation, decision, &sessions, now, &allowOnceOverride, &error),
+          QStringLiteral("Allow Once stores a session override: %1").arg(error));
+    check(allowOnceOverride.scope == SessionScope::Flow
+              && allowOnceOverride.flowId == observation.flow.flowId,
+          QStringLiteral("Allow Once targets the current flow"));
+    check(allowOnceOverride.action == NetworkPolicy::Action::Allow
+              && allowOnceOverride.direction == NetworkDirection::Both,
+          QStringLiteral("Allow Once allows both directions"));
+    checkEqual(allowOnceOverride.expiresAt,
+               now.addSecs(kAllowOnceTtlSeconds).toUTC(),
+               QStringLiteral("Allow Once expires after one hour"));
+    checkEqual(static_cast<int>(sessions.activeOverrides(
+                   now.addSecs(kAllowOnceTtlSeconds - 1)).size()),
+               1, QStringLiteral("the Allow Once override is active before it expires"));
+    checkEqual(static_cast<int>(sessions.activeOverrides(
+                   now.addSecs(kAllowOnceTtlSeconds)).size()),
+               0, QStringLiteral("the Allow Once override expires on time"));
+    const RuleResolution allowOnceResolution = RuleResolver::resolve(
+        observation, QList<PinnedRule>(), sessions.activeOverrides(now), now);
+    check(allowOnceResolution.matched
+              && allowOnceResolution.winner.tier == 2
+              && allowOnceResolution.winner.action == NetworkPolicy::Action::Allow,
+          QStringLiteral("the Allow Once override wins at tier 2"));
+    check(!allowOnce(observation, decision, nullptr, now, nullptr, &error),
+          QStringLiteral("Allow Once requires a session store"));
+
+    // Always Allow: tier 1, and only after explicit confirmation.
+    QSettings settingsStore;
+    settingsStore.beginGroup(PinnedRuleStore::storageGroup());
+    settingsStore.remove(QString());
+    settingsStore.endGroup();
+    settingsStore.sync();
+
+    PinnedRule unconfirmed;
+    check(!alwaysAllow(observation, decision, false, now, &unconfirmed, &error),
+          QStringLiteral("Always Allow is refused without confirmation"));
+    check(PinnedRuleStore::load().rules.isEmpty(),
+          QStringLiteral("an unconfirmed Always Allow writes nothing"));
+
+    PinnedRule pin;
+    check(alwaysAllow(observation, decision, true, now, &pin, &error),
+          QStringLiteral("a confirmed Always Allow is pinned: %1").arg(error));
+    checkEqual(pin.executable, QStringLiteral("chromeupdate.exe"),
+               QStringLiteral("the pinned rule names the application"));
+    checkEqual(pin.domainPattern, QStringLiteral("update.googleapis.com"),
+               QStringLiteral("the pinned rule names the attributed domain"));
+    check(pin.action == NetworkPolicy::Action::Allow
+              && !pin.id.isEmpty(),
+          QStringLiteral("the pinned rule allows the application and has an id"));
+    const PinnedRuleLoadResult stored = PinnedRuleStore::load();
+    checkEqual(static_cast<int>(stored.rules.size()), 1,
+               QStringLiteral("the confirmed Always Allow rule persists"));
+    const RuleResolution pinnedResolution = RuleResolver::resolve(
+        observation, stored.rules, QList<SessionOverride>(), now);
+    check(pinnedResolution.matched && pinnedResolution.winner.tier == 1
+              && pinnedResolution.winner.action == NetworkPolicy::Action::Allow,
+          QStringLiteral("the Always Allow rule wins at tier 1"));
+
+    settingsStore.beginGroup(PinnedRuleStore::storageGroup());
+    settingsStore.remove(QString());
+    settingsStore.endGroup();
+    settingsStore.sync();
+}
+
 void runDataSaverTests()
 {
     testDataSaverModeContract();
@@ -2613,4 +2859,5 @@ void runDataSaverTests()
     testDataSaverCacheResolution();
     testDataSaverEnforcement();
     testDataSaverDecisionAudit();
+    testDataSaverNotifications();
 }

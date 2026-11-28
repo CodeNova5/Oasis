@@ -15,6 +15,7 @@
 #include "networkmonitor.h"
 #include "networkmodel.h"
 #include "bandwidthguard.h"
+#include "notificationcoordinator.h"
 #include "datasavercache.h"
 #include "datasaverdecision.h"
 #include "datasaverenforcement.h"
@@ -104,6 +105,10 @@ signals:
     // crossing, using the DS-007 evidence cache. DS-009 applies it; this widget
     // does not enforce from the signal.
     void dataSaverDecisionResolved(const DataSaverDecision::PolicyDecision &decision);
+    // DS-011: one committed decision's notice, already deduplicated by the
+    // process-wide NotificationCoordinator attached by the host. The notice is
+    // metadata only and offers the Allow Once / Always Allow / Inspect actions.
+    void dataSaverNotification(const AppNotification &notification);
 
 private slots:
     void onAdapterChanged(int idx);
@@ -317,6 +322,10 @@ private:
     // channels. Only controls recorded here are ever withdrawn.
     DataSaverEnforcer m_dataSaverEnforcer;
     DataSaverEnforcementBackend *m_dataSaverEnforcementBackend = nullptr;
+    // DS-011: Allow Once writes a tier-2 session override here; the resolver
+    // reads the active set on every crossing, so the reversal applies without a
+    // restart and expires on its own.
+    SessionOverrideStore m_sessionOverrides;
     // DS-009: a foreground-change lease ends when this pid changes.
     quint32 m_lastDataSaverForegroundPid = 0;
 

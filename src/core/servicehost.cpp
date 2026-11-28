@@ -38,6 +38,10 @@ void ServiceHost::start()
     m_activity = new ActivityService(m_network, this);
     connect(m_network, &NetworkWidget::enforcementFailed,
             this, &ServiceHost::onEnforcementFailed);
+    // DS-011: the widget shapes the notice; the process-wide coordinator here
+    // owns dedupe, folding, and the critical bypass.
+    connect(m_network, &NetworkWidget::dataSaverNotification, this,
+            [this](const AppNotification &notification) { post(notification); });
 
     m_network->autoStart();
     m_started = true;

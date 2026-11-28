@@ -64,6 +64,7 @@ SOURCES += \
     src/network/datasaverenforcement.cpp \
     src/network/datasaverenforcementbackend.cpp \
     src/network/datasaveraudit.cpp \
+    src/network/datasavernotification.cpp \
     src/network/auditeventstore.cpp \
     src/network/evidenceexport.cpp \
     src/network/auditlogmodel.cpp \
@@ -159,6 +160,7 @@ HEADERS += \
     src/network/datasaverenforcement.h \
     src/network/datasaverenforcementbackend.h \
     src/network/datasaveraudit.h \
+    src/network/datasavernotification.h \
     src/network/auditeventstore.h \
     src/network/evidenceexport.h \
     src/network/auditlogmodel.h \

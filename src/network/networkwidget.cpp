@@ -15,6 +15,7 @@
 #include "attribution/endpointcatalog.h"
 #include "datasaveraudit.h"
 #include "datasaverenforcementbackend.h"
+#include "datasavernotification.h"
 
 namespace {
 
@@ -868,6 +869,7 @@ void NetworkWidget::evaluateDataSaverCrossing(const FlowObservation &observation
     // hook), so a rule the user just stored is honored on the next milestone.
     input.pinnedRules = PinnedRuleStore::load().rules;
     input.now = QDateTime::currentDateTimeUtc();
+    input.sessionOverrides = m_sessionOverrides.activeOverrides(input.now);
     input.cache = &m_decisionCache;
     input.cacheContext = &m_decisionCacheContext;
     // DS-009 confirms channel ownership before the resolver may produce a
@@ -903,7 +905,25 @@ void NetworkWidget::evaluateDataSaverCrossing(const FlowObservation &observation
     record.enforcementChannels = outcome.channels;
     m_auditStore.append(DataSaverAudit::eventFor(record, input.now));
 
-    if (outcome.failed()) {
+    // DS-011: one notice per committed restriction, with the real enforcement
+    // status. The host submits it to the process-wide NotificationCoordinator,
+    // which deduplicates repeats and exempts critical failures from its limits.
+    const bool noticePosted = DataSaverNotifications::shouldNotify(resolution.decision);
+    if (noticePosted) {
+        DataSaverNotifications::DecisionNotice notice;
+        notice.observation = evaluation;
+        notice.decision = resolution.decision;
+        notice.status = outcome.status;
+        notice.enforcementMessage = outcome.message;
+        notice.enforcementChannels = outcome.channels;
+        notice.enforcementPolicyId = outcome.policyId;
+        notice.executableName = evaluation.process.exeName;
+        emit dataSaverNotification(DataSaverNotifications::forDecision(notice));
+    }
+
+    // A failed control that already produced a critical notice is not reported
+    // twice; the generic signal still covers a failure with no notice path.
+    if (outcome.failed() && !noticePosted) {
         emit enforcementFailed(outcome.policyId, outcome.executablePath,
                                outcome.message.isEmpty()
                                    ? QStringLiteral("The Data Saver control could not be applied.")

@@ -29,6 +29,7 @@
 #include <QHash>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 enum class NotificationPriority
 {
@@ -58,6 +59,9 @@ struct AppNotification
     // can link a notification to its evidence.
     QString identityId;
     QString policyId;
+    // Stable action tokens a surface may bind, e.g. `allow_once`,
+    // `always_allow`, `inspect`. Empty for producers that offer no actions.
+    QStringList actions;
 
     QString effectiveKey() const;
     static QString fallbackKey(const QString &title, const QString &message);

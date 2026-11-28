@@ -525,6 +525,7 @@ never call enforcement or touch the policy store.
 | Audit records | `AuditEvent` (`src/network/policy.h`), `AuditEventStore` (`src/network/auditeventstore.h`) |
 | Decision audit record | `src/network/datasaveraudit.{h,cpp}` (`DecisionRecord`, `eventFor`), `DecisionResolution::matchedRuleId`/`matchedCacheKey` |
 | Notification dedupe/priority | `src/network/notificationcoordinator.h` |
+| Data Saver notices / reversal actions | `src/network/datasavernotification.{h,cpp}` (`DecisionNotice`, `forDecision`, `allowOnce`, `alwaysAllow`) |
 | Mode values | `src/network/datasavermode.{h,cpp}` (`load`/`save`, legacy migration), `NetworkWidget::setDataSaverMode()` |
 | Bridge status shape | `dataSaverStatus()` (`src/ui/webview2/webuibridge.cpp`) |
 | Policy persistence | `PolicyStore` group `Oasis/Policies`, format version 2 |
