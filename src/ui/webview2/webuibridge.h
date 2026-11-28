@@ -28,6 +28,8 @@
 
 #include <WebView2.h>
 
+#include "network/notificationcoordinator.h"
+
 class ServiceHost;
 
 class WebUiBridge final : public QObject
@@ -51,6 +53,17 @@ public:
     // Sends one raw JSON object to the page. Exposed so a later layer can push
     // events through the same channel.
     void postToPage(const QJsonObject &message);
+
+    // Event name a delivered notification is pushed under, e.g.
+    // "datasaver.notice". The page binds buttons from `payload.actions`, so it
+    // never has to parse the message copy.
+    static QString noticeEventName();
+    // Event name pushed when a notice action was applied, so the page can retire
+    // the card the tray just acted on (and the reverse).
+    static QString noticeResolvedEventName();
+    // Full event message: { "event": <name>, "payload": <eventPayload> }.
+    static QJsonObject noticeEvent(const AppNotification &notification,
+                                   int suppressedCount);
 
     // Entry point for the WebView2 completion handler.
     void handleMessageJson(const QString &json);

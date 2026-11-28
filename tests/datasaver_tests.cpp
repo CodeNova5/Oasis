@@ -2684,6 +2684,48 @@ void testDataSaverNotifications()
                QStringLiteral("the notice links the decision identity"));
     checkEqual(applied.policyId, appliedNotice.enforcementPolicyId,
                QStringLiteral("the notice links the enforcement policy id"));
+
+    // The payload a tray or page binds its controls to: key, copy, priority
+    // token, action tokens, folded count, and evidence links only.
+    const QJsonObject payload = eventPayload(applied, 2);
+    checkEqual(payload.value(QStringLiteral("key")).toString(), applied.key,
+               QStringLiteral("the event payload carries the dedupe key"));
+    checkEqual(payload.value(QStringLiteral("priority")).toString(),
+               QStringLiteral("warning"),
+               QStringLiteral("the event payload names the priority"));
+    checkEqual(payload.value(QStringLiteral("suppressedCount")).toInt(), 2,
+               QStringLiteral("the event payload carries the folded count"));
+    const QJsonArray payloadActions = payload.value(QStringLiteral("actions")).toArray();
+    check(payloadActions.size() == 3
+              && payloadActions.at(0).toString() == allowOnceActionToken()
+              && payloadActions.at(1).toString() == alwaysAllowActionToken()
+              && payloadActions.at(2).toString() == inspectActionToken(),
+          QStringLiteral("the event payload carries the action tokens"));
+    checkEqual(actionLabel(allowOnceActionToken()), QStringLiteral("Allow once"),
+               QStringLiteral("an action token has a display label"));
+    check(actionLabel(QStringLiteral("not_an_action")).isEmpty(),
+          QStringLiteral("an unknown action token has no display label"));
+
+    // Inspect renders the evidence the notice body was built from, under the
+    // same domain-naming rule and with no path or endpoint.
+    const QJsonObject summary = evidenceSummary(appliedNotice);
+    checkEqual(summary.value(QStringLiteral("executable")).toString(),
+               QStringLiteral("chromeupdate.exe"),
+               QStringLiteral("the evidence summary names the application"));
+    checkEqual(summary.value(QStringLiteral("status")).toString(),
+               QStringLiteral("applied"),
+               QStringLiteral("the evidence summary carries the enforcement status"));
+    checkEqual(summary.value(QStringLiteral("decisionId")).toString(),
+               decision.decisionId,
+               QStringLiteral("the evidence summary links the decision"));
+    checkEqual(summary.value(QStringLiteral("domain")).toString(),
+               QStringLiteral("update.googleapis.com"),
+               QStringLiteral("the evidence summary names a confirmed domain"));
+    check(!summary.contains(QStringLiteral("exePath"))
+              && !summary.contains(QStringLiteral("endpoint"))
+              && !summary.value(QStringLiteral("reason")).toString().contains(
+                     QStringLiteral("C:\\")),
+          QStringLiteral("the evidence summary carries no path or endpoint"));
     check(!applied.message.contains(QStringLiteral("tester"))
               && !applied.message.contains(QStringLiteral("C:\\"))
               && !applied.message.contains(observation.flow.localEndpoint)
@@ -2727,6 +2769,9 @@ void testDataSaverNotifications()
           QStringLiteral("weak domain evidence is not named in the notice"));
     check(!canNameDomain(weak),
           QStringLiteral("weak domain evidence cannot be named"));
+    const QJsonObject weakSummary = evidenceSummary(weakNotice);
+    check(!weakSummary.contains(QStringLiteral("domain")),
+          QStringLiteral("the evidence summary hides a weakly attributed domain"));
 
     PolicyDecision advisory = decision;
     advisory.action = NetworkPolicy::Action::Notify;

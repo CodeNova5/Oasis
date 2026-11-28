@@ -50,6 +50,7 @@ SOURCES += \
     src/network/networkwidgettable.cpp \
     src/network/networkwidgetpolicies.cpp \
     src/network/networkwidgetinsights.cpp \
+    src/network/networkwidgetnotices.cpp \
     src/network/connectionview.cpp \
     src/network/packetparser.cpp \
     src/network/testfixtures.cpp \

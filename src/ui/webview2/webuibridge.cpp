@@ -23,6 +23,7 @@
 #include "core/servicehost.h"
 #include "core/version.h"
 #include "network/auditeventstore.h"
+#include "network/datasavernotification.h"
 #include "network/datasavermode.h"
 #include "network/networkmonitor.h"
 #include "network/networkwidget.h"
@@ -378,6 +379,31 @@ WebUiBridge::WebUiBridge(ICoreWebView2 *webView, ServiceHost *services, QObject 
     if (!m_webView)
         return;
 
+    // DS-011: a delivered notice is pushed, not polled, so the page can show the
+    // actionable card immediately. The connection is owned by the bridge, so a
+    // page teardown stops the pushes without the host having to know about it.
+    if (m_services) {
+        connect(m_services, &ServiceHost::notificationPosted, this,
+                [this](const AppNotification &notification, int suppressedCount) {
+                    postToPage(WebUiBridge::noticeEvent(notification, suppressedCount));
+                });
+
+        // A tray action applies the same reversal the page offers, so the page
+        // is told to retire that card instead of showing it again.
+        if (NetworkWidget *network = m_services->network()) {
+            connect(network, &NetworkWidget::dataSaverNoticeResolved, this,
+                    [this](const QString &notificationKey, const QString &actionToken) {
+                        QJsonObject payload;
+                        payload.insert(QStringLiteral("key"), notificationKey);
+                        payload.insert(QStringLiteral("action"), actionToken);
+                        QJsonObject message;
+                        message.insert(QStringLiteral("event"), noticeResolvedEventName());
+                        message.insert(QStringLiteral("payload"), payload);
+                        postToPage(message);
+                    });
+        }
+    }
+
     auto *handler = new WebMessageHandler(this);
     if (SUCCEEDED(m_webView->add_WebMessageReceived(handler, &m_messageToken))) {
         m_handlerRegistered = true;
@@ -416,6 +442,25 @@ void WebUiBridge::handleMessageJson(const QString &json)
     }
 
     postToPage(dispatch(document.object(), m_services));
+}
+
+QString WebUiBridge::noticeEventName()
+{
+    return QStringLiteral("datasaver.notice");
+}
+
+QString WebUiBridge::noticeResolvedEventName()
+{
+    return QStringLiteral("datasaver.notice.resolved");
+}
+
+QJsonObject WebUiBridge::noticeEvent(const AppNotification &notification, int suppressedCount)
+{
+    QJsonObject message;
+    message.insert(QStringLiteral("event"), noticeEventName());
+    message.insert(QStringLiteral("payload"),
+                   DataSaverNotifications::eventPayload(notification, suppressedCount));
+    return message;
 }
 
 void WebUiBridge::postToPage(const QJsonObject &message)
@@ -458,6 +503,70 @@ QJsonObject WebUiBridge::dispatch(const QJsonObject &request, ServiceHost *servi
                               QStringLiteral("overview.icon needs a non-empty \"name\"."));
         }
         return okReply(id, overviewIconReply(services, name));
+    }
+
+    if (method == QStringLiteral("datasaver.notice.action")) {
+        const QJsonObject noticeParams = paramsValue.toObject();
+        const QString key = noticeParams.value(QStringLiteral("key"))
+                                .toString()
+                                .trimmed();
+        const QString action = noticeParams.value(QStringLiteral("action"))
+                                   .toString()
+                                   .trimmed();
+        if (key.isEmpty() || action.isEmpty()) {
+            return errorReply(id, QStringLiteral("invalid_params"),
+                              QStringLiteral("A notice action needs a non-empty \"key\" "
+                                             "and \"action\"."));
+        }
+
+        NetworkWidget *network = services ? services->network() : nullptr;
+        if (!network) {
+            return errorReply(id, QStringLiteral("services_unavailable"),
+                              QStringLiteral("The Data Saver services are not running."));
+        }
+
+        // Inspect answers with the retained evidence; it changes nothing.
+        if (action == DataSaverNotifications::inspectActionToken()) {
+            DataSaverNotifications::DecisionNotice evidence;
+            if (!network->noticeEvidence(key, &evidence)) {
+                return errorReply(id, QStringLiteral("notice_unavailable"),
+                                  QStringLiteral("That notice is no longer available."));
+            }
+            QJsonObject result;
+            result.insert(QStringLiteral("action"), action);
+            result.insert(QStringLiteral("notice"),
+                          DataSaverNotifications::evidenceSummary(evidence));
+            return okReply(id, result);
+        }
+
+        const bool confirmed = noticeParams.value(QStringLiteral("confirmed")).toBool(false);
+        QString error;
+        bool applied = false;
+        if (action == DataSaverNotifications::allowOnceActionToken()) {
+            applied = network->allowOnceForNotice(key, &error);
+        } else if (action == DataSaverNotifications::alwaysAllowActionToken()) {
+            applied = network->alwaysAllowForNotice(key, confirmed, &error);
+        } else {
+            return errorReply(id, QStringLiteral("unsupported_action"),
+                              QStringLiteral("\"%1\" is not an action this build offers.")
+                                  .arg(action));
+        }
+        if (!applied) {
+            return errorReply(id, QStringLiteral("notice_action_failed"),
+                              error.isEmpty()
+                                  ? QStringLiteral("The action could not be applied.")
+                                  : error);
+        }
+
+        QJsonObject result;
+        result.insert(QStringLiteral("action"), action);
+        result.insert(QStringLiteral("message"),
+                      action == DataSaverNotifications::allowOnceActionToken()
+                          ? QStringLiteral("Allowed once. The control is paused for this flow "
+                                           "for one hour.")
+                          : QStringLiteral("Always allowed. A pinned rule now covers this "
+                                           "application."));
+        return okReply(id, result);
     }
 
     return errorReply(id, QStringLiteral("unknown_method"),

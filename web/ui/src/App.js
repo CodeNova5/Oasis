@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { html } from 'htm/preact';
 import { Sidebar } from './components/Sidebar.js';
+import { NoticeStack } from './components/NoticeCard.js';
 import { SummaryCard } from './components/SummaryCard.js';
 import { TrafficChart } from './components/TrafficChart.js';
 import { ProcessTable } from './components/ProcessTable.js';
@@ -11,7 +12,7 @@ import {
   createEmptyTelemetry,
   createInitialTelemetry,
 } from './state/overviewStore.js';
-import { isAvailable, request } from './bridge/client.js';
+import { isAvailable, onEvent, request } from './bridge/client.js';
 import { formatBytes } from './utils/formatters.js';
 
 export function App() {
@@ -24,7 +25,48 @@ export function App() {
   );
   const [paused, setPaused] = useState(false);
   const [icons, setIcons] = useState({});
+  // Notices pushed by the native coordinator. Only the three most recent are
+  // kept: the coordinator already folds repeats, so this is a small stack of
+  // distinct decisions rather than a feed.
+  const [notices, setNotices] = useState([]);
+  const [noticeStatus, setNoticeStatus] = useState('');
   const requestedIcons = useRef(new Set());
+
+  useEffect(() => {
+    if (!nativeAvailable) return undefined;
+
+    return onEvent((event, payload) => {
+      if (!payload || !payload.key) return;
+
+      // The tray applied an action for this notice; retire the card here too,
+      // because the notice is resolved on both surfaces.
+      if (event === 'datasaver.notice.resolved') {
+        setNotices((previous) => previous.filter((notice) => notice.key !== payload.key));
+        return;
+      }
+
+      if (event !== 'datasaver.notice') return;
+      setNoticeStatus('');
+      setNotices((previous) => {
+        // The same key replaces its older card and moves to the top.
+        const next = previous.filter((notice) => notice.key !== payload.key);
+        next.unshift(payload);
+        return next.slice(0, 3);
+      });
+    });
+  }, [nativeAvailable]);
+
+  const dismissNotice = (key) => {
+    setNotices((previous) => previous.filter((notice) => notice.key !== key));
+  };
+
+  const resolveNotice = (key, action, result) => {
+    dismissNotice(key);
+    const fallback = action === 'allow_once'
+      ? 'Allowed once. The control is paused for this flow for one hour.'
+      : 'Always allowed. A pinned rule now covers this application.';
+    setNoticeStatus(result?.message || fallback);
+  };
 
   useEffect(() => {
     if (paused) return undefined;
@@ -110,6 +152,13 @@ export function App() {
             ${paused ? 'Monitoring Paused' : bridgeOk ? 'Monitoring Active' : 'Preview Data'}
           </span>
         </header>
+
+        <${NoticeStack}
+          notices=${notices}
+          onDismiss=${dismissNotice}
+          onResolved=${resolveNotice}
+        />
+        ${noticeStatus ? html`<p class="notice-status" role="status">${noticeStatus}</p>` : null}
 
         <section class="summary-grid" aria-label="Session totals">
           <${SummaryCard}

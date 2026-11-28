@@ -27,6 +27,7 @@
 #pragma once
 
 #include <QDateTime>
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 
@@ -49,6 +50,10 @@ constexpr int kAllowOnceTtlSeconds = 60 * 60;
 QString allowOnceActionToken();
 QString alwaysAllowActionToken();
 QString inspectActionToken();
+
+/// Display label for an action token. Empty for a token this build does not
+/// offer, so a surface can skip it instead of rendering a dead control.
+QString actionLabel(const QString &token);
 
 /// One committed decision plus its enforcement outcome.
 struct DecisionNotice
@@ -81,6 +86,17 @@ bool canNameDomain(const PolicyDecision &decision);
 /// Builds the notice. Priority is critical for failed enforcement, warning for
 /// throttle/block, and info for an advisory notice; the route is TrayAndApp.
 AppNotification forDecision(const DecisionNotice &notice);
+
+/// Payload a surface receives for one delivered notice. Carries the key, copy,
+/// priority token, action tokens, folded count, and the evidence links; it never
+/// adds anything the notice body does not already carry.
+QJsonObject eventPayload(const AppNotification &notification, int suppressedCount);
+
+/// Evidence behind a notice, for the Inspect action: the application, the
+/// attributed domain only when it may be named, the milestone, the decision's
+/// action/direction/rate/reason, the real enforcement status, and the ids a
+/// reader can correlate with the audit log. Never a path or an endpoint.
+QJsonObject evidenceSummary(const DecisionNotice &notice);
 
 /// Adds a tier-2 session override that allows the flow (or, when the flow id is
 /// unusable, the executable and attributed domain) until it expires. Returns

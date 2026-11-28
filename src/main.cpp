@@ -28,7 +28,9 @@
 #include <QDebug>
 #include <QTcpSocket>
 #include <QCryptographicHash>
+#include <QList>
 #include <QMessageBox>
+#include <QPair>
 #include <QSharedMemory>
 #include <QFile>
 #include <QSettings>
@@ -42,6 +44,9 @@
 #include "ui/theme/thememanager.h"
 #include "core/appinstaller.h"
 #include "core/servicehost.h"
+#include "network/datasavernotification.h"
+#include "network/networkwidget.h"
+#include "taskbar/systemtrayicon.h"
 #include "hardware/hardwaremonitor.h"    // Q_DECLARE_METATYPE(HardwareSnapshot)
 #include "network/packetparser.h"        // Q_DECLARE_METATYPE(ParsedPacket)
 
@@ -160,6 +165,113 @@ int main(int argc, char *argv[])
     w.setWindowTitle(QStringLiteral("%1 Version %2").arg(APP_NAME, APP_VERSION_STR));
     w.setWindowIcon(appIcon);
     w.showMaximized();
+
+    // -- Tray alert and Data Saver notice actions ------------------------------
+    // The tray carries the passive alert (a Windows tray balloon has no
+    // buttons) plus the actions of the latest notice in its menu; the page in
+    // the window carries the actionable card. Both address the notice by the
+    // key the coordinator delivered it under.
+    SystemTrayIcon tray;
+    tray.show();
+
+    auto bringWindowForward = [&w] {
+        w.showMaximized();
+        w.raise();
+        w.activateWindow();
+    };
+    QObject::connect(&tray, &SystemTrayIcon::showRequested, &w, bringWindowForward);
+    QObject::connect(&tray, &SystemTrayIcon::quitRequested, &app, [&app] { app.quit(); });
+
+    QObject::connect(&services, &ServiceHost::notificationPosted, &tray,
+                     [&tray](const AppNotification &notification, int suppressedCount) {
+        QString message = notification.message;
+        if (suppressedCount > 0) {
+            message += QStringLiteral("\n(+%1 similar notices folded)").arg(suppressedCount);
+        }
+        tray.showNotice(notification.title, message,
+                        notification.priority == NotificationPriority::Critical);
+
+        QList<QPair<QString, QString>> actions;
+        for (const QString &token : notification.actions) {
+            const QString label = DataSaverNotifications::actionLabel(token);
+            if (!label.isEmpty())
+                actions.append(qMakePair(token, label));
+        }
+        tray.setNoticeActions(notification.key, actions);
+    });
+
+    QObject::connect(&tray, &SystemTrayIcon::noticeActionRequested, &tray,
+                     [&services, &tray, &w, bringWindowForward](
+                         const QString &noticeKey, const QString &token) {
+        NetworkWidget *network = services.network();
+        if (!network)
+            return;
+
+        // Inspect renders the retained evidence in the page, so the tray action
+        // only brings the window forward.
+        if (token == DataSaverNotifications::inspectActionToken()) {
+            bringWindowForward();
+            return;
+        }
+
+        QString error;
+        if (token == DataSaverNotifications::allowOnceActionToken()) {
+            if (network->allowOnceForNotice(noticeKey, &error)) {
+                // The notice is resolved now; do not offer the same reversal
+                // again from a stale menu.
+                tray.setNoticeActions(noticeKey, QList<QPair<QString, QString>>());
+                tray.showNotice(QStringLiteral("Allowed once"),
+                                QStringLiteral("The control is paused for this flow for one hour."),
+                                false);
+            } else {
+                tray.showNotice(QStringLiteral("Could not allow the flow"),
+                                error.isEmpty()
+                                    ? QStringLiteral("The session override was refused.")
+                                    : error,
+                                true);
+            }
+            return;
+        }
+
+        if (token != DataSaverNotifications::alwaysAllowActionToken())
+            return;
+
+        // Always Allow is tier 1, so it needs the explicit confirmation the
+        // pinned store enforces (DS-005).
+        DataSaverNotifications::DecisionNotice evidence;
+        QString application;
+        if (network->noticeEvidence(noticeKey, &evidence)) {
+            application = DataSaverNotifications::evidenceSummary(evidence)
+                              .value(QStringLiteral("executable"))
+                              .toString();
+        }
+        const QString question =
+            (application.isEmpty()
+                 ? QStringLiteral("Create a permanent allow rule for this application?")
+                 : QStringLiteral("Create a permanent allow rule for %1?").arg(application))
+            + QStringLiteral("\n\nA pinned rule survives Data Saver Off and takes "
+                             "precedence over automatic controls.");
+        if (QMessageBox::question(nullptr, QStringLiteral("Always allow"), question,
+                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+            != QMessageBox::Yes) {
+            return;
+        }
+
+        if (network->alwaysAllowForNotice(noticeKey, true, &error)) {
+            tray.setNoticeActions(noticeKey, QList<QPair<QString, QString>>());
+            tray.showNotice(
+                QStringLiteral("Always allowed"),
+                application.isEmpty()
+                    ? QStringLiteral("A pinned allow rule was saved.")
+                    : QStringLiteral("%1 is now allowed by a pinned rule.").arg(application),
+                false);
+        } else {
+            tray.showNotice(QStringLiteral("Could not save the rule"),
+                            error.isEmpty() ? QStringLiteral("The pinned rule was refused.")
+                                            : error,
+                            true);
+        }
+    });
 
     const int exitCode = app.exec();
 

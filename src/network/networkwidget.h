@@ -16,6 +16,7 @@
 #include "networkmodel.h"
 #include "bandwidthguard.h"
 #include "notificationcoordinator.h"
+#include "datasavernotification.h"
 #include "datasavercache.h"
 #include "datasaverdecision.h"
 #include "datasaverenforcement.h"
@@ -109,6 +110,10 @@ signals:
     // process-wide NotificationCoordinator attached by the host. The notice is
     // metadata only and offers the Allow Once / Always Allow / Inspect actions.
     void dataSaverNotification(const AppNotification &notification);
+    // DS-011: a notice action was applied, so every surface showing that notice
+    // can retire it instead of offering the same reversal twice.
+    void dataSaverNoticeResolved(const QString &notificationKey,
+                                 const QString &actionToken);
 
 private slots:
     void onAdapterChanged(int idx);
@@ -178,6 +183,19 @@ public:
     // from versioned settings at construction; the legacy Monitor state no
     // longer exists and a stored one migrates to Off.
     DataSaverMode::Mode dataSaverMode() const { return m_dataSaverMode; }
+    // DS-011 actions on a delivered notice, addressed by the coordinator key the
+    // notice carried. Allow Once writes a tier-2 session override that expires
+    // on its own; Always Allow writes a tier-1 pinned rule and therefore needs
+    // `confirmed`. Each returns false with a reason when the notice is no longer
+    // held or the store refuses the write. Nothing is enforced here: the next
+    // milestone crossing resolves the new rule through the normal path.
+    bool allowOnceForNotice(const QString &notificationKey, QString *error = nullptr);
+    bool alwaysAllowForNotice(const QString &notificationKey, bool confirmed,
+                              QString *error = nullptr);
+    // The evidence behind a notice, for the Inspect action. False once the
+    // notice has been evicted from the bounded retention window.
+    bool noticeEvidence(const QString &notificationKey,
+                        DataSaverNotifications::DecisionNotice *evidence) const;
     // DS-003: the current canonical evaluation inputs, aggregated from the
     // capture batch. They are never persisted; DS-004 consumes them at
     // milestone crossings.
@@ -274,6 +292,10 @@ private:
     ActivityQuery queryAndActivityFor(quint32 pid, const QString &processName,
                                       const QString &executablePath,
                                       ActivityClassification *activity) const;
+    // DS-011: keeps the decision behind a delivered notice so its actions can
+    // still be applied after the fact. Bounded; the oldest entry is dropped.
+    void retainNotice(const QString &notificationKey,
+                      const DataSaverNotifications::DecisionNotice &evidence);
     // DS-008: resolve one accepted milestone crossing through the evidence
     // cache and route the result to DS-009 enforcement.
     void evaluateDataSaverCrossing(const FlowObservation &observation,
@@ -326,6 +348,10 @@ private:
     // reads the active set on every crossing, so the reversal applies without a
     // restart and expires on its own.
     SessionOverrideStore m_sessionOverrides;
+    // DS-011: delivered notices whose actions are still offered. Insertion order
+    // is kept so the oldest entry can be evicted past the cap.
+    QHash<QString, DataSaverNotifications::DecisionNotice> m_noticeEvidence;
+    QStringList m_noticeOrder;
     // DS-009: a foreground-change lease ends when this pid changes.
     quint32 m_lastDataSaverForegroundPid = 0;
 

@@ -17,6 +17,12 @@ SystemTrayIcon::SystemTrayIcon(QObject *parent)
     m_menu = new QMenu();
     m_menu->setObjectName("trayMenu");
 
+    // DS-011: the latest Data Saver notice's actions. Hidden until a notice with
+    // actions is delivered, so the menu stays a two-item menu in normal use.
+    m_noticeMenu = new QMenu("Latest Data Saver notice", m_menu);
+    m_noticeMenu->menuAction()->setVisible(false);
+    m_menu->addMenu(m_noticeMenu);
+
     // English menu actions
     QAction *actShow  = m_menu->addAction("Show Oasis");
     m_menu->addSeparator();
@@ -28,6 +34,8 @@ SystemTrayIcon::SystemTrayIcon(QObject *parent)
     // Build the initial icon (0 traffic) and create the tray icon
     m_tray = new QSystemTrayIcon(buildIcon(0, 0), this);
     m_tray->setContextMenu(m_menu);
+    // Clicking the balloon opens the window, where the notice card lives.
+    connect(m_tray, &QSystemTrayIcon::messageClicked, this, &SystemTrayIcon::showRequested);
 
     // Initial English tooltip
     m_tray->setToolTip("Oasis [Idle]");
@@ -51,6 +59,34 @@ void SystemTrayIcon::setSpeed(quint64 rxBps, quint64 txBps)
                                "Download: %1\n"
                                "Upload:   %2")
                            .arg(fmt(rxBps), fmt(txBps)));
+}
+
+void SystemTrayIcon::showNotice(const QString &title, const QString &message, bool critical)
+{
+    m_tray->showMessage(title, message,
+                        critical ? QSystemTrayIcon::Critical
+                                 : QSystemTrayIcon::Information,
+                        critical ? 10000 : 6000);
+}
+
+void SystemTrayIcon::setNoticeActions(const QString &noticeKey,
+                                      const QList<QPair<QString, QString>> &actions)
+{
+    m_noticeKey = noticeKey;
+    m_noticeMenu->clear();
+
+    if (actions.isEmpty()) {
+        m_noticeMenu->menuAction()->setVisible(false);
+        return;
+    }
+
+    m_noticeMenu->menuAction()->setVisible(true);
+    for (const QPair<QString, QString> &entry : actions) {
+        const QString token = entry.first;
+        QAction *action = m_noticeMenu->addAction(entry.second);
+        connect(action, &QAction::triggered, this,
+                [this, token] { emit noticeActionRequested(m_noticeKey, token); });
+    }
 }
 
 QIcon SystemTrayIcon::buildIcon(quint64 rxBps, quint64 txBps)

@@ -918,7 +918,11 @@ void NetworkWidget::evaluateDataSaverCrossing(const FlowObservation &observation
         notice.enforcementChannels = outcome.channels;
         notice.enforcementPolicyId = outcome.policyId;
         notice.executableName = evaluation.process.exeName;
-        emit dataSaverNotification(DataSaverNotifications::forDecision(notice));
+        const AppNotification notification = DataSaverNotifications::forDecision(notice);
+        // The evidence is kept before the notice is announced, so a surface that
+        // acts on it immediately (tray action, page button) always finds it.
+        retainNotice(notification.effectiveKey(), notice);
+        emit dataSaverNotification(notification);
     }
 
     // A failed control that already produced a critical notice is not reported

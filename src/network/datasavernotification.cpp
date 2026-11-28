@@ -6,6 +6,8 @@
 #include "datasavernotification.h"
 
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QStringList>
 
 namespace {
@@ -238,6 +240,14 @@ QString allowOnceActionToken() { return kAllowOnceToken; }
 QString alwaysAllowActionToken() { return kAlwaysAllowToken; }
 QString inspectActionToken() { return kInspectToken; }
 
+QString actionLabel(const QString &token)
+{
+    if (token == kAllowOnceToken) return QStringLiteral("Allow once");
+    if (token == kAlwaysAllowToken) return QStringLiteral("Always allow");
+    if (token == kInspectToken) return QStringLiteral("Inspect application");
+    return QString();
+}
+
 bool shouldNotify(const PolicyDecision &decision)
 {
     return decision.action == NetworkPolicy::Action::Throttle
@@ -299,6 +309,67 @@ AppNotification forDecision(const DecisionNotice &notice)
                                          << alwaysAllowActionToken()
                                          << inspectActionToken();
     return notification;
+}
+
+QJsonObject eventPayload(const AppNotification &notification, int suppressedCount)
+{
+    QJsonObject payload;
+    payload.insert(QStringLiteral("key"), notification.key);
+    payload.insert(QStringLiteral("title"), notification.title);
+    payload.insert(QStringLiteral("message"), notification.message);
+    payload.insert(QStringLiteral("priority"),
+                   notification.priority == NotificationPriority::Critical
+                       ? QStringLiteral("critical")
+                       : (notification.priority == NotificationPriority::Warning
+                              ? QStringLiteral("warning")
+                              : QStringLiteral("info")));
+    payload.insert(QStringLiteral("actions"), QJsonArray::fromStringList(notification.actions));
+    payload.insert(QStringLiteral("suppressedCount"), suppressedCount < 0 ? 0 : suppressedCount);
+    if (!notification.identityId.isEmpty())
+        payload.insert(QStringLiteral("identityId"), notification.identityId);
+    if (!notification.policyId.isEmpty())
+        payload.insert(QStringLiteral("policyId"), notification.policyId);
+    return payload;
+}
+
+QJsonObject evidenceSummary(const DecisionNotice &notice)
+{
+    QJsonObject summary;
+    summary.insert(QStringLiteral("executable"), executableFor(notice));
+    // The domain is named only under the same rule as the notice body.
+    if (canNameDomain(notice.decision)) {
+        const QString domain = domainFor(notice);
+        if (!domain.isEmpty()) summary.insert(QStringLiteral("domain"), domain);
+    }
+    const int milestoneIndex = notice.observation.metrics.milestoneIndex != 0
+                                   ? notice.observation.metrics.milestoneIndex
+                                   : notice.decision.evidence.milestoneIndex;
+    summary.insert(QStringLiteral("milestoneBytes"),
+                   static_cast<qint64>(notice.observation.metrics.milestoneBytes));
+    summary.insert(QStringLiteral("milestoneIndex"), milestoneIndex);
+    summary.insert(QStringLiteral("action"), actionToken(notice.decision.action));
+    summary.insert(QStringLiteral("direction"), directionToken(notice.decision.direction));
+    summary.insert(QStringLiteral("rateBitsPerSecond"),
+                   static_cast<qint64>(notice.decision.rateBitsPerSecond));
+    summary.insert(QStringLiteral("reason"), notice.decision.reasonShort);
+    summary.insert(QStringLiteral("status"), statusToken(notice.status));
+    if (!notice.enforcementMessage.isEmpty())
+        summary.insert(QStringLiteral("enforcementMessage"), notice.enforcementMessage);
+    if (!notice.enforcementChannels.isEmpty())
+        summary.insert(QStringLiteral("enforcementChannels"), notice.enforcementChannels);
+    summary.insert(QStringLiteral("policyId"), notice.enforcementPolicyId);
+    summary.insert(QStringLiteral("identityId"),
+                   notice.decision.target.identityId.isEmpty()
+                       ? notice.observation.process.identityId
+                       : notice.decision.target.identityId);
+    summary.insert(QStringLiteral("decisionId"), notice.decision.decisionId);
+    summary.insert(QStringLiteral("observationId"), notice.observation.observationId);
+    summary.insert(QStringLiteral("flowId"), notice.observation.flow.flowId);
+    QJsonArray steps;
+    for (const QString &step : notice.decision.nextSteps)
+        steps.append(step);
+    summary.insert(QStringLiteral("nextSteps"), steps);
+    return summary;
 }
 
 bool allowOnce(const FlowObservation &observation, const PolicyDecision &decision,

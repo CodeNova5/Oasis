@@ -5,6 +5,11 @@
  * Ids are correlated locally, so several requests can be in flight and a reply
  * that arrives out of order still resolves the right promise.
  *
+ * Pushed events arrive on the same transport without an `id`:
+ *   { event: "datasaver.notice", payload: { ... } }
+ * A surface subscribes with `onEvent()`; nothing is replayed, so an event that
+ * arrives while no page is open is simply not shown.
+ *
  * Outside the desktop app (a plain browser, the Node test harness) there is no
  * transport; `isAvailable()` reports that and every request rejects instead of
  * hanging.
@@ -12,6 +17,7 @@
 
 let nextId = 1;
 const pending = new Map();
+const eventHandlers = new Set();
 let listenerInstalled = false;
 
 function webview() {
@@ -26,7 +32,21 @@ function ensureListener() {
 
   transport.addEventListener('message', (event) => {
     const message = event.data;
-    if (!message || message.id === undefined || message.id === null) return;
+    if (!message) return;
+
+    // A push has an event name and no id; a reply always has an id.
+    if (message.event) {
+      for (const handler of Array.from(eventHandlers)) {
+        try {
+          handler(message.event, message.payload);
+        } catch (error) {
+          console.error(`Bridge event "${message.event}" handler failed.`, error);
+        }
+      }
+      return;
+    }
+
+    if (message.id === undefined || message.id === null) return;
 
     const entry = pending.get(message.id);
     if (!entry) return;
@@ -50,6 +70,18 @@ function ensureListener() {
 
 export function isAvailable() {
   return Boolean(webview());
+}
+
+/**
+ * Subscribes to pushed events. Returns an unsubscribe function, so a component
+ * effect can clean up when it unmounts.
+ */
+export function onEvent(handler) {
+  ensureListener();
+  eventHandlers.add(handler);
+  return () => {
+    eventHandlers.delete(handler);
+  };
 }
 
 export function request(method, params = {}, options = {}) {
@@ -80,4 +112,17 @@ export function getAppStatus() {
 
 export function getDataSaverStatus() {
   return request('datasaver.status');
+}
+
+/**
+ * Applies one action of a delivered Data Saver notice. `action` is the token the
+ * notice carried (allow_once, always_allow, inspect); Always Allow additionally
+ * needs `confirmed: true`, which is the user's explicit confirmation.
+ */
+export function performNoticeAction(key, action, options = {}) {
+  return request('datasaver.notice.action', {
+    key,
+    action,
+    confirmed: Boolean(options.confirmed),
+  });
 }

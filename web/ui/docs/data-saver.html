@@ -784,6 +784,86 @@
         grid-template-columns: 1fr;
       }
     }
+
+    /* ================= MODERN COMPONENT LAYER ================= */
+    .table-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
+    .search-field {
+      display:flex; align-items:center; gap:8px; min-width:230px;
+      padding:8px 10px; background:var(--bg-canvas);
+      border:1px solid var(--border-hairline); border-radius:9px;
+      color:var(--text-muted); transition:border-color .18s, box-shadow .18s;
+    }
+    .search-field:focus-within { border-color:var(--accent-primary); box-shadow:0 0 0 3px var(--accent-primary-soft); }
+    .search-field input { min-width:0; width:100%; background:transparent; border:0; outline:0; color:var(--text-primary); font:500 12px inherit; font-family:inherit; }
+    .search-field input::placeholder { color:var(--text-muted); }
+    .search-field kbd { flex-shrink:0; padding:2px 5px; border:1px solid var(--border-strong); border-radius:5px; color:var(--text-muted); font:10px inherit; font-family:inherit; }
+    .dialog-backdrop {
+      position:fixed; inset:0; z-index:1000; display:grid; place-items:center;
+      padding:24px; background:rgba(5,6,17,.72); backdrop-filter:blur(8px);
+      animation:fadeIn .16s ease;
+    }
+    .dialog-backdrop[hidden] { display:none; }
+    .dialog-card {
+      position:relative; width:min(100%,460px); padding:28px;
+      background:var(--bg-elevated); border:1px solid var(--border-strong);
+      border-radius:18px; box-shadow:0 24px 80px rgba(0,0,0,.42);
+      animation:dialogIn .2s ease;
+    }
+    .dialog-icon { width:44px;height:44px;display:grid;place-items:center;border-radius:13px;background:var(--accent-warning-soft);color:var(--accent-warning);margin-bottom:20px; }
+    .dialog-eyebrow { color:var(--text-muted);font-size:10px;font-weight:700;letter-spacing:.12em;margin-bottom:8px; }
+    .dialog-card h2 { font-size:20px;letter-spacing:-.03em;margin-bottom:9px; }
+    .dialog-card>p:not(.dialog-eyebrow) { color:var(--text-secondary);font-size:13px;line-height:1.65; }
+    .dialog-close { position:absolute;right:18px;top:16px;width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--text-secondary);font-size:22px;cursor:pointer; }
+    .dialog-close:hover { background:var(--bg-surface-hover);color:var(--text-primary); }
+    .dialog-summary { display:flex;flex-direction:column;gap:5px;margin-top:18px;padding:14px;background:var(--bg-canvas);border:1px solid var(--border-hairline);border-radius:11px;font-size:12px; }
+    .dialog-summary strong { color:var(--text-primary); }
+    .dialog-summary span,.dialog-summary small { color:var(--text-secondary);line-height:1.5; }
+    .dialog-actions { display:flex;justify-content:flex-end;gap:9px;margin-top:24px; }
+    .dialog-actions button { min-height:38px;padding:0 15px; }
+    .btn-danger { background:var(--accent-danger)!important;color:#fff!important; }
+    .btn-danger:hover { filter:brightness(1.08); }
+    .toast-region { position:fixed;right:24px;bottom:24px;z-index:1100;display:flex;flex-direction:column;gap:9px;pointer-events:none; }
+    .toast { display:flex;align-items:center;gap:11px;max-width:min(420px,calc(100vw - 32px));padding:12px 14px;background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.3);font-size:12px;color:var(--text-primary);opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;pointer-events:auto; }
+    .toast.visible { opacity:1;transform:translateY(0); }
+    .toast-mark { width:22px;height:22px;display:grid;place-items:center;flex-shrink:0;border-radius:50%;background:var(--accent-primary-soft);color:var(--accent-secondary);font-weight:700; }
+    .toast-success .toast-mark { background:var(--accent-success-soft);color:var(--accent-success); }
+    .toast-error .toast-mark { background:var(--accent-danger-soft);color:var(--accent-danger); }
+    .toast button { margin-left:auto;border:0;background:transparent;color:var(--text-muted);font-size:18px;cursor:pointer; }
+    body.dialog-open { overflow:hidden; }
+    .pill-tab,.btn-outline,.btn-primary,.btn-secondary,.btn-mini,.nav-btn { outline-offset:3px; }
+    button:focus-visible,input:focus-visible { outline:2px solid var(--accent-secondary);outline-offset:2px; }
+    tbody tr.selected-row td:first-child { box-shadow:inset 3px 0 var(--accent-primary); }
+    .flat-card { transition:border-color .18s ease; }
+    .flat-card:hover { border-color:rgba(255,255,255,.11); }
+    .panel-header { align-items:flex-start; }
+    .pill-tab { transition:background .16s,border-color .16s,color .16s; }
+    .pill-tab:hover:not(.active) { background:var(--bg-surface-hover);color:var(--text-primary); }
+    .btn-mini:focus-visible,.btn-outline:focus-visible,.btn-primary:focus-visible,.btn-secondary:focus-visible { outline:2px solid var(--accent-secondary);outline-offset:2px; }
+    @keyframes fadeIn { from{opacity:0}to{opacity:1} }
+    @keyframes dialogIn { from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)} }
+    @media(max-width:900px) {
+      body { height:auto;min-height:100vh;overflow:auto; }
+      .sidebar { position:sticky;top:0;height:100vh; }
+      .workspace { min-height:100vh;height:auto;overflow:visible;padding:22px 20px; }
+      .table-toolbar { width:100%;justify-content:flex-start; }
+      .search-field { flex:1; }
+      .filter-pills { flex-wrap:wrap; }
+    }
+    @media(max-width:600px) {
+      .workspace { padding:18px 14px;gap:16px; }
+      .topbar,.title-area { align-items:flex-start;flex-direction:column; }
+      .topbar-controls { width:100%;flex-wrap:wrap; }
+      .kpi-grid { grid-template-columns:1fr 1fr;gap:10px; }
+      .flat-card { padding:15px; }
+      .kpi-value { font-size:21px; }
+      .panel-header { flex-direction:column; }
+      .table-toolbar { align-items:stretch; }
+      .search-field { min-width:100%; }
+      .dialog-card { padding:23px 20px; }
+      .toast-region { left:12px;right:12px;bottom:12px; }
+      .toast { max-width:none; }
+    }
+
   </style>
 </head>
 <body>
@@ -924,10 +1004,17 @@
             <h2 class="panel-title">Evaluated Flows &amp; Policy Decisions</h2>
             <p class="panel-subtitle">Click any flow to inspect evidence, precedence tier, or override rules</p>
           </div>
-          <div class="filter-pills">
+          <div class="table-toolbar">
+            <label class="search-field" aria-label="Search evaluated flows">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+              <input id="flowSearch" type="search" placeholder="Search processes or domains…" oninput="setFlowSearch(this.value)">
+              <kbd>⌘ K</kbd>
+            </label>
+            <div class="filter-pills">
             <button class="pill-tab active" data-filter="all" onclick="filterTable('all', this)">All</button>
             <button class="pill-tab" data-filter="throttled" onclick="filterTable('throttled', this)">Throttled</button>
             <button class="pill-tab" data-filter="foreground" onclick="filterTable('foreground', this)">Foreground</button>
+            </div>
           </div>
         </div>
 
@@ -1077,6 +1164,25 @@
     </section>
 
   </main>
+
+  <!-- Reusable application dialog -->
+  <div class="dialog-backdrop" id="appDialog" hidden aria-hidden="true">
+    <section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="dialogTitle" aria-describedby="dialogDescription">
+      <div class="dialog-icon" id="dialogIcon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4m0 4h.01"></path><path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg>
+      </div>
+      <button class="dialog-close" type="button" aria-label="Close dialog" onclick="closeDialog()">×</button>
+      <p class="dialog-eyebrow" id="dialogEyebrow">CONFIRM ACTION</p>
+      <h2 id="dialogTitle">Are you sure?</h2>
+      <p id="dialogDescription">Review this action before continuing.</p>
+      <div class="dialog-summary" id="dialogSummary" hidden></div>
+      <div class="dialog-actions">
+        <button class="btn-secondary" type="button" onclick="closeDialog()">Cancel</button>
+        <button class="btn-primary" type="button" id="dialogConfirm">Confirm</button>
+      </div>
+    </section>
+  </div>
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
 
   <script>
     // ---------------------------------------------------------------------
@@ -1278,6 +1384,9 @@
     ];
     let selectedId = flows[0].id;
     let currentFilter = 'all';
+    let flowSearch = '';
+    let dialogAction = null;
+    let toastTimer = null;
     let dataSaverMode = 'enforce';
     let aiEnabled = false;
     let restorePending = false;
@@ -1342,9 +1451,14 @@
       });
 
       const filtered = flows.filter((flow) => {
-        if (currentFilter === 'throttled') return flow.action === 'throttle';
-        if (currentFilter === 'foreground') return flow.state === 'foreground_active';
-        return true;
+        const matchesFilter =
+          currentFilter === 'throttled' ? flow.action === 'throttle' :
+          currentFilter === 'foreground' ? flow.state === 'foreground_active' : true;
+        const query = flowSearch.trim().toLowerCase();
+        const matchesSearch = !query || [
+          flow.exe, flow.domain, flow.pid, flow.actionLabel, flow.tier, flow.stateLabel
+        ].some((value) => String(value).toLowerCase().includes(query));
+        return matchesFilter && matchesSearch;
       });
 
       if (!filtered.length) {
@@ -1603,6 +1717,7 @@
           reason: 'User allowed this flow for the current session only.'
         });
         renderAll();
+        showToast(`${flow.exe} is allowed for this session.`, 'success');
       }, 450);
     }
 
@@ -1612,16 +1727,18 @@
       const flow = findFlow(id);
       if (!flow || pendingFlowIds.has(id) || flow.tierNum === 1) return;
 
-      const confirmed = window.confirm(
-        `Create a persistent Tier 1 allow rule for ${flow.exe} (${flow.domain})?\n\n` +
-        'Pinned rules override automatic, cached and AI decisions, and Emergency Restore never removes them.'
-      );
-      if (!confirmed) return;
+      openDialog({
+        eyebrow: 'PERSISTENT POLICY',
+        title: 'Always allow this flow?',
+        description: 'This creates a Tier 1 pinned rule. It takes precedence over automatic, cached and AI decisions.',
+        summary: `<strong>${esc(flow.exe)}</strong><span>${esc(flow.domain)}</span><small>This rule survives Emergency Restore and future sessions.</small>`,
+        confirmLabel: 'Create pinned rule',
+        danger: false,
+        onConfirm: () => {
+          pendingFlowIds.add(id);
+          renderAll();
 
-      pendingFlowIds.add(id);
-      renderAll();
-
-      window.setTimeout(() => {
+          window.setTimeout(() => {
         pendingFlowIds.delete(id);
         pinnedRules.unshift({ id: `pin_${flow.id}`, exe: flow.exe, domain: flow.domain });
         flow.action = 'allow';
@@ -1643,8 +1760,10 @@
           outcome: 'Applied',
           reason: 'User confirmed a persistent pinned allow rule.'
         });
-        renderAll();
-      }, 450);
+            renderAll();
+          }, 450);
+        }
+      });
     }
 
     function removePinnedRule(idx) {
@@ -1664,6 +1783,7 @@
         reason: 'Pinned rule deleted; automatic evaluation resumes for this target.'
       });
       renderAll();
+      showToast(`Pinned rule removed for ${rule.exe}.`, 'success');
     }
 
     function removeSessionOverride(idx) {
@@ -1683,6 +1803,7 @@
         reason: 'Session override ended early; automatic evaluation resumes.'
       });
       renderAll();
+      showToast(`Session override ended for ${override.exe}.`, 'success');
     }
 
     // Off withdraws only Data Saver-owned controls. Enforce re-applies the
@@ -1751,16 +1872,18 @@
 
     function emergencyRestore() {
       if (restorePending) return;
-      const confirmed = window.confirm(
-        'Withdraw every automatic and AI-applied control?\n\n' +
-        'Tier 1 pinned rules and your session overrides are preserved.'
-      );
-      if (!confirmed) return;
+      openDialog({
+        eyebrow: 'EMERGENCY RESTORE',
+        title: 'Withdraw automatic controls?',
+        description: 'All automatic and AI-applied restrictions will be withdrawn where the enforcement channel confirms the change.',
+        summary: '<strong>Pinned rules are preserved</strong><span>Tier 1 pinned rules and session overrides will remain in place.</span>',
+        confirmLabel: 'Restore network access',
+        danger: true,
+        onConfirm: () => {
+          restorePending = true;
+          renderAll();
 
-      restorePending = true;
-      renderAll();
-
-      window.setTimeout(() => {
+          window.setTimeout(() => {
         restorePending = false;
         flows.filter((flow) => flow.origin === 'automatic' || flow.origin === 'ai').forEach((flow) => {
           const healthy = flow.channelHealthy !== false;
@@ -1788,8 +1911,11 @@
               : 'Emergency Restore could not confirm withdrawal for this control.'
           });
         });
-        renderAll();
-      }, 500);
+            renderAll();
+            showToast('Restore operation completed. Check the audit trail for any controls that could not be withdrawn.', 'info');
+          }, 500);
+        }
+      });
     }
 
     function toggleAiOptIn() {
@@ -1803,6 +1929,70 @@
       document.getElementById('payloadBox').classList.remove('open');
       renderInspector();
     }
+
+    // ---------------------------------------------------------------------
+    // Reusable interaction primitives
+    // ---------------------------------------------------------------------
+    function openDialog(config) {
+      const dialog = document.getElementById('appDialog');
+      document.getElementById('dialogEyebrow').textContent = config.eyebrow || 'CONFIRM ACTION';
+      document.getElementById('dialogTitle').textContent = config.title || 'Are you sure?';
+      document.getElementById('dialogDescription').textContent = config.description || '';
+      const summary = document.getElementById('dialogSummary');
+      summary.hidden = !config.summary;
+      summary.innerHTML = config.summary || '';
+      const confirm = document.getElementById('dialogConfirm');
+      confirm.textContent = config.confirmLabel || 'Confirm';
+      confirm.classList.toggle('btn-danger', !!config.danger);
+      confirm.onclick = () => {
+        const action = config.onConfirm;
+        closeDialog();
+        if (action) action();
+      };
+      dialog.hidden = false;
+      dialog.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('dialog-open');
+      window.setTimeout(() => confirm.focus(), 20);
+    }
+
+    function closeDialog() {
+      const dialog = document.getElementById('appDialog');
+      dialog.hidden = true;
+      dialog.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('dialog-open');
+      dialogAction = null;
+    }
+
+    function showToast(message, type = 'info') {
+      const region = document.getElementById('toastRegion');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      const icon = type === 'success' ? '✓' : type === 'error' ? '!' : 'i';
+      toast.innerHTML = `<span class="toast-mark">${icon}</span><span>${esc(message)}</span><button aria-label="Dismiss notification" onclick="this.parentElement.remove()">×</button>`;
+      region.appendChild(toast);
+      window.setTimeout(() => toast.classList.add('visible'), 10);
+      window.setTimeout(() => {
+        toast.classList.remove('visible');
+        window.setTimeout(() => toast.remove(), 220);
+      }, 4200);
+    }
+
+    function setFlowSearch(value) {
+      flowSearch = value;
+      renderTable();
+    }
+
+    document.getElementById('appDialog').addEventListener('click', (event) => {
+      if (event.target.id === 'appDialog') closeDialog();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !document.getElementById('appDialog').hidden) closeDialog();
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        const search = document.getElementById('flowSearch');
+        if (search) search.focus();
+      }
+    });
 
     // Init
     renderAll();
